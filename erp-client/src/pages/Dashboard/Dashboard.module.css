@@ -8,6 +8,8 @@
 }
 @media (max-width: 1600px) { .statsGrid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 1100px) { .statsGrid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px)  { .statsGrid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px)  { .statsGrid { grid-template-columns: 1fr; } }
 
 /* Charts row */
 .chartsRow {
@@ -16,6 +18,7 @@
   gap: var(--sp-5);
 }
 @media (max-width: 1200px) { .chartsRow { grid-template-columns: 1fr; } }
+@media (max-width: 768px)  { .chartCard, .activityCard { height: auto; min-height: 260px; } }
 
 .chartCard, .activityCard { height: 340px; overflow: hidden; }
 
@@ -161,6 +164,8 @@
 }
 @media (max-width: 1600px) { .modulesGrid { grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 1100px) { .modulesGrid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 768px)  { .modulesGrid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px)  { .modulesGrid { grid-template-columns: repeat(2, 1fr); } }
 
 .moduleCard {
   background: var(--bg-secondary);
@@ -321,6 +326,8 @@
 .stockSummary {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4);
 }
+@media (max-width: 768px) { .stockSummary { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .stockSummary { grid-template-columns: 1fr; } }
 .stockStat {
   background: var(--bg-secondary); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg); padding: var(--sp-4);

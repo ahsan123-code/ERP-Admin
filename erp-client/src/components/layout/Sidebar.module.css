@@ -223,3 +223,20 @@
   flex-shrink: 0;
   box-shadow: 0 0 6px rgba(16,185,129,0.6);
 }
+
+/* ── Mobile drawer ── */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+    width: var(--sidebar-width) !important;
+    transition: transform var(--transition-normal);
+    z-index: 100;
+  }
+  .mobileOpen {
+    transform: translateX(0);
+    box-shadow: var(--shadow-xl);
+  }
+  .collapsed {
+    width: var(--sidebar-width) !important;
+  }
+}

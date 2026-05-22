@@ -1,4 +1,4 @@
-import { Sun, Moon, Maximize2, Minimize2, LogOut, ChevronDown, Bell, Check, Building2, MapPin, CalendarDays } from 'lucide-react';
+import { Sun, Moon, Maximize2, Minimize2, LogOut, ChevronDown, Bell, Check, Building2, MapPin, CalendarDays, Menu } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { branches, fiscalYears } from '../../data/masters';
 import { currentUser } from '../../data/shell';
@@ -63,7 +63,7 @@ function DropdownSelect({ label, icon: Icon, options, value, onChange }) {
   );
 }
 
-export default function TopBar() {
+export default function TopBar({ collapsed, onMenuOpen }) {
   const { logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { companies, companyId, setCompanyId } = useCompany();
@@ -82,8 +82,11 @@ export default function TopBar() {
   const companyBranches = branches.filter(b => b.companyId === companyId);
 
   return (
-    <header className={styles.topbar}>
+    <header className={`${styles.topbar} ${collapsed ? styles.topbarCollapsed : ''}`}>
       <div className={styles.left}>
+        <button className={styles.menuBtn} onClick={onMenuOpen} aria-label="Open menu">
+          <Menu size={20} />
+        </button>
         <div className={styles.userChip}>
           <div className={styles.avatar}>{currentUser.initials}</div>
           <div className={styles.userInfo}>

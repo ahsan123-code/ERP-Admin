@@ -36,6 +36,13 @@
 .select:focus, .dateInput:focus { border-color: var(--primary); }
 .dateInput { min-width: 140px; }
 
+@media (max-width: 768px) {
+  .filterRow { flex-direction: column; align-items: stretch; }
+  .select, .dateInput { min-width: 100%; width: 100%; }
+  .pageTabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .reconBank { min-width: 100%; }
+}
+
 /* Shared table */
 .reportTable { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }

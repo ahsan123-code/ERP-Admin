@@ -16,6 +16,36 @@
   overflow-x: hidden;
 }
 
+.mainCollapsed {
+  margin-left: var(--sidebar-width-mini);
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 99;
+  animation: backdropIn 0.2s ease;
+}
+
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 @media (max-width: 1400px) {
-  .main { padding: var(--sp-5) var(--sp-6); }
+  .main, .mainCollapsed { padding: var(--sp-5) var(--sp-6); }
+}
+
+@media (max-width: 768px) {
+  .main, .mainCollapsed {
+    margin-left: 0;
+    padding: var(--sp-4);
+  }
+}
+
+@media (max-width: 480px) {
+  .main, .mainCollapsed {
+    padding: var(--sp-3);
+  }
 }

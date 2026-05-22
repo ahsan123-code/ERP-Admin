@@ -5,6 +5,8 @@
   grid-template-columns: repeat(3, 1fr);
   gap: var(--sp-4);
 }
+@media (max-width: 768px) { .summaryGrid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .summaryGrid { grid-template-columns: 1fr; } }
 
 .summaryCard {
   background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);

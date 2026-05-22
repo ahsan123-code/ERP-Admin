@@ -1,5 +1,6 @@
 .page { display: flex; flex-direction: column; gap: var(--sp-5); }
 .summaryGrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--sp-4); }
+@media (max-width: 768px) { .summaryGrid { grid-template-columns: 1fr; } }
 
 .plCard, .bsCard {
   background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);

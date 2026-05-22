@@ -270,3 +270,42 @@
   border-color: var(--red-border);
   color: var(--red);
 }
+
+/* ── Collapsed state ── */
+.topbarCollapsed {
+  left: var(--sidebar-width-mini);
+}
+
+/* ── Hamburger (mobile only) ── */
+.menuBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px; height: 36px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border-subtle);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+.menuBtn:hover {
+  background: var(--bg-surface);
+  border-color: var(--primary-border);
+  color: var(--primary);
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .topbar, .topbarCollapsed { left: 0; }
+  .menuBtn { display: flex; }
+  .center { display: none; }
+  .userInfo { display: none; }
+  .divider { display: none; }
+}
+
+@media (max-width: 480px) {
+  .topbar { padding: 0 var(--sp-3); }
+  .userChip { padding: 4px; }
+}

@@ -1,10 +1,10 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Package, ShoppingCart, Factory, Users,
-  Receipt, Wallet, UserCheck, ChevronRight, ChevronLeft,
-  BarChart3, TrendingUp, FileText, Building2, CreditCard,
-  Truck, ClipboardList, PanelLeftClose, PanelLeftOpen,
-  BookOpen, Banknote, Scale,
+  LayoutDashboard, Package, ShoppingCart, Factory,
+  Receipt, Wallet, UserCheck, ChevronRight,
+  BarChart3, TrendingUp,
+  PanelLeftClose, PanelLeftOpen,
+  Scale,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { currentUser } from '../../data/shell';
@@ -18,11 +18,11 @@ const NAV = [
       {
         path: '/', label: 'Dashboard', icon: LayoutDashboard,
         sub: [
-          { path: '/dashboard/analytics',  label: 'Analytics' },
-          { path: '/dashboard/sales-tax',  label: 'Sales Tax Dashboard' },
-          { path: '/dashboard/stock',      label: 'Available Stock' },
+          { path: '/dashboard/analytics',     label: 'Analytics' },
+          { path: '/dashboard/sales-tax',     label: 'Sales Tax Dashboard' },
+          { path: '/dashboard/stock',         label: 'Available Stock' },
           { path: '/dashboard/sales-summary', label: 'Sales Summary' },
-          { path: '/dashboard/tracking',   label: 'Sales Tracking' },
+          { path: '/dashboard/tracking',      label: 'Sales Tracking' },
         ],
       },
     ],
@@ -62,14 +62,14 @@ const NAV = [
       {
         path: '/sales', label: 'Sales & CRM', icon: TrendingUp,
         sub: [
-          { path: '/sales/customers',     label: 'Customers' },
-          { path: '/sales/orders',        label: 'Order Booking' },
-          { path: '/sales/confirmation',  label: 'Order Confirmation' },
-          { path: '/sales/work-order',    label: 'Work Orders' },
-          { path: '/sales/delivery',      label: 'Deliveries' },
-          { path: '/sales/invoice',       label: 'Sales Invoice' },
-          { path: '/sales/returns',       label: 'Sales Returns' },
-          { path: '/sales/gate-pass',     label: 'Gate Pass' },
+          { path: '/sales/customers',    label: 'Customers' },
+          { path: '/sales/orders',       label: 'Order Booking' },
+          { path: '/sales/confirmation', label: 'Order Confirmation' },
+          { path: '/sales/work-order',   label: 'Work Orders' },
+          { path: '/sales/delivery',     label: 'Deliveries' },
+          { path: '/sales/invoice',      label: 'Sales Invoice' },
+          { path: '/sales/returns',      label: 'Sales Returns' },
+          { path: '/sales/gate-pass',    label: 'Gate Pass' },
         ],
       },
     ],
@@ -80,9 +80,9 @@ const NAV = [
       {
         path: '/invoicing', label: 'Invoicing', icon: Receipt,
         sub: [
-          { path: '/invoicing/list',         label: 'Invoices' },
-          { path: '/invoicing/fbr',          label: 'FBR Queue' },
-          { path: '/invoicing/sale-return',  label: 'Sale Return Invoice' },
+          { path: '/invoicing/list',        label: 'Invoices' },
+          { path: '/invoicing/fbr',         label: 'FBR Queue' },
+          { path: '/invoicing/sale-return', label: 'Sale Return Invoice' },
         ],
       },
       {
@@ -102,18 +102,18 @@ const NAV = [
       {
         path: '/reports', label: 'Reports', icon: BarChart3,
         sub: [
-          { path: '/reports/ledger',           label: 'Ledger Report' },
-          { path: '/reports/trial',            label: 'Trial Balance' },
-          { path: '/reports/receivables',      label: 'Accounts Receivable' },
-          { path: '/reports/payables',         label: 'Accounts Payable' },
-          { path: '/reports/income',           label: 'Income Statement' },
-          { path: '/reports/customer-ledger',  label: 'Customer Sales Ledger' },
-          { path: '/reports/region',           label: 'Region Wise Sales' },
-          { path: '/reports/sold-items',       label: 'Sold Item Detail' },
-          { path: '/reports/invoice-summary',  label: 'Invoice Summary' },
-          { path: '/reports/gst',              label: 'Order Wise GST' },
-          { path: '/reports/challan',          label: 'Delivery Challan' },
-          { path: '/reports/bank-recon',       label: 'Bank Reconciliation' },
+          { path: '/reports/ledger',          label: 'Ledger Report' },
+          { path: '/reports/trial',           label: 'Trial Balance' },
+          { path: '/reports/receivables',     label: 'Accounts Receivable' },
+          { path: '/reports/payables',        label: 'Accounts Payable' },
+          { path: '/reports/income',          label: 'Income Statement' },
+          { path: '/reports/customer-ledger', label: 'Customer Sales Ledger' },
+          { path: '/reports/region',          label: 'Region Wise Sales' },
+          { path: '/reports/sold-items',      label: 'Sold Item Detail' },
+          { path: '/reports/invoice-summary', label: 'Invoice Summary' },
+          { path: '/reports/gst',             label: 'Order Wise GST' },
+          { path: '/reports/challan',         label: 'Delivery Challan' },
+          { path: '/reports/bank-recon',      label: 'Bank Reconciliation' },
         ],
       },
     ],
@@ -135,7 +135,7 @@ const NAV = [
   },
 ];
 
-function NavItem({ item, collapsed }) {
+function NavItem({ item, collapsed, onClose }) {
   const location = useLocation();
   const hasSub = item.sub?.length > 0;
   const isParentActive = location.pathname.startsWith(item.path) && item.path !== '/';
@@ -157,6 +157,7 @@ function NavItem({ item, collapsed }) {
           <NavLink
             to={item.path}
             end={item.path === '/'}
+            onClick={onClose}
             className={({ isActive }) =>
               `${styles.navItem} ${styles.navItemMini} ${isActive || active ? styles.navActive : ''}`
             }
@@ -186,6 +187,7 @@ function NavItem({ item, collapsed }) {
         <NavLink
           to={item.path}
           end={item.path === '/'}
+          onClick={onClose}
           className={({ isActive }) =>
             `${styles.navItem} ${isActive ? styles.navActive : ''}`
           }
@@ -201,6 +203,7 @@ function NavItem({ item, collapsed }) {
             <NavLink
               key={s.path}
               to={s.path}
+              onClick={onClose}
               className={({ isActive }) =>
                 `${styles.subItem} ${isActive ? styles.subActive : ''}`
               }
@@ -214,11 +217,15 @@ function NavItem({ item, collapsed }) {
   );
 }
 
-export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
+  const sidebarClass = [
+    styles.sidebar,
+    collapsed ? styles.collapsed : '',
+    mobileOpen ? styles.mobileOpen : '',
+  ].filter(Boolean).join(' ');
 
   return (
-    <aside className={`${styles.sidebar} ${collapsed ? styles.collapsed : ''}`}>
+    <aside className={sidebarClass}>
       {/* Logo */}
       <div className={styles.logoSection}>
         {!collapsed && (
@@ -234,7 +241,7 @@ export default function Sidebar() {
         )}
         <button
           className={styles.collapseBtn}
-          onClick={() => setCollapsed(c => !c)}
+          onClick={onToggle}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed
@@ -252,7 +259,12 @@ export default function Sidebar() {
               <p className={styles.sectionTitle}>{section.label}</p>
             )}
             {section.items.map(item => (
-              <NavItem key={item.path} item={item} collapsed={collapsed} />
+              <NavItem
+                key={item.path}
+                item={item}
+                collapsed={collapsed}
+                onClose={onMobileClose}
+              />
             ))}
           </div>
         ))}
