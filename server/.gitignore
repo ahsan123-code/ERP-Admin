@@ -1,0 +1,11 @@
+node_modules/
+.env
+sqldata/
+import-*.js
+migrate*.js
+create-*.js
+check-*.js
+export-*.ps1
+get-*.ps1
+list-*.ps1
+test-*.js

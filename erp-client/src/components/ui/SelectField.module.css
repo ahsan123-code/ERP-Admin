@@ -1,0 +1,22 @@
+.field { display: flex; flex-direction: column; gap: 6px; }
+.label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.4px; }
+.req { color: var(--red); margin-left: 3px; }
+.selectWrap { position: relative; }
+.select {
+  width: 100%;
+  appearance: none;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: 10px 36px 10px 14px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+.select:focus { border-color: var(--input-border-focus); box-shadow: 0 0 0 3px rgba(77,159,255,0.12); }
+.arrow { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); pointer-events: none; font-size: 12px; }
+.hasError .select { border-color: var(--input-border-error); }
+.error { font-size: 11px; color: var(--red); }

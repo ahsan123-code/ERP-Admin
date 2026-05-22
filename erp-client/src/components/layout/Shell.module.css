@@ -1,0 +1,21 @@
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main {
+  margin-left: var(--sidebar-width);
+  margin-top: var(--topbar-height);
+  flex: 1;
+  min-width: 0;
+  min-height: calc(100vh - var(--topbar-height));
+  padding: var(--sp-6) var(--sp-8);
+  animation: fadeUp 0.3s ease;
+  background: var(--bg-app);
+  transition: margin-left var(--transition-normal);
+  overflow-x: hidden;
+}
+
+@media (max-width: 1400px) {
+  .main { padding: var(--sp-5) var(--sp-6); }
+}

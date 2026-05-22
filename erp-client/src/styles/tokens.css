@@ -1,0 +1,255 @@
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS — Ahsan Brothers Steel ERP
+   Primary: Indigo · Font: Plus Jakarta Sans
+   ═══════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Surfaces ── */
+  --bg-app:       #F5F6FA;
+  --bg-surface:   #FFFFFF;
+  --bg-muted:     #F0F1F5;
+  --bg-hover:     #F5F6FA;
+  --bg-active:    #EEF0FD;
+  --bg-primary:   #F5F6FA;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary:  #F0F1F5;
+  --bg-elevated:  #FFFFFF;
+
+  /* ── Borders ── */
+  --border-subtle:  #EAECF0;
+  --border-default: #DFE1E8;
+  --border-strong:  #C8CBD6;
+
+  /* ── Text ── */
+  --text-primary:   #111827;
+  --text-secondary: #4B5563;
+  --text-muted:     #9CA3AF;
+  --text-tertiary:  #9CA3AF;
+  --text-disabled:  #D1D5DB;
+  --text-inverse:   #FFFFFF;
+
+  /* ── Primary (Indigo) ── */
+  --primary:        #6366F1;
+  --primary-hover:  #4F46E5;
+  --primary-active: #4338CA;
+  --primary-muted:  #EEF0FD;
+  --primary-border: #C7D2FE;
+  --primary-text:   #4338CA;
+
+  /* ── Blue (informational) ── */
+  --blue:       #3B82F6;
+  --blue-dim:   #2563EB;
+  --blue-muted: #EFF6FF;
+  --blue-glow:  rgba(59,130,246,0.15);
+
+  /* ── Success (Emerald) ── */
+  --green:        #10B981;
+  --green-dim:    #059669;
+  --green-muted:  #ECFDF5;
+  --green-border: #A7F3D0;
+  --green-glow:   rgba(16,185,129,0.15);
+
+  /* ── Warning (Amber) ── */
+  --orange:        #F59E0B;
+  --orange-dim:    #D97706;
+  --orange-muted:  #FFFBEB;
+  --orange-border: #FDE68A;
+  --orange-glow:   rgba(245,158,11,0.15);
+
+  /* ── Danger (Rose) ── */
+  --red:        #F43F5E;
+  --red-dim:    #E11D48;
+  --red-muted:  #FFF1F2;
+  --red-border: #FECDD3;
+  --red-glow:   rgba(244,63,94,0.15);
+
+  /* ── Purple ── */
+  --purple:        #8B5CF6;
+  --purple-dim:    #7C3AED;
+  --purple-muted:  #F5F3FF;
+  --purple-border: #DDD6FE;
+  --purple-glow:   rgba(139,92,246,0.15);
+
+  /* ── Cyan ── */
+  --cyan:        #06B6D4;
+  --cyan-dim:    #0891B2;
+  --cyan-muted:  #ECFEFF;
+  --cyan-border: #A5F3FC;
+  --cyan-glow:   rgba(6,182,212,0.15);
+
+  /* ── Typography ── */
+  --font-ui:   'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
+
+  /* ── Spacing (4px base) ── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* ── Border radius ── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   18px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ── */
+  --shadow-xs: 0 1px 2px rgba(17,24,39,0.04);
+  --shadow-sm: 0 1px 3px rgba(17,24,39,0.06), 0 1px 2px rgba(17,24,39,0.04);
+  --shadow-md: 0 4px 12px rgba(17,24,39,0.08), 0 2px 4px rgba(17,24,39,0.04);
+  --shadow-lg: 0 12px 28px rgba(17,24,39,0.10), 0 4px 8px rgba(17,24,39,0.06);
+  --shadow-xl: 0 24px 48px rgba(17,24,39,0.14), 0 8px 16px rgba(17,24,39,0.08);
+
+  --card-shadow:       0 1px 3px rgba(17,24,39,0.06), 0 1px 2px rgba(17,24,39,0.03);
+  --card-shadow-hover: 0 8px 24px rgba(17,24,39,0.10), 0 2px 6px rgba(17,24,39,0.04);
+
+  /* ── Layout ── */
+  --sidebar-width:      248px;
+  --sidebar-width-mini: 64px;
+  --topbar-height:      58px;
+
+  /* ── Transitions ── */
+  --transition-fast:   0.12s ease;
+  --transition-normal: 0.22s ease;
+  --transition-slow:   0.35s ease;
+
+  /* ── TopBar ── */
+  --topbar-bg:     #FFFFFF;
+  --topbar-border: #EAECF0;
+
+  /* ── Sidebar (dark) ── */
+  --sidebar-bg:            #0F1629;
+  --sidebar-border:        #1C2340;
+  --sidebar-text:          rgba(255,255,255,0.52);
+  --sidebar-text-hover:    rgba(255,255,255,0.88);
+  --sidebar-text-active:   #A5B4FC;
+  --sidebar-text-muted:    rgba(255,255,255,0.25);
+  --sidebar-section-text:  rgba(255,255,255,0.22);
+  --nav-hover-bg:          rgba(255,255,255,0.06);
+  --nav-active-bg:         rgba(99,102,241,0.18);
+  --nav-active-color:      #A5B4FC;
+  --nav-sub-hover-bg:      rgba(255,255,255,0.05);
+  --sidebar-profile-bg:    rgba(0,0,0,0.22);
+
+  /* ── Inputs ── */
+  --input-bg:           #FFFFFF;
+  --input-border:       #DFE1E8;
+  --input-border-focus: #6366F1;
+  --input-border-error: #F43F5E;
+  --input-text:         #111827;
+  --input-placeholder:  #9CA3AF;
+
+  /* ── Focus ring ── */
+  --focus-ring: 0 0 0 3px rgba(99,102,241,0.20);
+
+  /* ── Icon glows ── */
+  --icon-glow-blue:   0 2px 10px rgba(59,130,246,0.22);
+  --icon-glow-green:  0 2px 10px rgba(16,185,129,0.22);
+  --icon-glow-orange: 0 2px 10px rgba(245,158,11,0.22);
+  --icon-glow-purple: 0 2px 10px rgba(139,92,246,0.22);
+  --icon-glow-red:    0 2px 10px rgba(244,63,94,0.22);
+  --icon-glow-cyan:   0 2px 10px rgba(6,182,212,0.22);
+}
+
+/* ── Dark theme ── */
+[data-theme="dark"] {
+  --bg-app:       #0B0F1A;
+  --bg-surface:   #131929;
+  --bg-muted:     #1C2338;
+  --bg-hover:     #1C2338;
+  --bg-active:    #1E2B4A;
+  --bg-primary:   #0B0F1A;
+  --bg-secondary: #131929;
+  --bg-tertiary:  #1C2338;
+  --bg-elevated:  #1C2338;
+
+  --border-subtle:  #1C2338;
+  --border-default: #252E47;
+  --border-strong:  #354060;
+
+  --text-primary:   #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-muted:     #64748B;
+  --text-tertiary:  #64748B;
+  --text-disabled:  #2D3748;
+
+  --primary:        #818CF8;
+  --primary-hover:  #A5B4FC;
+  --primary-muted:  #1E2456;
+  --primary-border: #3730A3;
+  --primary-text:   #C7D2FE;
+
+  --blue:       #60A5FA;
+  --blue-dim:   #3B82F6;
+  --blue-muted: #1E3A5F;
+
+  --green:        #34D399;
+  --green-dim:    #10B981;
+  --green-muted:  #052E16;
+  --green-border: #065F46;
+
+  --orange:        #FCD34D;
+  --orange-dim:    #F59E0B;
+  --orange-muted:  #2D1B00;
+  --orange-border: #78350F;
+
+  --red:        #FB7185;
+  --red-dim:    #F43F5E;
+  --red-muted:  #2D0010;
+  --red-border: #881337;
+
+  --purple:        #A78BFA;
+  --purple-dim:    #8B5CF6;
+  --purple-muted:  #1E1040;
+  --purple-border: #4C1D95;
+
+  --cyan:        #22D3EE;
+  --cyan-dim:    #06B6D4;
+  --cyan-muted:  #0A2030;
+  --cyan-border: #155E75;
+
+  --card-shadow:       0 1px 4px rgba(0,0,0,0.35);
+  --card-shadow-hover: 0 8px 24px rgba(0,0,0,0.45);
+
+  --topbar-bg:     rgba(19,25,41,0.92);
+  --topbar-border: #252E47;
+
+  --sidebar-bg:           #080D18;
+  --sidebar-border:       #131929;
+  --sidebar-text:         rgba(255,255,255,0.48);
+  --sidebar-text-hover:   rgba(255,255,255,0.88);
+  --sidebar-text-active:  #A5B4FC;
+  --sidebar-text-muted:   rgba(255,255,255,0.22);
+  --nav-hover-bg:         rgba(255,255,255,0.05);
+  --nav-active-bg:        rgba(99,102,241,0.20);
+  --nav-active-color:     #A5B4FC;
+  --nav-sub-hover-bg:     rgba(255,255,255,0.04);
+  --sidebar-profile-bg:   rgba(0,0,0,0.30);
+
+  --input-bg:           #1C2338;
+  --input-border:       #354060;
+  --input-border-focus: #818CF8;
+  --input-text:         #F1F5F9;
+  --input-placeholder:  #64748B;
+
+  --focus-ring: 0 0 0 3px rgba(129,140,248,0.25);
+
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.55), 0 2px 4px rgba(0,0,0,0.35);
+  --shadow-lg: 0 12px 28px rgba(0,0,0,0.60), 0 4px 8px rgba(0,0,0,0.40);
+  --shadow-xl: 0 24px 48px rgba(0,0,0,0.70), 0 8px 16px rgba(0,0,0,0.50);
+
+  --icon-glow-blue:   0 0 20px rgba(96,165,250,0.30);
+  --icon-glow-green:  0 0 20px rgba(52,211,153,0.28);
+  --icon-glow-orange: 0 0 20px rgba(252,211,77,0.28);
+  --icon-glow-purple: 0 0 20px rgba(167,139,250,0.28);
+  --icon-glow-red:    0 0 20px rgba(251,113,133,0.28);
+  --icon-glow-cyan:   0 0 20px rgba(34,211,238,0.28);
+}

@@ -1,0 +1,100 @@
+.page { display: flex; flex-direction: column; gap: var(--sp-5); }
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-4);
+}
+
+.summaryCard {
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4) var(--sp-5);
+  display: flex; align-items: center; gap: var(--sp-4);
+  transition: all var(--transition-normal);
+  box-shadow: var(--card-shadow);
+}
+.summaryCard:hover {
+  border-color: var(--border-default);
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
+}
+
+.summaryIcon { width: 44px; height: 44px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.blue   { background: var(--blue-muted);   color: var(--blue);   box-shadow: var(--icon-glow-blue);   }
+.green  { background: var(--green-muted);  color: var(--green);  box-shadow: var(--icon-glow-green);  }
+.orange { background: var(--orange-muted); color: var(--orange); box-shadow: var(--icon-glow-orange); }
+.purple { background: var(--purple-muted); color: var(--purple); box-shadow: var(--icon-glow-purple); }
+.red    { background: var(--red-muted);    color: var(--red);    box-shadow: var(--icon-glow-red);    }
+
+.summaryLabel { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+.summaryValue { font-size: 26px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); line-height: 1; }
+
+.pageTabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+}
+.pageTab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
+.pageTabActive { background: var(--primary-muted); color: var(--primary); }
+.pageTabBadge {
+  background: var(--orange);
+  color: #FFFFFF;
+  border-radius: var(--radius-full);
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tableInner { padding: var(--sp-5); }
+.code     { font-family: var(--font-mono); font-size: 12px; color: var(--blue); }
+.mono     { font-family: var(--font-mono); }
+.date     { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
+.reason   { font-size: 12px; color: var(--text-secondary); }
+.positive { color: var(--green); }
+.negative { color: var(--red);   }
+.debitVal { color: var(--orange); }
+.netPay   { color: var(--text-primary); font-weight: 600; }
+
+.progress { display: flex; align-items: center; gap: 8px; }
+.progressBar { flex: 1; height: 6px; background: var(--bg-muted); border-radius: var(--radius-full); overflow: hidden; }
+.progressFill { height: 100%; background: var(--primary); border-radius: var(--radius-full); transition: width 0.3s ease; }
+.progressText { font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); white-space: nowrap; }
+
+.printBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.printBtn:hover {
+  background: var(--primary-muted);
+  border-color: var(--primary-border);
+  color: var(--primary);
+}

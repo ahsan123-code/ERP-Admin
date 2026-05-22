@@ -1,0 +1,101 @@
+.page { display: flex; flex-direction: column; gap: var(--sp-5); }
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-4);
+}
+
+.summaryCard {
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4) var(--sp-5);
+  display: flex; align-items: center; gap: var(--sp-4);
+  transition: all var(--transition-normal);
+  box-shadow: var(--card-shadow);
+}
+.summaryCard:hover {
+  border-color: var(--border-default);
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
+}
+
+.summaryIcon { width: 44px; height: 44px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.blue   { background: var(--blue-muted);   color: var(--blue);   box-shadow: var(--icon-glow-blue);   }
+.green  { background: var(--green-muted);  color: var(--green);  box-shadow: var(--icon-glow-green);  }
+.orange { background: var(--orange-muted); color: var(--orange); box-shadow: var(--icon-glow-orange); }
+.red    { background: var(--red-muted);    color: var(--red);    box-shadow: var(--icon-glow-red);    }
+.purple { background: var(--purple-muted); color: var(--purple); box-shadow: var(--icon-glow-purple); }
+
+.summaryLabel { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+.summaryValue { font-size: 26px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); line-height: 1; }
+
+.tableInner { padding: var(--sp-5); }
+.retryHeader {}
+.code      { font-family: var(--font-mono); font-size: 12px; color: var(--blue); }
+.mono      { font-family: var(--font-mono); }
+.date      { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
+.totalVal  { color: var(--text-primary); font-weight: 600; }
+.type      { font-size: 12px; color: var(--text-secondary); text-transform: capitalize; }
+.retryCount{ color: var(--orange); font-weight: 700; }
+.failReason{ font-size: 12px; color: var(--red); }
+
+/* Service status bar */
+.serviceBar {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+.serviceIcon { display: flex; align-items: center; flex-shrink: 0; }
+.serviceText { flex: 1; }
+.service_online   { background: var(--green-muted);  border-color: var(--green);  color: var(--green);  }
+.service_offline  { background: var(--red-muted);    border-color: var(--red);    color: var(--red);    }
+.service_checking { background: var(--bg-secondary); border-color: var(--border-subtle); color: var(--text-secondary); }
+.service_null     { background: var(--bg-secondary); border-color: var(--border-subtle); color: var(--text-secondary); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; display: inline-flex; }
+
+/* Page-level tabs */
+.pageTabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+}
+.pageTab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
+.pageTabActive { background: var(--primary-muted); color: var(--primary); }
+.pageTabBadge {
+  background: var(--red);
+  color: #FFFFFF;
+  border-radius: var(--radius-full);
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Submit action cell */
+.actionCell { display: flex; align-items: center; gap: var(--sp-2); }
+.submitError { font-size: 11px; color: var(--red); font-family: var(--font-mono); }
+.submitOk    { font-size: 11px; color: var(--green); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }

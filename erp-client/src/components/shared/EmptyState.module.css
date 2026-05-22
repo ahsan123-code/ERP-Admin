@@ -1,0 +1,30 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-10) var(--sp-6);
+  text-align: center;
+}
+.small { padding: var(--sp-5); }
+
+.icon {
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.small .message { font-size: 13px; }
+
+.description {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  max-width: 320px;
+  line-height: 1.6;
+  margin-top: 2px;
+}

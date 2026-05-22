@@ -1,0 +1,95 @@
+.page { display: flex; flex-direction: column; gap: var(--sp-5); }
+
+.pageTabs {
+  display: flex; align-items: center; gap: var(--sp-1);
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg); padding: 6px;
+  flex-wrap: wrap;
+}
+.pageTab {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 16px; border-radius: var(--radius-md);
+  border: none; background: transparent;
+  color: var(--text-secondary); font-size: 13.5px; font-weight: 500;
+  cursor: pointer; transition: all var(--transition-fast); white-space: nowrap;
+}
+.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
+.pageTabActive { background: var(--primary-muted); color: var(--primary); }
+
+.cardBody { padding: var(--sp-5); }
+
+/* Ledger */
+.ledgerWrap { display: flex; flex-direction: column; gap: var(--sp-4); }
+.filterRow {
+  display: flex; align-items: flex-end; gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.filterGroup { display: flex; flex-direction: column; gap: 5px; }
+.filterLabel { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+.select, .dateInput {
+  padding: 8px 12px; border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); background: var(--bg-secondary);
+  color: var(--text-primary); font-size: 13px; outline: none;
+  transition: border-color var(--transition-fast);
+  min-width: 200px;
+}
+.select:focus, .dateInput:focus { border-color: var(--primary); }
+.dateInput { min-width: 140px; }
+
+/* Shared table */
+.reportTable { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th {
+  background: var(--bg-muted); color: var(--text-secondary);
+  padding: 10px 16px; font-size: 11px; font-weight: 600; text-align: left;
+  text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid var(--border-default);
+}
+.tbl td { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); }
+.tbl tr:hover td { background: var(--bg-hover); }
+.totalRow td { background: var(--bg-muted); font-weight: 600; border-top: 1px solid var(--border-default); }
+.right { text-align: right !important; }
+.code  { font-family: var(--font-mono); font-size: 12px; color: var(--blue); }
+.mono  { font-family: var(--font-mono); }
+.type  { font-size: 12px; color: var(--text-secondary); }
+.nil   { color: var(--text-tertiary); }
+.overdue { color: var(--red); }
+.total { color: var(--text-primary); font-weight: 600; }
+.pos   { color: var(--green); }
+.neg   { color: var(--red); }
+
+/* Income statement */
+.plWrap {
+  max-width: 560px;
+  display: flex; flex-direction: column; gap: 0;
+}
+.plTitle {
+  font-size: 14px; font-weight: 600; color: var(--text-primary);
+  margin-bottom: 16px;
+}
+.plSection {
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 10px; margin-bottom: 10px;
+}
+.plRow {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0; font-size: 14px; color: var(--text-secondary);
+}
+.plHead { font-weight: 600; color: var(--text-primary); font-size: 15px; }
+.plSub  { font-weight: 600; color: var(--text-primary); border-top: 1px solid var(--border-subtle); padding-top: 8px; margin-top: 4px; }
+.plNet  {
+  font-size: 16px; font-weight: 700; color: var(--text-primary);
+  border-top: 2px solid var(--border-default); padding-top: 12px; margin-top: 6px;
+}
+
+/* Bank Reconciliation */
+.reconSummary {
+  display: flex; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-4);
+}
+.reconBank {
+  background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); padding: var(--sp-3) var(--sp-4);
+  display: flex; flex-direction: column; gap: 3px; min-width: 220px;
+}
+.reconBankName { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.reconBankBal  { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--green); }
+.reconBankBranch { font-size: 11px; color: var(--text-tertiary); }

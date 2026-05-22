@@ -1,0 +1,126 @@
+/* ── Overlay & Modal Shell ── */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+.modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  width: min(900px, 96vw);
+  max-height: 92vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+.toolbarTitle { font-size: 13px; font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); }
+.toolbarActions { display: flex; gap: var(--sp-2); }
+
+/* ── Print Area (scrollable) ── */
+.printArea {
+  overflow-y: auto;
+  flex: 1;
+  padding: var(--sp-6);
+  background: var(--bg-primary);
+}
+
+/* ── Invoice Wrapper (white card = what gets printed) ── */
+.invoiceWrap {
+  background: #ffffff;
+  color: #111;
+  border-radius: 8px;
+  padding: 36px 40px;
+  max-width: 800px;
+  margin: 0 auto;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.3);
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+}
+
+/* ── Header ── */
+.header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  border-bottom: 2px solid #111;
+  padding-bottom: 16px; margin-bottom: 18px;
+}
+.coName   { font-size: 22px; font-weight: 700; color: #111; letter-spacing: -0.5px; }
+.coMeta   { font-size: 11px; color: #555; margin-top: 5px; line-height: 1.7; }
+.fbrBadge { text-align: right; }
+.fbrLogo  { font-size: 26px; font-weight: 900; color: #1a6b1a; letter-spacing: 2px; }
+.fbrCertified { font-size: 9px; font-weight: 700; color: #1a6b1a; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+/* ── Invoice Title Row ── */
+.invTitle   { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+.invHeading { font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #111; }
+.invMeta    { font-size: 11px; text-align: right; line-height: 1.8; color: #333; }
+.metaLabel  { color: #777; }
+
+/* ── Fiscal Number Box ── */
+.fiscalBox {
+  display: flex; justify-content: space-between; align-items: center;
+  border-radius: 5px; padding: 10px 16px; margin-bottom: 18px;
+  border: 1.5px solid;
+}
+.fiscalSynced  { background: #f0f9f0; border-color: #1a6b1a; }
+.fiscalPending { background: #fff8f0; border-color: #cc6600; }
+.fiscalLabel   { display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #1a6b1a; margin-bottom: 4px; }
+.fiscalNumber  { font-size: 15px; font-weight: 700; font-family: monospace; color: #111; letter-spacing: 1px; }
+.fiscalVerify  { font-size: 10px; color: #1a6b1a; font-weight: 600; }
+.fiscalNote    { font-size: 10px; color: #cc6600; font-style: italic; }
+
+/* ── Info Grid ── */
+.sectionGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 18px; }
+.sectionTitle {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: #777; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 8px;
+}
+.fieldRow    { display: flex; gap: 8px; margin-bottom: 4px; font-size: 11px; }
+.fieldLabel  { color: #777; min-width: 72px; flex-shrink: 0; }
+.fieldVal    { font-weight: 600; color: #111; }
+
+/* ── Items Table ── */
+.table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 11px; }
+.table thead th {
+  background: #1a1a1a; color: #fff;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px;
+  padding: 7px 8px; text-align: left; font-weight: 600;
+}
+.table thead th.right { text-align: right; }
+.table tbody td { padding: 7px 8px; border-bottom: 1px solid #eee; color: #222; }
+.table tbody tr:nth-child(even) { background: #fafafa; }
+.right { text-align: right; }
+.mono  { font-family: monospace; }
+
+/* ── No items fallback ── */
+.noItems    { background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 14px 16px; margin-bottom: 16px; color: #555; font-size: 12px; }
+.noItemsSub { margin-top: 6px; font-size: 11px; font-family: monospace; color: #333; }
+
+/* ── Totals ── */
+.totals    { display: flex; justify-content: flex-end; margin-bottom: 24px; }
+.totalsBox { min-width: 260px; }
+.totalRow  { display: flex; justify-content: space-between; padding: 5px 0; font-size: 12px; border-bottom: 1px solid #eee; }
+.grandTotal { border-top: 2px solid #111 !important; border-bottom: none !important; padding-top: 8px !important; font-size: 14px; font-weight: 700; }
+.totalLabel { color: #555; }
+.totalVal   { font-family: monospace; font-weight: 600; color: #111; }
+
+/* ── Footer ── */
+.footer      { display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #ddd; padding-top: 16px; }
+.footerLeft  { font-size: 10px; line-height: 1.8; color: #666; }
+.footerNote  { }
+.footerVerify  { color: #1a6b1a; font-weight: 600; margin-top: 4px; }
+.footerPending { color: #cc6600; font-style: italic; margin-top: 4px; }
+.footerRight { text-align: center; }
+.footerRight img { display: block; margin: 0 auto 4px; border: 1px solid #eee; border-radius: 4px; }
+.qrLabel    { font-size: 9px; color: #888; text-align: center; }
