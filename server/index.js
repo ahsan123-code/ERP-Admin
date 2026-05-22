@@ -6,7 +6,13 @@ const fbrRoutes = require('./routes/fbr');
 const app  = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors({ origin: 'http://localhost:5173' }));
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'https://erp-admin-pearl.vercel.app',
+  'https://www.alliedsteel.store',
+  'https://alliedsteel.store',
+];
+app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json());
 
 app.use('/api/fbr', fbrRoutes);
