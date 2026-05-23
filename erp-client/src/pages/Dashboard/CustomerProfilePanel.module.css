@@ -34,6 +34,11 @@
   to   { transform: translateX(0);    opacity: 1; }
 }
 
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
 /* ── Panel header ── */
 .panelHeader {
   display: flex;
@@ -320,7 +325,8 @@
 @media (max-width: 640px) {
   .panel {
     width: 100%;
-    /* Slide up from bottom on mobile instead of from right */
+    left: 0;
+    right: 0;
     top: auto;
     bottom: 0;
     height: 92vh;
@@ -328,11 +334,6 @@
     border-top: 1px solid var(--border-default);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  @keyframes slideUp {
-    from { transform: translateY(100%); opacity: 0; }
-    to   { transform: translateY(0);    opacity: 1; }
   }
 
   .panelHeader { padding: 14px 16px; }

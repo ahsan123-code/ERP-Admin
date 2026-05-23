@@ -16,6 +16,8 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .pageTab {
