@@ -22,8 +22,9 @@ const TABS = [
 
 const STOCK_COLS = [
   { key: 'item_code',     label: 'Item Code',  width: 130, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'item_name',     label: 'Item Name',  width: 250 },
-  { key: 'category',      label: 'Category',   width: 130 },
+  { key: 'item_name',     label: 'Item Name',  width: 220 },
+  { key: 'gauge',         label: 'Gauge',      width: 90,  render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
+  { key: 'category',      label: 'Category',   width: 120 },
   { key: 'current_stock', label: 'Stock',      width: 120, align: 'right',
     render: (v, row) => <span className={styles.mono}>{formatNumber(v)} {row.unit === 'Kilogram' ? 'kg' : (row.unit || '')}</span> },
   { key: 'warehouse',     label: 'Warehouse',  width: 150 },
@@ -33,8 +34,9 @@ const STOCK_COLS = [
 ];
 
 const PRODUCT_COLS = [
-  { key: 'code', label: 'Item Code', width: 200, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'name', label: 'Item Name', width: 600 },
+  { key: 'code',  label: 'Item Code', width: 200, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'gauge', label: 'Gauge',     width: 100, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
+  { key: 'name',  label: 'Item Name', width: 500 },
 ];
 
 export default function Inventory() {

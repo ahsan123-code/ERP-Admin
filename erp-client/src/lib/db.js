@@ -105,7 +105,7 @@ export const financeDb = {
 export const inventoryDb = {
   getStockItems: (companyId = 1) =>
     supabase.from('stock_items')
-      .select('id, item_code, item_name, category, current_stock, reorder_level, warehouse, batch_no, status, unit, company_id')
+      .select('id, item_code, item_name, category, gauge, current_stock, reorder_level, warehouse, batch_no, status, unit, company_id')
       .eq('company_id', companyId)
       .order('item_code'),
 

@@ -16,7 +16,7 @@ export default function NewInwardModal({ open, onClose, onSave }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    itemId: '', itemCode: '', itemName: '',
+    itemId: '', itemCode: '', itemName: '', gauge: '',
     batchNo: nextBatch(), qty: '', unit: 'Kilogram',
     warehouse: '', binLocation: '', poRef: '', receivedDate: today, receivedBy: '',
   });
@@ -28,7 +28,7 @@ export default function NewInwardModal({ open, onClose, onSave }) {
 
   const handleItemChange = (e) => {
     const prod = productList.find(p => String(p.id) === e.target.value);
-    setForm(f => ({ ...f, itemId: e.target.value, itemCode: prod?.code ?? '', itemName: prod?.name ?? '' }));
+    setForm(f => ({ ...f, itemId: e.target.value, itemCode: prod?.code ?? '', itemName: prod?.name ?? '', gauge: prod?.gauge ?? '' }));
   };
 
   const handleSubmit = async (e) => {
@@ -57,7 +57,7 @@ export default function NewInwardModal({ open, onClose, onSave }) {
       toast.success('Stock inward recorded successfully.', 'Inward Created');
       onSave(data);
       setForm({
-        itemId: '', itemCode: '', itemName: '',
+        itemId: '', itemCode: '', itemName: '', gauge: '',
         batchNo: nextBatch(), qty: '', unit: 'Kilogram',
         warehouse: '', binLocation: '', poRef: '', receivedDate: today, receivedBy: '',
       });
@@ -94,6 +94,14 @@ export default function NewInwardModal({ open, onClose, onSave }) {
             ))}
           </SelectField>
         </div>
+        {form.gauge && (
+          <div className="ff" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Gauge (auto-detected)</label>
+            <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '10px 14px', fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--primary)' }}>
+              {form.gauge}
+            </div>
+          </div>
+        )}
         <Input label="Batch No." value={form.batchNo} onChange={set('batchNo')} />
         <Input label="Quantity *" type="number" min="0.01" step="0.01" value={form.qty} onChange={set('qty')} required />
         <SelectField label="Unit" value={form.unit} onChange={set('unit')}>
