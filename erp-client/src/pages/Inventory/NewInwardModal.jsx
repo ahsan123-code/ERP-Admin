@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { useDb } from '../../hooks/useDb';
 import { mastersDb, inventoryDb } from '../../lib/db';
+import { useCompany } from '../../context/CompanyContext';
 
 const today = new Date().toISOString().split('T')[0];
 const nextBatch = () => 'BT-' + (1060 + Math.floor(Math.random() * 40));
@@ -49,7 +50,10 @@ const ITEM_CONFIGS = {
   ],
 };
 
-const ITEM_TYPES = Object.keys(ITEM_CONFIGS);
+const COMPANY_ITEMS = {
+  1: ['GI Sheet', 'C Channel'],
+  2: ['Solar Channel', 'Workshop Items', 'Geyser Tanki', 'Box Control', 'Top n Bottom'],
+};
 
 const EMPTY_FIELDS = {
   gauge: '', size: '', weight: '', rate: '', length: '', description: '',
@@ -58,12 +62,13 @@ const EMPTY_FIELDS = {
 export default function NewInwardModal({ open, onClose, onSave }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
+  const { companyId } = useCompany();
   const [itemType, setItemType] = useState('');
-  const [qty, setQty] = useState('');
-  const [warehouse, setWarehouse] = useState('');
-  const [batchNo, setBatchNo] = useState(nextBatch());
+  const [qty,        setQty]        = useState('');
+  const [warehouse,  setWarehouse]  = useState('');
+  const [batchNo,    setBatchNo]    = useState(nextBatch());
   const [receivedDate, setReceivedDate] = useState(today);
-  const [fields, setFields] = useState(EMPTY_FIELDS);
+  const [fields,     setFields]     = useState(EMPTY_FIELDS);
 
   const { data: warehouseList } = useDb(() => mastersDb.getWarehouses());
 
@@ -87,6 +92,7 @@ export default function NewInwardModal({ open, onClose, onSave }) {
       const record = {
         item_type:         itemType,
         item_name:         itemType,
+        company_id:        companyId,
         quantity_received: parseFloat(qty),
         warehouse,
         batch_no:          batchNo,
@@ -136,11 +142,13 @@ export default function NewInwardModal({ open, onClose, onSave }) {
     >
       <form className="fg" onSubmit={handleSubmit}>
 
-        {/* Item Type — always shown first */}
+        {/* Item Type — filtered by active company from top bar */}
         <div className="ff">
           <SelectField label="Item Type *" value={itemType} onChange={handleItemTypeChange} required>
             <option value="">— Select item type —</option>
-            {ITEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            {(COMPANY_ITEMS[companyId] ?? []).map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
           </SelectField>
         </div>
 

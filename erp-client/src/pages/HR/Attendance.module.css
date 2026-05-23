@@ -1,0 +1,201 @@
+/* ── SHARED ──────────────────────────────────────────────────────────── */
+.loading {
+  padding: var(--sp-10);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+.empName { font-size: 13.5px; color: var(--text-primary); font-weight: 500; }
+.empId   { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+
+/* ── DAILY ATTENDANCE ─────────────────────────────────────────────────── */
+.dailyWrap { display: flex; flex-direction: column; }
+
+.dailyToolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border-default);
+  flex-wrap: wrap;
+}
+
+.dateWrap  { display: flex; align-items: center; gap: var(--sp-2); }
+.dateLabel { font-size: 12px; color: var(--text-tertiary); font-weight: 500; white-space: nowrap; }
+.dateInput {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+.dateInput:focus { border-color: var(--primary); box-shadow: var(--focus-ring); }
+
+.attSummary { display: flex; gap: var(--sp-2); }
+.attBadge {
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+.badgeGreen  { background: var(--green-muted);  color: var(--green);  }
+.badgeRed    { background: var(--red-muted);    color: var(--red);    }
+.badgeOrange { background: var(--orange-muted); color: var(--orange); }
+
+.dailyHead {
+  display: grid;
+  grid-template-columns: 1fr 180px 220px;
+  padding: 0 var(--sp-5);
+  height: 36px;
+  align-items: center;
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.dailyBody { overflow-y: auto; max-height: 60vh; }
+
+.dailyRow {
+  display: grid;
+  grid-template-columns: 1fr 180px 220px;
+  padding: 0 var(--sp-5);
+  min-height: 54px;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background var(--transition-fast);
+}
+.dailyRow:hover { background: var(--bg-hover); }
+.dailyRow:last-child { border-bottom: none; }
+
+.dailyColEmp   { display: flex; flex-direction: column; gap: 2px; }
+.dailyColDept  { font-size: 13px; color: var(--text-secondary); }
+.dailyColStatus { display: flex; gap: 6px; }
+
+.statusBtn {
+  width: 38px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-ui);
+  letter-spacing: 0;
+}
+.statusBtn:hover { border-color: var(--border-strong); color: var(--text-primary); background: var(--bg-muted); }
+
+.status_green  { background: var(--green-muted)  !important; border-color: var(--green)  !important; color: var(--green)  !important; }
+.status_red    { background: var(--red-muted)    !important; border-color: var(--red)    !important; color: var(--red)    !important; }
+.status_orange { background: var(--orange-muted) !important; border-color: var(--orange) !important; color: var(--orange) !important; }
+.status_blue   { background: var(--blue-muted)   !important; border-color: var(--blue)   !important; color: var(--blue)   !important; }
+
+/* ── MONTHLY VIEW ──────────────────────────────────────────────────────── */
+.monthlyWrap { display: flex; flex-direction: column; }
+
+.monthlyToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.monthPicker { display: flex; gap: var(--sp-2); }
+
+.monthSelect,
+.yearSelect {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+.monthSelect:focus,
+.yearSelect:focus { border-color: var(--primary); box-shadow: var(--focus-ring); }
+
+.monthlyScroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 65vh;
+}
+
+.monthlyGrid {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: 12px;
+  table-layout: auto;
+}
+
+.monthlyGrid thead th {
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border-default);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 8px 4px;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.empThCol  { text-align: left; min-width: 160px; padding-left: 20px !important; }
+.deptThCol { text-align: left; min-width: 90px; padding: 8px 8px !important; }
+.dayTh     { text-align: center; width: 30px; min-width: 30px; }
+.totalTh   { text-align: center; width: 36px; min-width: 36px; }
+
+.monthlyRow { border-bottom: 1px solid var(--border-subtle); }
+.monthlyRow:hover td { background: var(--bg-hover); }
+.monthlyRow:last-child { border-bottom: none; }
+
+.empTdCol { padding: 8px 8px 8px 20px; min-width: 160px; }
+.deptTdCol { padding: 8px; min-width: 90px; font-size: 12px; color: var(--text-secondary); }
+.dayTd    { padding: 5px 2px; text-align: center; }
+
+.dayCell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+.dayCellEmpty { color: var(--border-default); font-size: 12px; }
+
+.cell_green  { background: var(--green-muted);  color: var(--green);  }
+.cell_red    { background: var(--red-muted);    color: var(--red);    }
+.cell_orange { background: var(--orange-muted); color: var(--orange); }
+.cell_blue   { background: var(--blue-muted);   color: var(--blue);   }
+.cell_purple { background: var(--purple-muted); color: var(--purple); }
+
+.totalTd { padding: 8px 4px; text-align: center; font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.totalPresent { color: var(--green); }
+.totalAbsent  { color: var(--red);   }

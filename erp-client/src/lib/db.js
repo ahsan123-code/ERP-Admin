@@ -6,13 +6,16 @@ import { supabase } from './supabase';
 
 export const hrDb = {
   getEmployees: () =>
-    supabase.from('employees').select('*').order('employee_id'),
+    supabase.from('employees').select('*').order('id', { ascending: false }),
 
   addEmployee: (emp) =>
     supabase.from('employees').insert([emp]).select().single(),
 
   updateEmployee: (employeeId, updates) =>
     supabase.from('employees').update(updates).eq('employee_id', employeeId).select().single(),
+
+  deleteEmployee: (employeeId) =>
+    supabase.from('employees').delete().eq('employee_id', employeeId),
 
   getAttendance: (date) => {
     let q = supabase.from('attendance').select('*').order('date', { ascending: false });
@@ -38,6 +41,22 @@ export const hrDb = {
 
   markAttendance: (record) =>
     supabase.from('attendance').insert([record]).select().single(),
+
+  getAttendanceForDate: (date) =>
+    supabase.from('attendance').select('*').eq('date', date),
+
+  getMonthlyAttendance: (year, month) => {
+    const pad = n => String(n).padStart(2, '0');
+    const lastDay = new Date(year, month, 0).getDate();
+    return supabase.from('attendance')
+      .select('*')
+      .gte('date', `${year}-${pad(month)}-01`)
+      .lte('date', `${year}-${pad(month)}-${pad(lastDay)}`)
+      .order('date');
+  },
+
+  bulkUpsertAttendance: (records) =>
+    supabase.from('attendance').upsert(records, { onConflict: 'employee_id,date' }),
 
   applyLeave: (record) =>
     supabase.from('leave_requests').insert([record]).select().single(),

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, Printer, Pencil, FileSpreadsheet } from 'lucide-react';
+import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, Printer, Pencil, FileSpreadsheet, Trash2 } from 'lucide-react';
 import AddEmployeeModal from './AddEmployeeModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import EditEmployeeModal from './EditEmployeeModal';
-import MarkAttendanceModal from './MarkAttendanceModal';
+import DailyAttendance from './DailyAttendance';
+import MonthlyAttendance from './MonthlyAttendance';
 import NewLeaveModal from './NewLeaveModal';
 import AddLoanModal from './AddLoanModal';
 import EditLoanModal from './EditLoanModal';
@@ -21,27 +23,29 @@ import { formatDate, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import styles from './HR.module.css';
 
-const EMP_COLS = [
-  { key: 'employee_id',  label: 'Emp ID',     width: 110, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'name',         label: 'Name',        width: 180 },
-  { key: 'designation',  label: 'Designation', width: 180 },
-  { key: 'department',   label: 'Department',  width: 160 },
-  { key: 'section',      label: 'Section',     width: 130 },
-  { key: 'joining_date', label: 'Joined',      width: 120, render: v => <span className={styles.date}>{v ? formatDate(v) : '—'}</span> },
-  { key: 'gross_salary', label: 'Gross Salary',width: 140, align: 'right',
+const buildEmpCols = (onDelete) => [
+  { key: 'employee_id',  label: 'Emp ID',      width: 110, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'name',         label: 'Name',         width: 180 },
+  { key: 'designation',  label: 'Designation',  width: 180 },
+  { key: 'department',   label: 'Department',   width: 160 },
+  { key: 'section',      label: 'Section',      width: 130 },
+  { key: 'joining_date', label: 'Joined',       width: 120, render: v => <span className={styles.date}>{v ? formatDate(v) : '—'}</span> },
+  { key: 'gross_salary', label: 'Gross Salary', width: 140, align: 'right',
     render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-  { key: 'status',       label: 'Status',      width: 100,
+  { key: 'status',       label: 'Status',       width: 100,
     render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+  { key: '_del', label: '', width: 48, sortable: false,
+    render: (_, row) => (
+      <button
+        className={styles.deleteBtn}
+        onClick={e => { e.stopPropagation(); onDelete(row); }}
+        title="Delete employee"
+      >
+        <Trash2 size={14} strokeWidth={1.75} />
+      </button>
+    )},
 ];
 
-const ATT_COLS = [
-  { key: 'employee_name', label: 'Employee',  width: 180 },
-  { key: 'date',          label: 'Date',      width: 120, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-  { key: 'check_in',      label: 'Check In',  width: 100, render: v => <span className={styles.mono}>{v ?? '—'}</span> },
-  { key: 'check_out',     label: 'Check Out', width: 100, render: v => <span className={styles.mono}>{v ?? '—'}</span> },
-  { key: 'status',        label: 'Status',    width: 120,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
-];
 
 const LEAVE_COLS = [
   { key: 'leave_id',      label: 'Leave ID',  width: 120, render: v => <span className={styles.code}>{v}</span> },
@@ -129,7 +133,8 @@ export default function HR() {
 
   const [empOpen,      setEmpOpen]      = useState(false);
   const [editEmp,      setEditEmp]      = useState(null);
-  const [attOpen,      setAttOpen]      = useState(false);
+  const [deleteEmp,    setDeleteEmp]    = useState(null);
+  const [attSubTab,    setAttSubTab]    = useState('daily');
   const [leaveOpen,    setLeaveOpen]    = useState(false);
   const [loanOpen,     setLoanOpen]     = useState(false);
   const [editLoan,     setEditLoan]     = useState(null);
@@ -138,7 +143,7 @@ export default function HR() {
   const [sheetOpen,    setSheetOpen]    = useState(false);
 
   const { data: employees,     loading: loadEmp,     refetch: refetchEmp }     = useDb(() => hrDb.getEmployees());
-  const { data: attendance,    loading: loadAtt,   refetch: refetchAtt }   = useDb(() => hrDb.getAttendance());
+  const { data: attendance,    loading: loadAtt }   = useDb(() => hrDb.getAttendance());
   const { data: leaveRequests, loading: loadLeave, refetch: refetchLeave } = useDb(() => hrDb.getLeaveRequests());
   const { data: payrollRecords,loading: loadPay,     refetch: refetchPay }     = useDb(() => hrDb.getPayrollRecords());
   const { data: loans,         loading: loadLoans,   refetch: refetchLoans }   = useDb(() => hrDb.getLoans());
@@ -150,11 +155,18 @@ export default function HR() {
 
   const handleEditSave = () => refetchEmp();
 
+  const handleDeleteConfirm = async () => {
+    await hrDb.deleteEmployee(deleteEmp.employee_id);
+    setDeleteEmp(null);
+    refetchEmp();
+  };
+
   const handlePayrollSave = async (updated) => {
     await hrDb.updatePayroll(updated.payroll_id, updated);
     refetchPay();
   };
 
+  const EMP_COLS = buildEmpCols(setDeleteEmp);
   const PAY_COLS = buildPayCols(setPayslipRec, setManageRec);
 
   const totalActive      = employees.filter(e => e.status === 'active').length;
@@ -219,10 +231,16 @@ export default function HR() {
         <Card padding={false}>
           <CardHeader
             title="Attendance"
-            subtitle={loadAtt ? 'Loading…' : `${attendance.length} records`}
-            actions={<Button icon={<Plus size={15} />} size="sm" onClick={() => setAttOpen(true)}>Mark Attendance</Button>}
+            subtitle="Daily bulk marking and monthly overview"
+            actions={
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Button variant={attSubTab === 'daily'   ? 'primary' : 'secondary'} size="sm" onClick={() => setAttSubTab('daily')}>Daily</Button>
+                <Button variant={attSubTab === 'monthly' ? 'primary' : 'secondary'} size="sm" onClick={() => setAttSubTab('monthly')}>Monthly</Button>
+              </div>
+            }
           />
-          <DataTable columns={ATT_COLS} data={attendance} keyField="id" searchPlaceholder="Search attendance..." />
+          {attSubTab === 'daily'   && <DailyAttendance   employees={employees} />}
+          {attSubTab === 'monthly' && <MonthlyAttendance employees={employees} />}
         </Card>
       )}
 
@@ -265,7 +283,7 @@ export default function HR() {
 
       <AddEmployeeModal open={empOpen} onClose={() => setEmpOpen(false)} onSave={handleSave} />
       <EditEmployeeModal employee={editEmp} onClose={() => setEditEmp(null)} onSave={handleEditSave} />
-      <MarkAttendanceModal open={attOpen} onClose={() => setAttOpen(false)} onSave={() => refetchAtt()} employees={employees} />
+      <DeleteConfirmModal employee={deleteEmp} onClose={() => setDeleteEmp(null)} onConfirm={handleDeleteConfirm} />
       <NewLeaveModal open={leaveOpen} onClose={() => setLeaveOpen(false)} onSave={() => refetchLeave()} employees={employees} />
       <AddLoanModal open={loanOpen} onClose={() => setLoanOpen(false)} onSave={() => refetchLoans()} employees={employees} />
       <EditLoanModal loan={editLoan} onClose={() => setEditLoan(null)} onSave={() => refetchLoans()} />

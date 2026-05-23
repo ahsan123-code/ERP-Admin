@@ -38,6 +38,19 @@
   transform: translateY(-1px);
 }
 
+.danger {
+  background: linear-gradient(135deg, var(--red) 0%, #dc2626 100%);
+  border-color: var(--red);
+  color: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(239,68,68,0.30);
+}
+.danger:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  border-color: #dc2626;
+  box-shadow: 0 4px 14px rgba(239,68,68,0.40);
+  transform: translateY(-1px);
+}
+
 .secondary {
   background: var(--bg-surface);
   border-color: var(--border-default);
