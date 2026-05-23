@@ -119,7 +119,9 @@ export const inventoryDb = {
     supabase.from('batches').select('*').order('received_date', { ascending: false }),
 
   getInwardRecords: () =>
-    supabase.from('inward_records').select('*').order('received_date', { ascending: false }),
+    supabase.from('inward_records')
+      .select('id, item_type, item_name, gauge, size, weight, rate, length, description, quantity_received, warehouse, batch_no, received_date, received_by, status')
+      .order('received_date', { ascending: false }),
 
   addInwardRecord: (record) =>
     supabase.from('inward_records').insert([record]).select().single(),
