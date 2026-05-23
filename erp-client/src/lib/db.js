@@ -36,6 +36,12 @@ export const hrDb = {
   updatePayroll: (payrollId, updates) =>
     supabase.from('payroll_records').update(updates).eq('payroll_id', payrollId).select().single(),
 
+  markAttendance: (record) =>
+    supabase.from('attendance').insert([record]).select().single(),
+
+  applyLeave: (record) =>
+    supabase.from('leave_requests').insert([record]).select().single(),
+
   getLoans: () =>
     supabase.from('loans').select('*').order('employee_name'),
 

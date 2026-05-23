@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, Printer, Pencil, FileSpreadsheet } from 'lucide-react';
 import AddEmployeeModal from './AddEmployeeModal';
+import EditEmployeeModal from './EditEmployeeModal';
+import MarkAttendanceModal from './MarkAttendanceModal';
+import NewLeaveModal from './NewLeaveModal';
 import PayslipModal from './PayslipModal';
 import PayrollManageModal from './PayrollManageModal';
 import SalarySheetModal from './SalarySheetModal';
@@ -122,14 +125,17 @@ export default function HR() {
   const pageTab = SEG_TO_TAB[seg] ?? 'employees';
   const setPageTab = (tab) => navigate(`/hr/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
-  const [empOpen,    setEmpOpen]    = useState(false);
-  const [payslipRec, setPayslipRec] = useState(null);
-  const [manageRec,  setManageRec]  = useState(null);
-  const [sheetOpen,  setSheetOpen]  = useState(false);
+  const [empOpen,      setEmpOpen]      = useState(false);
+  const [editEmp,      setEditEmp]      = useState(null);
+  const [attOpen,      setAttOpen]      = useState(false);
+  const [leaveOpen,    setLeaveOpen]    = useState(false);
+  const [payslipRec,   setPayslipRec]   = useState(null);
+  const [manageRec,    setManageRec]    = useState(null);
+  const [sheetOpen,    setSheetOpen]    = useState(false);
 
   const { data: employees,     loading: loadEmp,     refetch: refetchEmp }     = useDb(() => hrDb.getEmployees());
-  const { data: attendance,    loading: loadAtt }                               = useDb(() => hrDb.getAttendance());
-  const { data: leaveRequests, loading: loadLeave }                             = useDb(() => hrDb.getLeaveRequests());
+  const { data: attendance,    loading: loadAtt,   refetch: refetchAtt }   = useDb(() => hrDb.getAttendance());
+  const { data: leaveRequests, loading: loadLeave, refetch: refetchLeave } = useDb(() => hrDb.getLeaveRequests());
   const { data: payrollRecords,loading: loadPay,     refetch: refetchPay }     = useDb(() => hrDb.getPayrollRecords());
   const { data: loans,         loading: loadLoans,   refetch: refetchLoans }   = useDb(() => hrDb.getLoans());
 
@@ -137,6 +143,8 @@ export default function HR() {
     await hrDb.addEmployee(emp);
     refetchEmp();
   };
+
+  const handleEditSave = () => refetchEmp();
 
   const handlePayrollSave = async (updated) => {
     await hrDb.updatePayroll(updated.payroll_id, updated);
@@ -198,21 +206,29 @@ export default function HR() {
 
       {pageTab === 'employees' && (
         <Card padding={false}>
-          <CardHeader title="Employees" subtitle={loadEmp ? 'Loading…' : `${employees.length} employee records`} />
-          <DataTable columns={EMP_COLS} data={employees} keyField="employee_id" searchPlaceholder="Search employees..." />
+          <CardHeader title="Employees" subtitle={loadEmp ? 'Loading…' : `${employees.length} employee records — click any row to edit`} />
+          <DataTable columns={EMP_COLS} data={employees} keyField="employee_id" searchPlaceholder="Search employees..." onRowClick={setEditEmp} />
         </Card>
       )}
 
       {pageTab === 'attendance' && (
         <Card padding={false}>
-          <CardHeader title="Attendance" subtitle={loadAtt ? 'Loading…' : formatDate(new Date().toISOString().split('T')[0])} />
+          <CardHeader
+            title="Attendance"
+            subtitle={loadAtt ? 'Loading…' : `${attendance.length} records`}
+            actions={<Button icon={<Plus size={15} />} size="sm" onClick={() => setAttOpen(true)}>Mark Attendance</Button>}
+          />
           <DataTable columns={ATT_COLS} data={attendance} keyField="id" searchPlaceholder="Search attendance..." />
         </Card>
       )}
 
       {pageTab === 'leave' && (
         <Card padding={false}>
-          <CardHeader title="Leave Requests" subtitle={loadLeave ? 'Loading…' : 'Pending and recent leave applications'} />
+          <CardHeader
+            title="Leave Requests"
+            subtitle={loadLeave ? 'Loading…' : `${leaveRequests.length} leave applications`}
+            actions={<Button icon={<Plus size={15} />} size="sm" onClick={() => setLeaveOpen(true)}>Apply Leave</Button>}
+          />
           <DataTable columns={LEAVE_COLS} data={leaveRequests} keyField="leave_id" searchPlaceholder="Search leaves..." />
         </Card>
       )}
@@ -240,6 +256,9 @@ export default function HR() {
       )}
 
       <AddEmployeeModal open={empOpen} onClose={() => setEmpOpen(false)} onSave={handleSave} />
+      <EditEmployeeModal employee={editEmp} onClose={() => setEditEmp(null)} onSave={handleEditSave} />
+      <MarkAttendanceModal open={attOpen} onClose={() => setAttOpen(false)} onSave={() => refetchAtt()} employees={employees} />
+      <NewLeaveModal open={leaveOpen} onClose={() => setLeaveOpen(false)} onSave={() => refetchLeave()} employees={employees} />
       {payslipRec && <PayslipModal record={payslipRec} onClose={() => setPayslipRec(null)} />}
       {manageRec  && <PayrollManageModal record={manageRec} onSave={handlePayrollSave} onClose={() => setManageRec(null)} />}
       {sheetOpen  && <SalarySheetModal records={payrollRecords} employees={employees} loans={loans} month="April" year={2026} onClose={() => setSheetOpen(false)} />}
