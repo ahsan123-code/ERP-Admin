@@ -13,178 +13,56 @@
   width: 58%;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(150deg, #06081A 0%, #0D1030 35%, #131845 65%, #07091C 100%);
+  background: #000;
+  flex-shrink: 0;
+}
+
+/* Shared phase wrapper */
+.logoPhase,
+.videoPhase {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 60px 64px;
 }
 
-/* Animated glow orbs */
-.lglow1 {
-  position: absolute;
-  width: 750px; height: 750px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.18) 0%, transparent 62%);
-  top: -260px; right: -180px;
-  animation: gDrift1 14s ease-in-out infinite alternate;
-  pointer-events: none;
+/* Fade transitions */
+.phaseVisible {
+  opacity: 1;
+  transition: opacity 1s ease;
 }
-.lglow2 {
-  position: absolute;
-  width: 550px; height: 550px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 62%);
-  bottom: -180px; left: -120px;
-  animation: gDrift2 11s ease-in-out infinite alternate;
+.phaseHidden {
+  opacity: 0;
+  transition: opacity 1s ease;
   pointer-events: none;
 }
 
-@keyframes gDrift1 {
-  from { transform: translate(0, 0) scale(1); }
-  to   { transform: translate(-55px, 45px) scale(1.12); }
-}
-@keyframes gDrift2 {
-  from { transform: translate(0, 0) scale(1); }
-  to   { transform: translate(45px, -55px) scale(1.08); }
+/* Logo — contain so it never stretches */
+.logoPhase { background: #000; }
+
+.logoImg {
+  max-width: 70%;
+  max-height: 70%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  animation: logoIn 1s ease forwards;
 }
 
-.lContent {
-  position: relative;
-  z-index: 1;
+@keyframes logoIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Video — cover fills the panel, crops edges if needed */
+.videoPhase { background: #000; }
+
+.videoEl {
   width: 100%;
-  max-width: 540px;
-  display: flex;
-  flex-direction: column;
-  gap: 48px;
-}
-
-/* Brand row */
-.brandRow {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-.logoBox {
-  width: 66px; height: 66px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, var(--primary), var(--purple));
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 8px 40px rgba(99, 102, 241, 0.50), 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-.logoShimmer {
-  position: absolute; inset: 0;
-  background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.18) 50%, transparent 70%);
-  background-size: 200% 200%;
-  animation: shimmer 3.5s infinite;
-}
-@keyframes shimmer {
-  0%   { background-position: 200% 200%; }
-  100% { background-position: -200% -200%; }
-}
-
-.brandName {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.4px;
-  color: #F1F5F9;
-  line-height: 1.2;
-}
-.brandSub {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.48);
-  margin-top: 4px;
-  letter-spacing: 0.2px;
-}
-
-/* Hero text */
-.heroTitle {
-  font-size: 40px;
-  font-weight: 700;
-  letter-spacing: -1.2px;
-  line-height: 1.15;
-  color: #F1F5F9;
-}
-.heroDesc {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.52);
-  line-height: 1.75;
-  margin-top: 16px;
-  max-width: 440px;
-}
-
-/* Stats grid */
-.statsGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-.statCard {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: all var(--transition-normal);
-  cursor: default;
-}
-.statCard:hover {
-  background: rgba(255, 255, 255, 0.09);
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.14);
-}
-.statIcon {
-  width: 40px; height: 40px;
-  border-radius: var(--radius-md);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
-.statValue {
-  font-size: 17px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  letter-spacing: -0.3px;
-  color: #F1F5F9;
-  line-height: 1.2;
-}
-.statLabel {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.42);
-  margin-top: 2px;
-}
-.stat_blue   .statIcon { background: rgba(99, 102, 241, 0.22); color: #A5B4FC; }
-.stat_green  .statIcon { background: rgba(16, 185, 129, 0.20); color: #6EE7B7; }
-.stat_orange .statIcon { background: rgba(245, 158, 11, 0.20); color: #FCD34D; }
-.stat_purple .statIcon { background: rgba(139, 92, 246, 0.22); color: #C4B5FD; }
-
-/* Left footer */
-.lFooter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.28);
-  font-weight: 500;
-  letter-spacing: 0.2px;
-}
-.onlineDot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 8px var(--green);
-  animation: pulse 2s infinite;
-  flex-shrink: 0;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.5; }
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /* ── Right Panel ── */

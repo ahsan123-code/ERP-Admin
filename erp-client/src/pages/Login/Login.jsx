@@ -1,15 +1,8 @@
-import { useState } from 'react';
-import { User, Lock, LogIn, Eye, EyeOff, TrendingUp, Users, Factory, Package } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { User, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import styles from './Login.module.css';
-
-const STATS = [
-  { icon: TrendingUp, label: 'Annual Revenue',      value: 'PKR 2.4B+',   color: 'blue'   },
-  { icon: Factory,    label: 'Production Capacity', value: '18,000 T/yr', color: 'green'  },
-  { icon: Package,    label: 'Product SKUs',        value: '200+',        color: 'orange' },
-  { icon: Users,      label: 'Active Employees',    value: '120+',        color: 'purple' },
-];
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -17,6 +10,22 @@ export default function Login({ onLogin }) {
   const [showPw,   setShowPw]   = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
+
+  // 'logo' → show logo, 'video' → show video
+  const [phase, setPhase] = useState('logo');
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    // Logo shows for 3.5s then switch to video
+    const t = setTimeout(() => setPhase('video'), 3500);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (phase === 'video' && videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
+  }, [phase]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -38,55 +47,24 @@ export default function Login({ onLogin }) {
 
   return (
     <div className={styles.page}>
-      {/* ── Left branding panel ── */}
+      {/* ── Left panel: logo → video ── */}
       <div className={styles.leftPanel}>
-        <div className={styles.lglow1} />
-        <div className={styles.lglow2} />
+        {/* Logo phase */}
+        <div className={`${styles.logoPhase} ${phase === 'logo' ? styles.phaseVisible : styles.phaseHidden}`}>
+          <img src="/Logo.jpeg" alt="Allied Steel Center" className={styles.logoImg} />
+        </div>
 
-        <div className={styles.lContent}>
-          {/* Brand */}
-          <div className={styles.brandRow}>
-            <div className={styles.logoBox}>
-              <span className={styles.logoShimmer} />
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-                <rect x="3" y="4"  width="18" height="3" rx="1" fill="white" opacity="0.95"/>
-                <rect x="9" y="7"  width="6"  height="8" fill="white" opacity="0.95"/>
-                <rect x="3" y="15" width="18" height="3" rx="1" fill="white" opacity="0.95"/>
-              </svg>
-            </div>
-            <div>
-              <h1 className={styles.brandName}>Ahsan Brothers</h1>
-              <p className={styles.brandSub}>Steel Manufacturing Group</p>
-            </div>
-          </div>
-
-          {/* Hero */}
-          <div className={styles.heroBlock}>
-            <h2 className={styles.heroTitle}>Enterprise Resource<br />Planning System</h2>
-            <p className={styles.heroDesc}>
-              Unified operations management — procurement, production, inventory,
-              sales, invoicing, finance, and HR in one platform.
-            </p>
-          </div>
-
-          {/* Stats */}
-          <div className={styles.statsGrid}>
-            {STATS.map((s) => (
-              <div key={s.label} className={`${styles.statCard} ${styles['stat_' + s.color]}`}>
-                <div className={styles.statIcon}><s.icon size={18} strokeWidth={1.75} /></div>
-                <div>
-                  <p className={styles.statValue}>{s.value}</p>
-                  <p className={styles.statLabel}>{s.label}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Footer tag */}
-          <div className={styles.lFooter}>
-            <span className={styles.onlineDot} />
-            <span>AB-ERP-DESIGN-002 &middot; Secure Access &middot; Confidential</span>
-          </div>
+        {/* Video phase */}
+        <div className={`${styles.videoPhase} ${phase === 'video' ? styles.phaseVisible : styles.phaseHidden}`}>
+          <video
+            ref={videoRef}
+            className={styles.videoEl}
+            src="/Video.mp4"
+            muted
+            loop
+            playsInline
+            preload="auto"
+          />
         </div>
       </div>
 

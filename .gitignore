@@ -37,7 +37,13 @@ videos/
 # Loose files at root
 *.png
 *.py
+*.jpeg
+*.mp4
 inovice.png
 Checking.png
 info.png
 extract_frames.py
+
+# Large media in public (copy manually to server/Vercel)
+erp-client/public/Logo.jpeg
+erp-client/public/Video.mp4
