@@ -4,14 +4,7 @@ import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
-import { hrDb, mastersDb } from '../../lib/db';
-import { useDb } from '../../hooks/useDb';
-
-const DESIGNATIONS = [
-  'Production Manager', 'Store Manager', 'Accounts Officer', 'HR Officer',
-  'Sales Executive', 'Procurement Officer', 'Machine Operator', 'Lab Technician',
-  'Security Guard', 'Driver', 'Helper', 'Admin Clerk',
-];
+import { hrDb } from '../../lib/db';
 
 const SECTIONS = ['Shop 41', 'Workshop', 'Mosque', 'Home', 'Office', 'Admin'];
 const STATUSES = ['active', 'inactive', 'terminated'];
@@ -19,7 +12,6 @@ const STATUSES = ['active', 'inactive', 'terminated'];
 export default function EditEmployeeModal({ employee, onClose, onSave }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
-  const { data: departments } = useDb(() => mastersDb.getDepartments());
 
   const [form, setForm] = useState({
     name: '', designation: '', department: '', section: '',
@@ -97,14 +89,8 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
         <div className="ff">
           <Input label="Full Name *" value={form.name} onChange={set('name')} required />
         </div>
-        <SelectField label="Designation *" value={form.designation} onChange={set('designation')} required>
-          <option value="">— Select designation —</option>
-          {DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
-        </SelectField>
-        <SelectField label="Department *" value={form.department} onChange={set('department')} required>
-          <option value="">— Select department —</option>
-          {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-        </SelectField>
+        <Input label="Designation *" placeholder="e.g. Machine Operator" value={form.designation} onChange={set('designation')} required />
+        <Input label="Department *" placeholder="e.g. Production" value={form.department} onChange={set('department')} required />
         <SelectField label="Section" value={form.section} onChange={set('section')}>
           <option value="">— Select section —</option>
           {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
