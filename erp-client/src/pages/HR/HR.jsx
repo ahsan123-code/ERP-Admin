@@ -5,6 +5,8 @@ import AddEmployeeModal from './AddEmployeeModal';
 import EditEmployeeModal from './EditEmployeeModal';
 import MarkAttendanceModal from './MarkAttendanceModal';
 import NewLeaveModal from './NewLeaveModal';
+import AddLoanModal from './AddLoanModal';
+import EditLoanModal from './EditLoanModal';
 import PayslipModal from './PayslipModal';
 import PayrollManageModal from './PayrollManageModal';
 import SalarySheetModal from './SalarySheetModal';
@@ -129,6 +131,8 @@ export default function HR() {
   const [editEmp,      setEditEmp]      = useState(null);
   const [attOpen,      setAttOpen]      = useState(false);
   const [leaveOpen,    setLeaveOpen]    = useState(false);
+  const [loanOpen,     setLoanOpen]     = useState(false);
+  const [editLoan,     setEditLoan]     = useState(null);
   const [payslipRec,   setPayslipRec]   = useState(null);
   const [manageRec,    setManageRec]    = useState(null);
   const [sheetOpen,    setSheetOpen]    = useState(false);
@@ -250,8 +254,12 @@ export default function HR() {
 
       {pageTab === 'loans' && (
         <Card padding={false}>
-          <CardHeader title="Loans & Advances" subtitle={loadLoans ? 'Loading…' : `${activeLoans} active loans`} />
-          <DataTable columns={LOAN_COLS} data={loans} keyField="loan_id" searchPlaceholder="Search loans..." />
+          <CardHeader
+            title="Loans & Advances"
+            subtitle={loadLoans ? 'Loading…' : `${activeLoans} active loans — click any row to edit`}
+            actions={<Button icon={<Plus size={15} />} size="sm" onClick={() => setLoanOpen(true)}>Add Loan</Button>}
+          />
+          <DataTable columns={LOAN_COLS} data={loans} keyField="loan_id" searchPlaceholder="Search loans..." onRowClick={setEditLoan} />
         </Card>
       )}
 
@@ -259,6 +267,8 @@ export default function HR() {
       <EditEmployeeModal employee={editEmp} onClose={() => setEditEmp(null)} onSave={handleEditSave} />
       <MarkAttendanceModal open={attOpen} onClose={() => setAttOpen(false)} onSave={() => refetchAtt()} employees={employees} />
       <NewLeaveModal open={leaveOpen} onClose={() => setLeaveOpen(false)} onSave={() => refetchLeave()} employees={employees} />
+      <AddLoanModal open={loanOpen} onClose={() => setLoanOpen(false)} onSave={() => refetchLoans()} employees={employees} />
+      <EditLoanModal loan={editLoan} onClose={() => setEditLoan(null)} onSave={() => refetchLoans()} />
       {payslipRec && <PayslipModal record={payslipRec} onClose={() => setPayslipRec(null)} />}
       {manageRec  && <PayrollManageModal record={manageRec} onSave={handlePayrollSave} onClose={() => setManageRec(null)} />}
       {sheetOpen  && <SalarySheetModal records={payrollRecords} employees={employees} loans={loans} month="April" year={2026} onClose={() => setSheetOpen(false)} />}
