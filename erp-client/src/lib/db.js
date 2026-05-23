@@ -127,6 +127,34 @@ export const salesDb = {
       .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance')
       .order('name'),
 
+  searchCustomers: (query) =>
+    supabase.from('customers')
+      .select('id, customer_id, name, cnic, ntn, region, status, contact, credit_limit, outstanding_balance')
+      .ilike('name', `%${query}%`)
+      .order('name')
+      .limit(10),
+
+  getCustomerInvoices: (customerName) =>
+    supabase.from('invoices')
+      .select('invoice_id, invoice_date, invoice_type, subtotal, tax_amount, total_value, fbr_status, fiscal_invoice_number')
+      .ilike('customer_name', customerName)
+      .order('invoice_date', { ascending: false })
+      .limit(50),
+
+  getCustomerOrders: (customerId) =>
+    supabase.from('sales_orders')
+      .select('so_id, order_date, delivery_date, total_amount, item_count, status')
+      .eq('customer_id', customerId)
+      .order('order_date', { ascending: false })
+      .limit(50),
+
+  getCustomerPayments: (customerName) =>
+    supabase.from('vouchers')
+      .select('id, voucher_id, voucher_type, date, narration, debit, credit, reference')
+      .ilike('account_name', `%${customerName}%`)
+      .order('date', { ascending: false })
+      .limit(50),
+
   addCustomer: (c) =>
     supabase.from('customers').insert([c]).select().single(),
 

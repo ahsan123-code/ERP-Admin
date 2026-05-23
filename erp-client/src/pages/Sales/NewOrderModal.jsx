@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
@@ -9,16 +9,22 @@ import { useDb } from '../../hooks/useDb';
 
 const today = new Date().toISOString().split('T')[0];
 
-export default function NewOrderModal({ open, onClose, onSave }) {
+const EMPTY_ORDER = { customer_id: '', orderDate: today, deliveryDate: '', productId: '', qty: '', ratePerKg: '', remarks: '' };
+
+export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    customer_id: '', orderDate: today, deliveryDate: '',
-    productId: '', qty: '', ratePerKg: '', remarks: '',
-  });
+  const [form, setForm] = useState(EMPTY_ORDER);
 
-  const { data: customers }       = useDb(() => salesDb.getCustomers());
+  const { data: customers }        = useDb(() => salesDb.getCustomers());
   const { data: productCatalogue } = useDb(() => mastersDb.getProductCatalogue());
+
+  useEffect(() => {
+    if (open && prefillCustomer) {
+      setForm(f => ({ ...f, customer_id: prefillCustomer.customer_id }));
+    }
+    if (!open) setForm(EMPTY_ORDER);
+  }, [open, prefillCustomer]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 

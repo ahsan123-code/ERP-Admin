@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
@@ -17,13 +17,23 @@ const EMPTY = {
   productId: '', qty: '', rate: '',
 };
 
-export default function NewInvoiceModal({ open, onClose, onSave }) {
+export default function NewInvoiceModal({ open, onClose, onSave, prefillCustomer }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
-  const [form, setForm]     = useState(EMPTY);
+  const [form, setForm]     = useState(() => prefillCustomer
+    ? { ...EMPTY, customer_id: prefillCustomer.customer_id, cnic: prefillCustomer.cnic ?? '', ntn: prefillCustomer.ntn ?? '' }
+    : EMPTY
+  );
 
   const { data: customers }        = useDb(() => salesDb.getCustomers());
   const { data: productCatalogue } = useDb(() => mastersDb.getProductCatalogue());
+
+  useEffect(() => {
+    if (open && prefillCustomer) {
+      setForm(f => ({ ...f, customer_id: prefillCustomer.customer_id, cnic: prefillCustomer.cnic ?? '', ntn: prefillCustomer.ntn ?? '' }));
+    }
+    if (!open) setForm({ ...EMPTY, invoiceNo: nextInvNo() });
+  }, [open, prefillCustomer]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 

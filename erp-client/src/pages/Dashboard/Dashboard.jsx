@@ -16,6 +16,10 @@ import { dashboardDb, salesDb, inventoryDb, financeDb, procurementDb } from '../
 import { useCompany } from '../../context/CompanyContext';
 import { formatDate, timeAgo, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
+import CustomerSearch from './CustomerSearch';
+import CustomerProfilePanel from './CustomerProfilePanel';
+import NewInvoiceModal from '../Invoicing/NewInvoiceModal';
+import NewOrderModal from '../Sales/NewOrderModal';
 import styles from './Dashboard.module.css';
 
 const CHART_RANGES = [
@@ -204,9 +208,13 @@ export default function Dashboard() {
   };
 
   const { companyId } = useCompany();
-  const [chartRange, setChartRange]   = useState('1y');
-  const [orderFilter, setOrderFilter] = useState('all');
-  const [stockTab, setStockTab]       = useState('all');
+  const [chartRange, setChartRange]     = useState('1y');
+  const [orderFilter, setOrderFilter]   = useState('all');
+  const [stockTab, setStockTab]         = useState('all');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [prefillCustomer,  setPrefillCustomer]  = useState(null);
+  const [showNewInvoice,   setShowNewInvoice]   = useState(false);
+  const [showNewOrder,     setShowNewOrder]     = useState(false);
 
   const { data: activityFeed }    = useDb(() => dashboardDb.getRecentActivity());
   const { data: empRows }         = useDb(() => dashboardDb.getEmployeeCount());
@@ -246,9 +254,46 @@ export default function Dashboard() {
   const now     = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
+  const handleNewInvoice = (customer) => {
+    setPrefillCustomer(customer);
+    setSelectedCustomer(null);
+    setShowNewInvoice(true);
+  };
+
+  const handleNewOrder = (customer) => {
+    setPrefillCustomer(customer);
+    setSelectedCustomer(null);
+    setShowNewOrder(true);
+  };
+
   return (
     <div className={`${styles.page} page-enter`}>
       <PageHeader title="Dashboard" subtitle={dateStr} />
+
+      <CustomerSearch onSelect={setSelectedCustomer} />
+
+      {selectedCustomer && (
+        <CustomerProfilePanel
+          customer={selectedCustomer}
+          onClose={() => setSelectedCustomer(null)}
+          onNewInvoice={handleNewInvoice}
+          onNewOrder={handleNewOrder}
+        />
+      )}
+
+      <NewInvoiceModal
+        open={showNewInvoice}
+        onClose={() => { setShowNewInvoice(false); setPrefillCustomer(null); }}
+        onSave={() => { setShowNewInvoice(false); setPrefillCustomer(null); }}
+        prefillCustomer={prefillCustomer}
+      />
+
+      <NewOrderModal
+        open={showNewOrder}
+        onClose={() => { setShowNewOrder(false); setPrefillCustomer(null); }}
+        onSave={() => { setShowNewOrder(false); setPrefillCustomer(null); }}
+        prefillCustomer={prefillCustomer}
+      />
 
       <div className={styles.pageTabs}>
         {PAGE_TABS.map(t => (
