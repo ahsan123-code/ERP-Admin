@@ -73,8 +73,8 @@ export default function NewInwardModal({ open, onClose, onSave }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="New Stock Inward"
-      subtitle="Record incoming material receipt"
+      title="New Item"
+      subtitle="Record incoming stock item"
       size="md"
       footer={
         <div className="factions">
@@ -94,14 +94,7 @@ export default function NewInwardModal({ open, onClose, onSave }) {
             ))}
           </SelectField>
         </div>
-        {form.gauge && (
-          <div className="ff" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Gauge (auto-detected)</label>
-            <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '10px 14px', fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--primary)' }}>
-              {form.gauge}
-            </div>
-          </div>
-        )}
+        <Input label="Gauge (mm)" placeholder="e.g. 0.25MM" value={form.gauge} onChange={set('gauge')} />
         <Input label="Batch No." value={form.batchNo} onChange={set('batchNo')} />
         <Input label="Quantity *" type="number" min="0.01" step="0.01" value={form.qty} onChange={set('qty')} required />
         <SelectField label="Unit" value={form.unit} onChange={set('unit')}>

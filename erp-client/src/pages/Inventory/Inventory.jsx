@@ -70,7 +70,7 @@ export default function Inventory() {
       <PageHeader
         title="Inventory"
         subtitle="Product catalogue, stock levels, batches, and warehouse locations"
-        actions={<Button icon={<Plus size={15} />} onClick={() => setInwardOpen(true)}>New Inward</Button>}
+        actions={<Button icon={<Plus size={15} />} onClick={() => setInwardOpen(true)}>New Item</Button>}
       />
 
       <div className={styles.summaryGrid}>
