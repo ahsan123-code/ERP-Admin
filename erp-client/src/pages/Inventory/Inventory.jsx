@@ -14,29 +14,33 @@ import { getStatus } from '../../utils/statusConfig';
 import styles from './Inventory.module.css';
 
 const TABS = [
-  { value: 'all',      label: 'All Items'  },
-  { value: 'normal',   label: 'Normal'     },
-  { value: 'low',      label: 'Low Stock'  },
-  { value: 'critical', label: 'Critical'   },
+  { value: 'all', label: 'All Items' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'low', label: 'Low Stock' },
+  { value: 'critical', label: 'Critical' },
 ];
 
 const STOCK_COLS = [
-  { key: 'item_code',     label: 'Item Code',  width: 130, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'item_name',     label: 'Item Name',  width: 220 },
-  { key: 'gauge',         label: 'Gauge',      width: 90,  render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
-  { key: 'category',      label: 'Category',   width: 120 },
-  { key: 'current_stock', label: 'Stock',      width: 120, align: 'right',
-    render: (v, row) => <span className={styles.mono}>{formatNumber(v)} {row.unit === 'Kilogram' ? 'kg' : (row.unit || '')}</span> },
-  { key: 'warehouse',     label: 'Warehouse',  width: 150 },
-  { key: 'batch_no',      label: 'Batch',      width: 100, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'status',        label: 'Status',     width: 100,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+  { key: 'item_code', label: 'Item Code', width: 130, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'item_name', label: 'Item Name', width: 220 },
+  { key: 'gauge', label: 'Gauge', width: 90, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
+  { key: 'category', label: 'Category', width: 120 },
+  {
+    key: 'current_stock', label: 'Stock', width: 120, align: 'right',
+    render: (v, row) => <span className={styles.mono}>{formatNumber(v)} {row.unit === 'Kilogram' ? 'kg' : (row.unit || '')}</span>
+  },
+  { key: 'warehouse', label: 'Warehouse', width: 150 },
+  { key: 'batch_no', label: 'Batch', width: 100, render: v => <span className={styles.code}>{v}</span> },
+  {
+    key: 'status', label: 'Status', width: 100,
+    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+  },
 ];
 
 const PRODUCT_COLS = [
-  { key: 'code',  label: 'Item Code', width: 200, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'gauge', label: 'Gauge',     width: 100, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
-  { key: 'name',  label: 'Item Name', width: 500 },
+  { key: 'code', label: 'Item Code', width: 200, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'gauge', label: 'Gauge', width: 100, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
+  { key: 'name', label: 'Item Name', width: 500 },
 ];
 
 export default function Inventory() {
@@ -44,25 +48,29 @@ export default function Inventory() {
   const [tab, setTab] = useState('all');
   const [inwardOpen, setInwardOpen] = useState(false);
 
-  const { data: stockItems }      = useDb(() => inventoryDb.getStockItems(companyId), [companyId]);
-  const { data: warehouses }      = useDb(() => mastersDb.getWarehouses());
-  const { data: productCatalogue } = useDb(() => mastersDb.getProductCatalogue());
+  const { data: stockItems } = useDb(() => inventoryDb.getStockItems(companyId), [companyId]);
+  const { data: warehouses } = useDb(() => mastersDb.getWarehouses());
+  const { data: rawCatalogue } = useDb(() => mastersDb.getProductCatalogue());
+  const [extraItems, setExtraItems] = useState([]);
+
+  // Merge: newly added items prepended, rest follow
+  const productCatalogue = [...extraItems, ...rawCatalogue];
 
   const lowStockAlerts = stockItems.filter(i => i.status === 'low' || i.status === 'critical');
 
   const tabCounts = {
-    all:      stockItems.length,
-    normal:   stockItems.filter(i => i.status === 'normal').length,
-    low:      stockItems.filter(i => i.status === 'low').length,
+    all: stockItems.length,
+    normal: stockItems.filter(i => i.status === 'normal').length,
+    low: stockItems.filter(i => i.status === 'low').length,
     critical: stockItems.filter(i => i.status === 'critical').length,
   };
 
   const data = tab === 'all' ? stockItems : stockItems.filter(i => i.status === tab);
 
   const stats = [
-    { icon: Package,       label: 'Product Catalogue', value: productCatalogue.length, color: 'blue'   },
-    { icon: TriangleAlert, label: 'Low Stock',          value: lowStockAlerts.length,  color: 'orange' },
-    { icon: Warehouse,     label: 'Warehouses',         value: warehouses.length,      color: 'purple' },
+    { icon: Package, label: 'Product Catalogue', value: productCatalogue.length, color: 'blue' },
+    { icon: TriangleAlert, label: 'Low Stock', value: lowStockAlerts.length, color: 'orange' },
+    { icon: Warehouse, label: 'Warehouses', value: warehouses.length, color: 'purple' },
   ];
 
   return (
@@ -90,7 +98,7 @@ export default function Inventory() {
       <Card padding={false}>
         <CardHeader
           title="Product Catalogue"
-          subtitle={`${productCatalogue.length} products — imported from GenX ERP`}
+          subtitle={`${productCatalogue.length} products`}
         />
         <DataTable
           columns={PRODUCT_COLS}
@@ -135,7 +143,13 @@ export default function Inventory() {
         </Card>
       )}
 
-      <NewInwardModal open={inwardOpen} onClose={() => setInwardOpen(false)} onSave={() => {}} />
+      <NewInwardModal
+        open={inwardOpen}
+        onClose={() => setInwardOpen(false)}
+        onSave={(newItem) => {
+          if (newItem) setExtraItems(prev => [newItem, ...prev]);
+        }}
+      />
     </div>
   );
 }
