@@ -32,7 +32,7 @@ export const hrDb = {
   getPayrollRecords: (month, year) => {
     let q = supabase.from('payroll_records').select('*').order('section').order('employee_id');
     if (month) q = q.eq('month', month);
-    if (year)  q = q.eq('year', year);
+    if (year) q = q.eq('year', year);
     return q;
   },
 
@@ -120,7 +120,7 @@ export const financeDb = {
       .eq('account_name', accountName)
       .order('date');
     if (fromDate) q = q.gte('date', fromDate);
-    if (toDate)   q = q.lte('date', toDate);
+    if (toDate) q = q.lte('date', toDate);
     return q;
   },
 };
@@ -144,6 +144,22 @@ export const inventoryDb = {
 
   addInwardRecord: (record) =>
     supabase.from('inward_records').insert([record]).select().single(),
+
+  // Custom item types — per-company, user-managed
+  getCustomItemTypes: (companyId) =>
+    supabase.from('custom_item_types')
+      .select('id, name, company_id')
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: true }),
+
+  addCustomItemType: (companyId, name) =>
+    supabase.from('custom_item_types')
+      .insert([{ company_id: companyId, name }])
+      .select()
+      .single(),
+
+  deleteCustomItemType: (id) =>
+    supabase.from('custom_item_types').delete().eq('id', id),
 };
 
 // ── SALES ─────────────────────────────────────────────────────────────────
@@ -312,6 +328,12 @@ export const mastersDb = {
 
   getProductCatalogue: () =>
     supabase.from('product_catalogue').select('*').order('code'),
+
+  addProductCatalogueItem: (item) =>
+    supabase.from('product_catalogue').insert([item]).select().single(),
+
+  deleteProductCatalogueItem: (id) =>
+    supabase.from('product_catalogue').delete().eq('id', id),
 
   getFiscalYears: () =>
     supabase.from('fiscal_years').select('*').order('start_date', { ascending: false }),

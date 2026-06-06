@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Warehouse, Package, TriangleAlert, Plus, Box } from 'lucide-react';
+import { Warehouse, Package, TriangleAlert, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import DataTable from '../../components/shared/DataTable';
@@ -9,60 +9,101 @@ import NewInwardModal from './NewInwardModal';
 import { inventoryDb, mastersDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { useToast } from '../../components/shared/Toast';
 import { formatDate, formatNumber } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import styles from './Inventory.module.css';
 
 const TABS = [
-  { value: 'all',      label: 'All Items'  },
-  { value: 'normal',   label: 'Normal'     },
-  { value: 'low',      label: 'Low Stock'  },
-  { value: 'critical', label: 'Critical'   },
+  { value: 'all', label: 'All Items' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'low', label: 'Low Stock' },
+  { value: 'critical', label: 'Critical' },
 ];
 
 const STOCK_COLS = [
-  { key: 'item_code',     label: 'Item Code',  width: 130, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'item_name',     label: 'Item Name',  width: 220 },
-  { key: 'gauge',         label: 'Gauge',      width: 90,  render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
-  { key: 'category',      label: 'Category',   width: 120 },
-  { key: 'current_stock', label: 'Stock',      width: 120, align: 'right',
-    render: (v, row) => <span className={styles.mono}>{formatNumber(v)} {row.unit === 'Kilogram' ? 'kg' : (row.unit || '')}</span> },
-  { key: 'warehouse',     label: 'Warehouse',  width: 150 },
-  { key: 'batch_no',      label: 'Batch',      width: 100, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'status',        label: 'Status',     width: 100,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
-];
-
-const PRODUCT_COLS = [
-  { key: 'code',  label: 'Item Code', width: 200, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'gauge', label: 'Gauge',     width: 100, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
-  { key: 'name',  label: 'Item Name', width: 500 },
+  { key: 'item_code', label: 'Item Code', width: 130, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'item_name', label: 'Item Name', width: 220 },
+  { key: 'gauge', label: 'Gauge', width: 90, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
+  { key: 'category', label: 'Category', width: 120 },
+  {
+    key: 'current_stock', label: 'Stock', width: 120, align: 'right',
+    render: (v, row) => <span className={styles.mono}>{formatNumber(v)} {row.unit === 'Kilogram' ? 'kg' : (row.unit || '')}</span>
+  },
+  { key: 'warehouse', label: 'Warehouse', width: 150 },
+  { key: 'batch_no', label: 'Batch', width: 100, render: v => <span className={styles.code}>{v}</span> },
+  {
+    key: 'status', label: 'Status', width: 100,
+    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+  },
 ];
 
 export default function Inventory() {
   const { companyId } = useCompany();
+  const toast = useToast();
   const [tab, setTab] = useState('all');
   const [inwardOpen, setInwardOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
-  const { data: stockItems }      = useDb(() => inventoryDb.getStockItems(companyId), [companyId]);
-  const { data: warehouses }      = useDb(() => mastersDb.getWarehouses());
-  const { data: productCatalogue } = useDb(() => mastersDb.getProductCatalogue());
+  const { data: stockItems } = useDb(() => inventoryDb.getStockItems(companyId), [companyId]);
+  const { data: warehouses } = useDb(() => mastersDb.getWarehouses());
+  const { data: rawCatalogue } = useDb(() => mastersDb.getProductCatalogue());
+  const [extraItems, setExtraItems] = useState([]);
+  const [deletedIds, setDeletedIds] = useState(new Set());
+
+  // Merge: newly added items prepended, deleted items filtered out
+  const productCatalogue = [...extraItems, ...rawCatalogue].filter(i => !deletedIds.has(i.id));
+
+  const handleDeleteCatalogueItem = async (row) => {
+    setDeletingId(row.id);
+    try {
+      const { error } = await mastersDb.deleteProductCatalogueItem(row.id);
+      if (error) throw new Error(error.message);
+      setDeletedIds(prev => new Set([...prev, row.id]));
+      toast.success(`"${row.name}" removed from catalogue.`);
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const PRODUCT_COLS = [
+    { key: 'code', label: 'Item Code', width: 200, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'gauge', label: 'Gauge', width: 100, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
+    { key: 'name', label: 'Item Name', width: 440 },
+    {
+      key: '_actions', label: '', width: 48, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingId === row.id}
+          onClick={(e) => { e.stopPropagation(); handleDeleteCatalogueItem(row); }}
+          title={`Remove "${row.name}"`}
+        >
+          {deletingId === row.id
+            ? <span className={styles.rowDeleteSpinner}>…</span>
+            : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
+  ];
 
   const lowStockAlerts = stockItems.filter(i => i.status === 'low' || i.status === 'critical');
 
   const tabCounts = {
-    all:      stockItems.length,
-    normal:   stockItems.filter(i => i.status === 'normal').length,
-    low:      stockItems.filter(i => i.status === 'low').length,
+    all: stockItems.length,
+    normal: stockItems.filter(i => i.status === 'normal').length,
+    low: stockItems.filter(i => i.status === 'low').length,
     critical: stockItems.filter(i => i.status === 'critical').length,
   };
 
   const data = tab === 'all' ? stockItems : stockItems.filter(i => i.status === tab);
 
   const stats = [
-    { icon: Package,       label: 'Product Catalogue', value: productCatalogue.length, color: 'blue'   },
-    { icon: TriangleAlert, label: 'Low Stock',          value: lowStockAlerts.length,  color: 'orange' },
-    { icon: Warehouse,     label: 'Warehouses',         value: warehouses.length,      color: 'purple' },
+    { icon: Package, label: 'Product Catalogue', value: productCatalogue.length, color: 'blue' },
+    { icon: TriangleAlert, label: 'Low Stock', value: lowStockAlerts.length, color: 'orange' },
+    { icon: Warehouse, label: 'Warehouses', value: warehouses.length, color: 'purple' },
   ];
 
   return (
@@ -90,7 +131,7 @@ export default function Inventory() {
       <Card padding={false}>
         <CardHeader
           title="Product Catalogue"
-          subtitle={`${productCatalogue.length} products — imported from GenX ERP`}
+          subtitle={`${productCatalogue.length} products`}
         />
         <DataTable
           columns={PRODUCT_COLS}
@@ -135,7 +176,13 @@ export default function Inventory() {
         </Card>
       )}
 
-      <NewInwardModal open={inwardOpen} onClose={() => setInwardOpen(false)} onSave={() => {}} />
+      <NewInwardModal
+        open={inwardOpen}
+        onClose={() => setInwardOpen(false)}
+        onSave={(newItem) => {
+          if (newItem) setExtraItems(prev => [newItem, ...prev]);
+        }}
+      />
     </div>
   );
 }
