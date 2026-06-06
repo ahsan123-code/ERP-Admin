@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Warehouse, Package, TriangleAlert, Plus, Box } from 'lucide-react';
+import { Warehouse, Package, TriangleAlert, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import DataTable from '../../components/shared/DataTable';
@@ -9,6 +9,7 @@ import NewInwardModal from './NewInwardModal';
 import { inventoryDb, mastersDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { useToast } from '../../components/shared/Toast';
 import { formatDate, formatNumber } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import styles from './Inventory.module.css';
@@ -37,24 +38,56 @@ const STOCK_COLS = [
   },
 ];
 
-const PRODUCT_COLS = [
-  { key: 'code', label: 'Item Code', width: 200, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'gauge', label: 'Gauge', width: 100, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
-  { key: 'name', label: 'Item Name', width: 500 },
-];
-
 export default function Inventory() {
   const { companyId } = useCompany();
+  const toast = useToast();
   const [tab, setTab] = useState('all');
   const [inwardOpen, setInwardOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const { data: stockItems } = useDb(() => inventoryDb.getStockItems(companyId), [companyId]);
   const { data: warehouses } = useDb(() => mastersDb.getWarehouses());
   const { data: rawCatalogue } = useDb(() => mastersDb.getProductCatalogue());
   const [extraItems, setExtraItems] = useState([]);
+  const [deletedIds, setDeletedIds] = useState(new Set());
 
-  // Merge: newly added items prepended, rest follow
-  const productCatalogue = [...extraItems, ...rawCatalogue];
+  // Merge: newly added items prepended, deleted items filtered out
+  const productCatalogue = [...extraItems, ...rawCatalogue].filter(i => !deletedIds.has(i.id));
+
+  const handleDeleteCatalogueItem = async (row) => {
+    setDeletingId(row.id);
+    try {
+      const { error } = await mastersDb.deleteProductCatalogueItem(row.id);
+      if (error) throw new Error(error.message);
+      setDeletedIds(prev => new Set([...prev, row.id]));
+      toast.success(`"${row.name}" removed from catalogue.`);
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const PRODUCT_COLS = [
+    { key: 'code', label: 'Item Code', width: 200, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'gauge', label: 'Gauge', width: 100, render: v => v ? <span className={styles.gauge}>{v}</span> : <span className={styles.dim}>—</span> },
+    { key: 'name', label: 'Item Name', width: 440 },
+    {
+      key: '_actions', label: '', width: 48, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingId === row.id}
+          onClick={(e) => { e.stopPropagation(); handleDeleteCatalogueItem(row); }}
+          title={`Remove "${row.name}"`}
+        >
+          {deletingId === row.id
+            ? <span className={styles.rowDeleteSpinner}>…</span>
+            : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
+  ];
 
   const lowStockAlerts = stockItems.filter(i => i.status === 'low' || i.status === 'critical');
 

@@ -1,12 +1,26 @@
-.page { display: flex; flex-direction: column; gap: var(--sp-5); }
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
 
 .summaryGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--sp-4);
 }
-@media (max-width: 768px) { .summaryGrid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 480px) { .summaryGrid { grid-template-columns: 1fr; } }
+
+@media (max-width: 768px) {
+  .summaryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+}
 
 .summaryCard {
   background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
@@ -19,6 +33,7 @@
   transition: all var(--transition-normal);
   box-shadow: var(--card-shadow);
 }
+
 .summaryCard:hover {
   border-color: var(--border-default);
   transform: translateY(-2px);
@@ -26,30 +41,103 @@
 }
 
 .summaryIcon {
-  width: 44px; height: 44px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-md);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
-.blue   { background: var(--blue-muted);   color: var(--blue);   box-shadow: var(--icon-glow-blue);   }
-.orange { background: var(--orange-muted); color: var(--orange); box-shadow: var(--icon-glow-orange); }
-.purple { background: var(--purple-muted); color: var(--purple); box-shadow: var(--icon-glow-purple); }
-.green  { background: var(--green-muted);  color: var(--green);  box-shadow: var(--icon-glow-green);  }
-.red    { background: var(--red-muted);    color: var(--red);    box-shadow: var(--icon-glow-red);    }
 
-.summaryLabel { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
-.summaryValue { font-size: 26px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); line-height: 1; }
-.warn { color: var(--orange); }
+.blue {
+  background: var(--blue-muted);
+  color: var(--blue);
+  box-shadow: var(--icon-glow-blue);
+}
 
-.tableInner { padding: var(--sp-5); }
+.orange {
+  background: var(--orange-muted);
+  color: var(--orange);
+  box-shadow: var(--icon-glow-orange);
+}
 
-.code  { font-family: var(--font-mono); font-size: 12px; color: var(--blue); }
-.gauge { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--green); }
-.dim   { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
-.mono  { font-family: var(--font-mono); }
-.date  { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
+.purple {
+  background: var(--purple-muted);
+  color: var(--purple);
+  box-shadow: var(--icon-glow-purple);
+}
 
-.alertList { display: flex; flex-direction: column; gap: var(--sp-2); }
+.green {
+  background: var(--green-muted);
+  color: var(--green);
+  box-shadow: var(--icon-glow-green);
+}
+
+.red {
+  background: var(--red-muted);
+  color: var(--red);
+  box-shadow: var(--icon-glow-red);
+}
+
+.summaryLabel {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.summaryValue {
+  font-size: 26px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.warn {
+  color: var(--orange);
+}
+
+.tableInner {
+  padding: var(--sp-5);
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--blue);
+}
+
+.gauge {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.dim {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.date {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.alertList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
 
 .alertRow {
   display: flex;
@@ -59,8 +147,66 @@
   border-radius: var(--radius-md);
   font-size: 13px;
 }
-.alertCritical { background: var(--red-muted);    color: var(--red);    border: 1px solid var(--red-dim); }
-.alertLow      { background: var(--orange-muted); color: var(--orange); border: 1px solid var(--orange-dim); }
 
-.alertName  { flex: 1; font-family: var(--font-mono); font-size: 12px; }
-.alertStock { font-size: 12px; color: var(--text-secondary); }
+.alertCritical {
+  background: var(--red-muted);
+  color: var(--red);
+  border: 1px solid var(--red-dim);
+}
+
+.alertLow {
+  background: var(--orange-muted);
+  color: var(--orange);
+  border: 1px solid var(--orange-dim);
+}
+
+.alertName {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.alertStock {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ── Row delete button in Product Catalogue ─────────────────────────────── */
+.rowDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: transparent;
+  /* hidden by default */
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+/* Show on row hover — DataTable renders <tr>, so we target it via the table */
+:global(tr:hover) .rowDeleteBtn {
+  color: var(--red, #ef4444);
+  border-color: var(--red-dim, #fecaca);
+  background: var(--red-muted, #fee2e2);
+}
+
+.rowDeleteBtn:hover:not(:disabled) {
+  background: var(--red, #ef4444) !important;
+  border-color: var(--red, #ef4444) !important;
+  color: #fff !important;
+}
+
+.rowDeleteBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rowDeleteSpinner {
+  font-size: 0.85rem;
+  color: var(--red, #ef4444);
+}

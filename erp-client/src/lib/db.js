@@ -332,6 +332,9 @@ export const mastersDb = {
   addProductCatalogueItem: (item) =>
     supabase.from('product_catalogue').insert([item]).select().single(),
 
+  deleteProductCatalogueItem: (id) =>
+    supabase.from('product_catalogue').delete().eq('id', id),
+
   getFiscalYears: () =>
     supabase.from('fiscal_years').select('*').order('start_date', { ascending: false }),
 };
