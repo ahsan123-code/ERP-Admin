@@ -19,6 +19,8 @@ export const STATUS_CONFIG = {
   partially_received: { label: 'Partial Receipt', variant: 'warning' },
   verified:         { label: 'Verified',           variant: 'success' },
   scheduled:        { label: 'Scheduled',          variant: 'info'    },
+  cleared:          { label: 'Cleared',             variant: 'success' },
+  bounced:          { label: 'Bounced',             variant: 'danger'  },
 
   // FBR
   synced:   { label: 'Synced',   variant: 'success' },

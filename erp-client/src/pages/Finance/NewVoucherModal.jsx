@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
-import { chartOfAccounts } from '../../data/finance';
+import { financeDb } from '../../lib/db';
+import { useDb } from '../../hooks/useDb';
+import { useCompany } from '../../context/CompanyContext';
 
 const today = new Date().toISOString().split('T')[0];
-const nextVch = () => 'VCH-' + String(202 + Math.floor(Math.random() * 20)).padStart(4, '0');
+const genVoucherId = () => 'VCH-' + String(Date.now()).slice(-6);
 
 const VOUCHER_TYPES = [
   { value: 'Journal',  label: 'Journal Voucher (JV)'  },
@@ -18,19 +20,26 @@ const VOUCHER_TYPES = [
   { value: 'BankRec',  label: 'Bank Receipt (BR)'     },
 ];
 
+const EMPTY = { voucher_type: 'Journal', date: today, account_id: '', debit: '', credit: '', narration: '', reference: '' };
+
 export default function NewVoucherModal({ open, onClose, onSave }) {
   const toast = useToast();
+  const { companyId } = useCompany();
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    voucherId: nextVch(), voucherType: 'Journal', date: today,
-    accountId: '', debit: '', credit: '', narration: '', reference: '',
-  });
+  const [voucherId, setVoucherId] = useState(genVoucherId());
+  const [form, setForm] = useState(EMPTY);
+
+  const { data: chartOfAccounts } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
+
+  useEffect(() => {
+    if (open) { setForm(EMPTY); setVoucherId(genVoucherId()); }
+  }, [open]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.voucherType || !form.accountId || (!form.debit && !form.credit) || !form.narration) {
+    if (!form.voucher_type || !form.account_id || (!form.debit && !form.credit) || !form.narration) {
       toast.error('Please fill in all required fields.');
       return;
     }
@@ -38,24 +47,35 @@ export default function NewVoucherModal({ open, onClose, onSave }) {
       toast.error('A voucher line cannot have both debit and credit. Use separate lines.');
       return;
     }
-    const account = chartOfAccounts.find(a => a.accountId === form.accountId);
+
+    const account = chartOfAccounts.find(a => a.account_id === form.account_id);
+    const debit  = parseFloat(form.debit) || 0;
+    const credit = parseFloat(form.credit) || 0;
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      toast.success(`Voucher ${form.voucherId} posted to general ledger.`, 'Voucher Created');
-      onSave({
-        voucherId: form.voucherId,
-        voucherType: form.voucherType,
-        date: form.date,
-        accountName: account?.accountName ?? '—',
-        debit: parseFloat(form.debit) || 0,
-        credit: parseFloat(form.credit) || 0,
-        narration: form.narration,
-        reference: form.reference,
+    try {
+      const { data, error } = await financeDb.addVoucher({
+        voucher_id:   voucherId,
+        voucher_type: form.voucher_type,
+        date:         form.date,
+        account_name: account?.account_name ?? '—',
+        debit,
+        credit,
+        narration:    form.narration,
+        reference:    form.reference.trim() || null,
+        company_id:   companyId,
       });
-      setForm({ voucherId: nextVch(), voucherType: 'Journal', date: today, accountId: '', debit: '', credit: '', narration: '', reference: '' });
+      if (error) throw new Error(error.message);
+
+      await financeDb.applyVoucherToBalances(account, debit, credit);
+
+      toast.success(`Voucher ${voucherId} posted to general ledger.`, 'Voucher Created');
+      onSave(data);
       onClose();
-    }, 700);
+    } catch (err) {
+      toast.error(err.message, 'Save Failed');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -75,18 +95,20 @@ export default function NewVoucherModal({ open, onClose, onSave }) {
       }
     >
       <form className="fg" onSubmit={handleSubmit}>
-        <Input label="Voucher No." value={form.voucherId} readOnly style={{ background: 'var(--bg-tertiary)' }} />
+        <Input label="Voucher No." value={voucherId} readOnly style={{ background: 'var(--bg-tertiary)' }} />
         <Input label="Date *" type="date" value={form.date} onChange={set('date')} required />
-        <SelectField label="Voucher Type *" value={form.voucherType} onChange={set('voucherType')}>
+        <SelectField label="Voucher Type *" value={form.voucher_type} onChange={set('voucher_type')}>
           {VOUCHER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </SelectField>
         <div />
         <div className="ff">
-          <SelectField label="Account *" value={form.accountId} onChange={set('accountId')} required>
-            <option value="">— Select account —</option>
+          <SelectField label="Account *" value={form.account_id} onChange={set('account_id')} required>
+            <option value="">
+              {chartOfAccounts.length > 0 ? '— Select account —' : '— No accounts found —'}
+            </option>
             {chartOfAccounts.map(a => (
-              <option key={a.accountId} value={a.accountId}>
-                {a.accountCode} — {a.accountName} ({a.accountType})
+              <option key={a.account_id} value={a.account_id}>
+                {a.account_code} — {a.account_name} ({a.account_type})
               </option>
             ))}
           </SelectField>

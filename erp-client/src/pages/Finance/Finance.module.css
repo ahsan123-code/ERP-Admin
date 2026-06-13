@@ -97,3 +97,108 @@
 .narration{ font-size: 12px; color: var(--text-secondary); }
 .totalVal { font-weight: 600; color: var(--text-primary); }
 .overdue  { color: var(--red); }
+
+/* ── Row delete button (Vouchers table) ──────────────────────────────────── */
+.rowDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+:global(tr:hover) .rowDeleteBtn {
+  color: var(--red, #ef4444);
+  border-color: var(--red-dim, #fecaca);
+  background: var(--red-muted, #fee2e2);
+}
+
+.rowDeleteBtn:hover:not(:disabled) {
+  background: var(--red, #ef4444) !important;
+  border-color: var(--red, #ef4444) !important;
+  color: #fff !important;
+}
+
+.rowDeleteBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rowDeleteSpinner {
+  font-size: 0.85rem;
+  color: var(--red, #ef4444);
+}
+
+/* ── Row actions (Cheque tracking — clear / bounce) ──────────────────────── */
+.rowActions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.rowClearBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+:global(tr:hover) .rowClearBtn {
+  color: var(--green, #10b981);
+  border-color: var(--green-border, #a7f3d0);
+  background: var(--green-muted, #ecfdf5);
+}
+
+.rowClearBtn:hover:not(:disabled) {
+  background: var(--green, #10b981) !important;
+  border-color: var(--green, #10b981) !important;
+  color: #fff !important;
+}
+
+.rowClearBtn:disabled,
+.rowBounceBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rowBounceBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+:global(tr:hover) .rowBounceBtn {
+  color: var(--red, #f43f5e);
+  border-color: var(--red-border, #fecdd3);
+  background: var(--red-muted, #fff1f2);
+}
+
+.rowBounceBtn:hover:not(:disabled) {
+  background: var(--red, #f43f5e) !important;
+  border-color: var(--red, #f43f5e) !important;
+  color: #fff !important;
+}

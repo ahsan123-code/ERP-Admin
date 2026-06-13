@@ -74,8 +74,8 @@ export const hrDb = {
 // ── FINANCE ───────────────────────────────────────────────────────────────
 
 export const financeDb = {
-  getChartOfAccounts: () =>
-    supabase.from('chart_of_accounts').select('*').order('account_code'),
+  getChartOfAccounts: (companyId = 1) =>
+    supabase.from('chart_of_accounts').select('*').eq('company_id', companyId).order('account_code').limit(2000),
 
   getVouchers: (companyId = 1) =>
     supabase.from('vouchers')
@@ -87,26 +87,155 @@ export const financeDb = {
   addVoucher: (v) =>
     supabase.from('vouchers').insert([v]).select().single(),
 
-  getBankAccounts: () =>
-    supabase.from('bank_accounts').select('*'),
+  deleteVoucher: (id) =>
+    supabase.from('vouchers').delete().eq('id', id),
+
+  // Applies a voucher's debit/credit to the matching chart-of-accounts balance
+  // (and the linked bank account's balance, if the account is a bank account).
+  // Pass negative debit/credit to reverse a deleted voucher's effect.
+  applyVoucherToBalances: async (account, debit, credit) => {
+    if (!account) return;
+    const prefix = account.account_code?.slice(0, 2);
+    const isCreditNormal = ['10', '13', '14'].includes(prefix); // Income, Owner Equity, Liability
+    const delta = isCreditNormal ? (credit - debit) : (debit - credit);
+    await supabase.from('chart_of_accounts')
+      .update({ balance: (account.balance || 0) + delta })
+      .eq('account_id', account.account_id);
+
+    const bankMatch = account.account_code?.match(/^11-05-001-0*(\d+)$/);
+    if (bankMatch) {
+      const bankAccountId = `BANK-${bankMatch[1]}`;
+      const { data: bank } = await supabase.from('bank_accounts').select('balance').eq('account_id', bankAccountId).single();
+      if (bank) {
+        await supabase.from('bank_accounts')
+          .update({ balance: (bank.balance || 0) + (debit - credit) })
+          .eq('account_id', bankAccountId);
+      }
+    }
+  },
+
+  // Maps a bank_accounts.account_id (e.g. "BANK-37") to its linked chart_of_accounts row
+  // (account_code "11-05-001-000037") — inverse of the regex in applyVoucherToBalances.
+  bankCodeToAccount: (chartOfAccounts, bankAccountId) => {
+    const m = bankAccountId?.match(/^BANK-(\d+)$/);
+    if (!m) return null;
+    const code = '11-05-001-' + m[1].padStart(6, '0');
+    return chartOfAccounts.find(a => a.account_code === code) || null;
+  },
+
+  // Posts a multi-leg double-entry journal: writes each leg to `vouchers` (so it shows
+  // up in the Vouchers ledger) and `voucher_lines` (so it's included in per-account
+  // reports like Daily Cash), then applies the balance updates via applyVoucherToBalances.
+  // `vouchers.voucher_id` has a UNIQUE constraint, so each leg gets its own
+  // `${voucherId}-N` id (voucher_lines mirrors it so the daily_cash_summary join still
+  // matches); `reference` ties the legs together for display/grouping.
+  // legs: [{ account, debit, credit }, ...]
+  postJournalEntry: async ({ voucherId, voucherType, date, companyId, legs, narration, reference }) => {
+    let i = 1;
+    for (const leg of legs) {
+      const legVoucherId = `${voucherId}-${i++}`;
+      await supabase.from('vouchers').insert([{
+        voucher_id: legVoucherId, voucher_type: voucherType, date,
+        account_name: leg.account.account_name, debit: leg.debit, credit: leg.credit,
+        narration, reference, company_id: companyId,
+      }]);
+      await supabase.from('voucher_lines').insert([{
+        voucher_id: legVoucherId, line_no: 1,
+        account_code: leg.account.account_code, account_title: leg.account.account_name,
+        debit: leg.debit, credit: leg.credit, narration, company_id: companyId,
+      }]);
+      await financeDb.applyVoucherToBalances(leg.account, leg.debit, leg.credit);
+    }
+  },
+
+  getBankAccounts: (companyId = 1) =>
+    supabase.from('bank_accounts').select('*').eq('company_id', companyId),
 
   getCashReceived: () =>
     supabase.from('cash_received').select('*').order('date', { ascending: false }),
 
+  addCashReceived: async (cr, { depositAccount, ledgerAccount, companyId }) => {
+    const voucherId = 'CR-' + String(Date.now()).slice(-6);
+    await financeDb.postJournalEntry({
+      voucherId, voucherType: 'Receipt', date: cr.date, companyId,
+      legs: [
+        { account: depositAccount, debit: cr.amount, credit: 0 },
+        { account: ledgerAccount,  debit: 0,         credit: cr.amount },
+      ],
+      narration: cr.narration || `Cash receipt from ${cr.party_name}`,
+      reference: cr.cr_id,
+    });
+    return supabase.from('cash_received').insert([cr]).select().single();
+  },
+
   getInterBankTransfers: () =>
     supabase.from('inter_bank_transfers').select('*').order('date', { ascending: false }),
+
+  addInterBankTransfer: async (ibt, { fromAccount, toAccount, companyId }) => {
+    const voucherId = 'IBT-' + String(Date.now()).slice(-6);
+    await financeDb.postJournalEntry({
+      voucherId, voucherType: 'Contra', date: ibt.date, companyId,
+      legs: [
+        { account: toAccount,   debit: ibt.amount, credit: 0 },
+        { account: fromAccount, debit: 0,          credit: ibt.amount },
+      ],
+      narration: ibt.narration || `Transfer: ${ibt.from_account} -> ${ibt.to_account}`,
+      reference: ibt.ibt_id,
+    });
+    return supabase.from('inter_bank_transfers').insert([ibt]).select().single();
+  },
 
   getPettyCash: () =>
     supabase.from('petty_cash').select('*').order('date', { ascending: false }),
 
-  getDailyCash: () =>
-    supabase.from('daily_cash').select('*').order('date', { ascending: false }),
+  addPettyCash: async (pc, { sourceAccount, expenseAccount, companyId }) => {
+    const voucherId = 'PC-' + String(Date.now()).slice(-6);
+    await financeDb.postJournalEntry({
+      voucherId, voucherType: 'Payment', date: pc.date, companyId,
+      legs: [
+        { account: expenseAccount, debit: pc.amount, credit: 0 },
+        { account: sourceAccount,  debit: 0,         credit: pc.amount },
+      ],
+      narration: pc.description,
+      reference: pc.pc_id,
+    });
+    return supabase.from('petty_cash').insert([pc]).select().single();
+  },
+
+  getDailyCash: (companyId = 1) =>
+    supabase.from('daily_cash_summary').select('*').eq('company_id', companyId).order('date', { ascending: false }).limit(180),
 
   getChequeTracking: () =>
     supabase.from('cheque_tracking').select('*').order('due_date'),
 
-  getAgingReport: () =>
-    supabase.from('aging_report').select('*'),
+  addCheque: (c) =>
+    supabase.from('cheque_tracking').insert([{ ...c, status: 'pending' }]).select().single(),
+
+  markChequeBounced: (id) =>
+    supabase.from('cheque_tracking').update({ status: 'bounced' }).eq('id', id).select().single(),
+
+  // Clearing a customer cheque (received, now deposited) debits the bank and credits
+  // the customer's ledger account (reducing the receivable). Clearing a vendor cheque
+  // (issued, now cashed) debits the vendor's ledger account (reducing the payable) and
+  // credits the bank.
+  clearCheque: async (cheque, { bankAccount, ledgerAccount, companyId }) => {
+    const voucherId = 'CHQ-' + String(Date.now()).slice(-6);
+    const narration = `Cheque ${cheque.cheque_no} cleared - ${cheque.party_name}`;
+    const legs = cheque.party_type === 'Vendor'
+      ? [
+          { account: ledgerAccount, debit: cheque.amount, credit: 0 },
+          { account: bankAccount,   debit: 0,             credit: cheque.amount },
+        ]
+      : [
+          { account: bankAccount,   debit: cheque.amount, credit: 0 },
+          { account: ledgerAccount, debit: 0,             credit: cheque.amount },
+        ];
+    await financeDb.postJournalEntry({ voucherId, voucherType: 'BankRec', date: cheque.due_date, companyId, legs, narration, reference: cheque.cheque_no });
+    return supabase.from('cheque_tracking').update({ status: 'cleared' }).eq('id', cheque.id).select().single();
+  },
+
+  getAgingReport: (companyId = 1) =>
+    supabase.from('aging_report_computed').select('*').eq('company_id', companyId).order('total', { ascending: false }),
 
   getPaymentReconciliation: () =>
     supabase.from('payment_reconciliation').select('*').order('payment_date', { ascending: false }),
@@ -203,30 +332,60 @@ export const salesDb = {
 
   getSalesOrders: (companyId = 1) =>
     supabase.from('sales_orders')
-      .select('so_id, customer_name, customer_id, order_date, delivery_date, total_amount, item_count, status, company_id')
+      .select('id, so_id, customer_name, customer_id, order_date, delivery_date, total_amount, item_count, status, company_id')
       .eq('company_id', companyId)
       .order('order_date', { ascending: false }),
 
   addSalesOrder: (so) =>
     supabase.from('sales_orders').insert([so]).select().single(),
 
+  deleteSalesOrder: async (id, soId) => {
+    await supabase.from('order_confirmations').delete().eq('so_ref', soId);
+    await supabase.from('work_orders').delete().eq('so_ref', soId);
+    await supabase.from('delivery_notes').delete().eq('so_ref', soId);
+    await supabase.from('gate_passes').delete().eq('so_ref', soId);
+    await supabase.from('sales_invoices').delete().eq('so_ref', soId);
+    return supabase.from('sales_orders').delete().eq('id', id);
+  },
+
+  updateSalesOrderStatus: (id, status) =>
+    supabase.from('sales_orders').update({ status }).eq('id', id).select().single(),
+
   getDeliveryNotes: (companyId = 1) =>
     supabase.from('delivery_notes').select('*').eq('company_id', companyId).order('delivery_date', { ascending: false }),
+
+  addDeliveryNote: (dn) =>
+    supabase.from('delivery_notes').insert([dn]).select().single(),
 
   getOrderConfirmations: () =>
     supabase.from('order_confirmations').select('*').order('confirm_date', { ascending: false }),
 
+  addOrderConfirmation: (oc) =>
+    supabase.from('order_confirmations').insert([oc]).select().single(),
+
   getWorkOrders: () =>
     supabase.from('work_orders').select('*').order('work_order_date', { ascending: false }),
 
+  addWorkOrder: (wo) =>
+    supabase.from('work_orders').insert([wo]).select().single(),
+
+  updateWorkOrderStatus: (id, status) =>
+    supabase.from('work_orders').update({ status }).eq('id', id).select().single(),
+
   getGatePasses: (companyId = 1) =>
     supabase.from('gate_passes').select('*').eq('company_id', companyId).order('date', { ascending: false }),
+
+  addGatePass: (gp) =>
+    supabase.from('gate_passes').insert([gp]).select().single(),
 
   getSalesInvoices: (companyId = 1) =>
     supabase.from('sales_invoices')
       .select('id, sale_inv_id, customer_name, date, subtotal, freight, grand_total, status, so_ref, company_id')
       .eq('company_id', companyId)
       .order('date', { ascending: false }),
+
+  addSalesInvoice: (inv) =>
+    supabase.from('sales_invoices').insert([inv]).select().single(),
 
   getSalesReturns: (companyId = 1) =>
     supabase.from('sales_returns').select('*').eq('company_id', companyId).order('return_date', { ascending: false }),
@@ -246,6 +405,14 @@ export const procurementDb = {
 
   addPdn: (pdn) =>
     supabase.from('pdns').insert([pdn]).select().single(),
+
+  addPdnLineItems: (lineItems) =>
+    supabase.from('pdn_line_items').insert(lineItems).select(),
+
+  deletePdn: async (id, pdnId) => {
+    await supabase.from('pdn_line_items').delete().eq('pdn_id', pdnId);
+    return supabase.from('pdns').delete().eq('id', id);
+  },
 
   getPurchaseRequisitions: () =>
     supabase.from('purchase_requisitions').select('*').order('date', { ascending: false }),

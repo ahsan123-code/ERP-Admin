@@ -558,8 +558,8 @@ export default function Reports() {
   const setPageTab = (tab) => navigate(`/reports/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
   const { companyId } = useCompany();
-  const { data: chartOfAccounts }      = useDb(() => financeDb.getChartOfAccounts());
-  const { data: bankAccounts }         = useDb(() => financeDb.getBankAccounts());
+  const { data: chartOfAccounts }      = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
+  const { data: bankAccounts }         = useDb(() => financeDb.getBankAccounts(companyId), [companyId]);
   const { data: agingReport }          = useDb(() => financeDb.getAgingReport());
   const { data: paymentReconciliation }= useDb(() => financeDb.getPaymentReconciliation());
   const { data: customers }            = useDb(() => salesDb.getCustomers());
