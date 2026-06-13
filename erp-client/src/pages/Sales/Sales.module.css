@@ -81,3 +81,69 @@
 .mono  { font-family: var(--font-mono); }
 .date  { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
 .debit { color: var(--red); }
+
+/* ── Row delete button (e.g. Order Booking table) ────────────────────────── */
+.rowDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+:global(tr:hover) .rowDeleteBtn {
+  color: var(--red, #ef4444);
+  border-color: var(--red-dim, #fecaca);
+  background: var(--red-muted, #fee2e2);
+}
+
+.rowDeleteBtn:hover:not(:disabled) {
+  background: var(--red, #ef4444) !important;
+  border-color: var(--red, #ef4444) !important;
+  color: #fff !important;
+}
+
+.rowDeleteBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rowDeleteSpinner {
+  font-size: 0.85rem;
+  color: var(--red, #ef4444);
+}
+
+/* ── Row confirm button (Order Booking table, pending rows) ────────────── */
+.rowConfirmBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+:global(tr:hover) .rowConfirmBtn {
+  color: var(--green, #22c55e);
+  border-color: var(--green-dim, #bbf7d0);
+  background: var(--green-muted, #dcfce7);
+}
+
+.rowConfirmBtn:hover:not(:disabled) {
+  background: var(--green, #22c55e) !important;
+  border-color: var(--green, #22c55e) !important;
+  color: #fff !important;
+}

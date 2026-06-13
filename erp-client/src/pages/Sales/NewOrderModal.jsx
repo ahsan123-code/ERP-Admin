@@ -4,8 +4,10 @@ import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
-import { salesDb, mastersDb } from '../../lib/db';
+import { salesDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
+import { useCatalogue } from '../../context/CatalogueContext';
+import { useCompany } from '../../context/CompanyContext';
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -13,11 +15,12 @@ const EMPTY_ORDER = { customer_id: '', orderDate: today, deliveryDate: '', produ
 
 export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }) {
   const toast = useToast();
+  const { companyId } = useCompany();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(EMPTY_ORDER);
 
-  const { data: customers }        = useDb(() => salesDb.getCustomers());
-  const { data: productCatalogue } = useDb(() => mastersDb.getProductCatalogue());
+  const { data: customers }    = useDb(() => salesDb.getCustomers());
+  const { items: productCatalogue } = useCatalogue();
 
   useEffect(() => {
     if (open && prefillCustomer) {
@@ -34,28 +37,36 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
     ? (parseFloat(form.qty) * parseFloat(form.ratePerKg)).toLocaleString('en-PK', { maximumFractionDigits: 0 })
     : '—';
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.customer_id || !form.productId || !form.qty || !form.ratePerKg || !form.deliveryDate) {
       toast.error('Please fill in all required fields.');
       return;
     }
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      toast.success(`Sales order for ${selectedCustomer?.name} created.`, 'Order Created');
-      onSave({
+    try {
+      const { data, error } = await salesDb.addSalesOrder({
         so_id:         'SO-' + String(Date.now()).slice(-4).padStart(4, '0'),
+        customer_id:   form.customer_id,
         customer_name: selectedCustomer?.name ?? '—',
         order_date:    form.orderDate,
         delivery_date: form.deliveryDate,
         item_count:    1,
         total_amount:  parseFloat(form.qty) * parseFloat(form.ratePerKg),
         status:        'pending',
+        company_id:    companyId,
       });
+      if (error) throw new Error(error.message);
+
+      toast.success(`Sales order for ${selectedCustomer?.name} created.`, 'Order Created');
+      onSave(data);
       setForm({ customer_id: '', orderDate: today, deliveryDate: '', productId: '', qty: '', ratePerKg: '', remarks: '' });
       onClose();
-    }, 700);
+    } catch (err) {
+      toast.error(err.message, 'Save Failed');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -97,7 +108,9 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
 
         <div className="ff">
           <SelectField label="Product *" value={form.productId} onChange={set('productId')} required>
-            <option value="">— Select product —</option>
+            <option value="">
+              {productCatalogue.length > 0 ? '— Select product —' : '— No items yet, add one via New Item —'}
+            </option>
             {productCatalogue.map(p => (
               <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
             ))}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, ShoppingCart, Users, ClipboardList, Package } from 'lucide-react';
+import { Plus, ShoppingCart, Users, ClipboardList, Package, Trash2 } from 'lucide-react';
 import NewPDNModal from './NewPDNModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
@@ -9,6 +9,7 @@ import Button from '../../components/ui/Button';
 import { procurementDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { useToast } from '../../components/shared/Toast';
 import { formatDate, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import styles from './Procurement.module.css';
@@ -25,17 +26,6 @@ const PO_COLS = [
     render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
 ];
 
-const PDN_COLS = [
-  { key: 'pdn_id',     label: 'PDN No.',    width: 120, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'department', label: 'Department', width: 180 },
-  { key: 'pdn_date',   label: 'Date',       width: 120, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-  { key: 'priority',   label: 'Priority',   width: 90,
-    render: v => <Badge variant={v === 'High' ? 'danger' : v === 'Medium' ? 'warning' : 'info'}>{v}</Badge> },
-  { key: 'item_count', label: 'Items',      width: 70,  align: 'right' },
-  { key: 'status',     label: 'Status',     width: 130,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
-];
-
 const VENDOR_COLS = [
   { key: 'id',       label: 'ID',       width: 90,
     render: v => <span className={styles.code}>{`V-${String(v).padStart(3, '0')}`}</span> },
@@ -49,8 +39,10 @@ const VENDOR_COLS = [
 
 export default function Procurement() {
   const { companyId } = useCompany();
+  const toast = useToast();
   const [poTab, setPoTab] = useState('all');
   const [pdnOpen, setPdnOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const { data: vendors }        = useDb(() => procurementDb.getVendors());
   const { data: purchaseOrders } = useDb(() => procurementDb.getPurchaseOrders(companyId), [companyId]);
@@ -61,6 +53,46 @@ export default function Procurement() {
   useEffect(() => { setPdnList(dbPdns); }, [dbPdns]);
 
   const handleSave = (pdn) => setPdnList(prev => [pdn, ...prev]);
+
+  const handleDeletePdn = async (row) => {
+    setDeletingId(row.id);
+    try {
+      const { error } = await procurementDb.deletePdn(row.id, row.pdn_id);
+      if (error) throw new Error(error.message);
+      setPdnList(prev => prev.filter(p => p.id !== row.id));
+      toast.success(`PDN "${row.pdn_id}" deleted.`);
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const PDN_COLS = [
+    { key: 'pdn_id',     label: 'PDN No.',    width: 120, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'department', label: 'Department', width: 180 },
+    { key: 'pdn_date',   label: 'Date',       width: 120, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+    { key: 'priority',   label: 'Priority',   width: 90,
+      render: v => <Badge variant={v === 'High' ? 'danger' : v === 'Medium' ? 'warning' : 'info'}>{v}</Badge> },
+    { key: 'item_count', label: 'Items',      width: 70,  align: 'right' },
+    { key: 'status',     label: 'Status',     width: 130,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    {
+      key: '_actions', label: '', width: 48, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingId === row.id}
+          onClick={(e) => { e.stopPropagation(); handleDeletePdn(row); }}
+          title={`Delete "${row.pdn_id}"`}
+        >
+          {deletingId === row.id
+            ? <span className={styles.rowDeleteSpinner}>…</span>
+            : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
+  ];
 
   const activePOs     = purchaseOrders.filter(p => ['issued', 'partially_received'].includes(p.status)).length;
   const pendingPDNs   = pdnList.filter(p => p.status === 'submitted').length;
@@ -102,6 +134,11 @@ export default function Procurement() {
       </div>
 
       <Card padding={false}>
+        <CardHeader title="Purchase Demand Notes" subtitle="Internal material requests" />
+        <DataTable columns={PDN_COLS} data={pdnList} keyField="pdn_id" searchPlaceholder="Search PDNs..." />
+      </Card>
+
+      <Card padding={false}>
         <CardHeader title="Purchase Orders" subtitle={`${purchaseOrders.length} POs across vendors`} />
         <DataTable
           columns={PO_COLS}
@@ -116,11 +153,6 @@ export default function Procurement() {
           activeTab={poTab}
           onTabChange={setPoTab}
         />
-      </Card>
-
-      <Card padding={false}>
-        <CardHeader title="Purchase Demand Notes" subtitle="Internal material requests" />
-        <DataTable columns={PDN_COLS} data={pdnList} keyField="pdn_id" searchPlaceholder="Search PDNs..." />
       </Card>
 
       <Card padding={false}>

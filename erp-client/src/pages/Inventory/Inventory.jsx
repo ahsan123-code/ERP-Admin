@@ -9,8 +9,9 @@ import NewInwardModal from './NewInwardModal';
 import { inventoryDb, mastersDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { useCatalogue } from '../../context/CatalogueContext';
 import { useToast } from '../../components/shared/Toast';
-import { formatDate, formatNumber } from '../../utils/format';
+import { formatNumber } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import styles from './Inventory.module.css';
 
@@ -47,25 +48,13 @@ export default function Inventory() {
 
   const { data: stockItems } = useDb(() => inventoryDb.getStockItems(companyId), [companyId]);
   const { data: warehouses } = useDb(() => mastersDb.getWarehouses());
-  const { data: rawCatalogue } = useDb(() => mastersDb.getProductCatalogue());
-  const [extraItems, setExtraItems] = useState([]);
-  const [deletedIds, setDeletedIds] = useState(new Set());
+  const { items: productCatalogue, addItem: addCatalogueItem, removeItem: removeCatalogueItem } = useCatalogue();
 
-  // Merge: newly added items prepended, deleted items filtered out
-  const productCatalogue = [...extraItems, ...rawCatalogue].filter(i => !deletedIds.has(i.id));
-
-  const handleDeleteCatalogueItem = async (row) => {
+  const handleDeleteCatalogueItem = (row) => {
     setDeletingId(row.id);
-    try {
-      const { error } = await mastersDb.deleteProductCatalogueItem(row.id);
-      if (error) throw new Error(error.message);
-      setDeletedIds(prev => new Set([...prev, row.id]));
-      toast.success(`"${row.name}" removed from catalogue.`);
-    } catch (err) {
-      toast.error(err.message, 'Delete Failed');
-    } finally {
-      setDeletingId(null);
-    }
+    removeCatalogueItem(row.id);
+    toast.success(`"${row.name}" removed from catalogue.`);
+    setDeletingId(null);
   };
 
   const PRODUCT_COLS = [
@@ -179,9 +168,7 @@ export default function Inventory() {
       <NewInwardModal
         open={inwardOpen}
         onClose={() => setInwardOpen(false)}
-        onSave={(newItem) => {
-          if (newItem) setExtraItems(prev => [newItem, ...prev]);
-        }}
+        onSave={addCatalogueItem}
       />
     </div>
   );
