@@ -17,6 +17,7 @@ import Invoicing   from './pages/Invoicing/Invoicing';
 import Finance     from './pages/Finance/Finance';
 import HR          from './pages/HR/HR';
 import Reports     from './pages/Reports/Reports';
+import Help        from './pages/Help/Help';
 
 function PageWrap({ children }) {
   return <ErrorBoundary page>{children}</ErrorBoundary>;
@@ -62,6 +63,9 @@ function AppRoutes() {
 
               <Route path="reports"   element={<PageWrap><Reports /></PageWrap>} />
               <Route path="reports/*" element={<PageWrap><Reports /></PageWrap>} />
+
+              <Route path="help"   element={<PageWrap><Help /></PageWrap>} />
+              <Route path="help/*" element={<PageWrap><Help /></PageWrap>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

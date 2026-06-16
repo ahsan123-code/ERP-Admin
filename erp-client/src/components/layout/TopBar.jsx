@@ -1,5 +1,6 @@
-import { Sun, Moon, Maximize2, Minimize2, LogOut, ChevronDown, Bell, Check, Building2, MapPin, CalendarDays, Menu } from 'lucide-react';
+import { Sun, Moon, Maximize2, Minimize2, LogOut, ChevronDown, Bell, Check, Building2, MapPin, CalendarDays, Menu, HelpCircle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { branches, fiscalYears } from '../../data/masters';
 import { currentUser } from '../../data/shell';
 import { useAuth } from '../../context/AuthContext';
@@ -64,6 +65,7 @@ function DropdownSelect({ label, icon: Icon, options, value, onChange }) {
 }
 
 export default function TopBar({ collapsed, onMenuOpen }) {
+  const navigate = useNavigate();
   const { logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { companies, companyId, setCompanyId } = useCompany();
@@ -123,6 +125,12 @@ export default function TopBar({ collapsed, onMenuOpen }) {
       </div>
 
       <div className={styles.right}>
+        <Tooltip content="Help & Guide" placement="bottom">
+          <button className={styles.iconBtn} onClick={() => navigate('/help')}>
+            <HelpCircle size={16} />
+          </button>
+        </Tooltip>
+
         <Tooltip content="Notifications" placement="bottom">
           <button className={styles.iconBtn}>
             <Bell size={16} />

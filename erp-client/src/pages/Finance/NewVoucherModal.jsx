@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
@@ -102,16 +103,19 @@ export default function NewVoucherModal({ open, onClose, onSave }) {
         </SelectField>
         <div />
         <div className="ff">
-          <SelectField label="Account *" value={form.account_id} onChange={set('account_id')} required>
-            <option value="">
-              {chartOfAccounts.length > 0 ? '— Select account —' : '— No accounts found —'}
-            </option>
-            {chartOfAccounts.map(a => (
-              <option key={a.account_id} value={a.account_id}>
-                {a.account_code} — {a.account_name} ({a.account_type})
-              </option>
-            ))}
-          </SelectField>
+          <SearchableSelect
+            label="Account"
+            required
+            placeholder={chartOfAccounts.length > 0 ? 'Search by account name or code…' : 'No accounts found'}
+            emptyText="No matching accounts"
+            value={form.account_id}
+            onChange={(val) => setForm(f => ({ ...f, account_id: val }))}
+            options={chartOfAccounts.map(a => ({
+              value: a.account_id,
+              label: `${a.account_code} — ${a.account_name}`,
+              hint: a.account_type,
+            }))}
+          />
         </div>
         <Input label="Debit (PKR)" type="number" min="0" step="0.01" value={form.debit} onChange={set('debit')} placeholder="0.00" />
         <Input label="Credit (PKR)" type="number" min="0" step="0.01" value={form.credit} onChange={set('credit')} placeholder="0.00" />
