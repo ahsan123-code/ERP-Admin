@@ -1,9 +1,16 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { mastersDb } from '../lib/db';
 
 const CatalogueContext = createContext(null);
 
 export function CatalogueProvider({ children }) {
   const [items, setItems] = useState([]);
+
+  useEffect(() => {
+    mastersDb.getProductCatalogue().then(({ data }) => {
+      if (data) setItems(data);
+    });
+  }, []);
 
   const addItem = (item) => {
     if (item) setItems(prev => [item, ...prev]);
