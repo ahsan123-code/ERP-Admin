@@ -154,6 +154,13 @@ export const financeDb = {
   getCashReceived: () =>
     supabase.from('cash_received').select('*').order('date', { ascending: false }),
 
+  getReceiptVouchers: (companyId = 1) =>
+    supabase.from('vouchers')
+      .select('id, voucher_id, voucher_type, date, account_name, debit, credit, narration, reference, company_id')
+      .in('voucher_type', ['Receipt', 'BankRec'])
+      .eq('company_id', companyId)
+      .order('date', { ascending: false }),
+
   addCashReceived: async (cr, { depositAccount, ledgerAccount, companyId }) => {
     const voucherId = 'CR-' + String(Date.now()).slice(-6);
     await financeDb.postJournalEntry({
@@ -380,7 +387,7 @@ export const salesDb = {
 
   getSalesInvoices: (companyId = 1) =>
     supabase.from('sales_invoices')
-      .select('id, sale_inv_id, customer_name, date, subtotal, freight, grand_total, status, so_ref, company_id')
+      .select('*')
       .eq('company_id', companyId)
       .order('date', { ascending: false }),
 
@@ -417,14 +424,44 @@ export const procurementDb = {
   getPurchaseRequisitions: () =>
     supabase.from('purchase_requisitions').select('*').order('date', { ascending: false }),
 
+  addPurchaseRequisition: (pr) =>
+    supabase.from('purchase_requisitions').insert([pr]).select().single(),
+
+  addPrLineItems: (items) =>
+    supabase.from('pr_line_items').insert(items).select(),
+
   getPurchaseOrders: (companyId = 1) =>
     supabase.from('purchase_orders')
-      .select('id, po_id, vendor_name, po_date, delivery_due_date, item_count, total_amount, status, company_id')
+      .select('id, po_id, vendor_name, po_date, delivery_due_date, item_count, total_amount, status, company_id, pr_ref, pdn_ref')
       .eq('company_id', companyId)
       .order('po_date', { ascending: false }),
 
+  addPurchaseOrder: (po) =>
+    supabase.from('purchase_orders').insert([po]).select().single(),
+
+  addPoLineItems: (items) =>
+    supabase.from('po_line_items').insert(items).select(),
+
+  getGatePassesInward: (companyId = 1) =>
+    supabase.from('gate_passes_inward').select('*').eq('company_id', companyId).order('gate_date', { ascending: false }),
+
+  addGatePassInward: (gp) =>
+    supabase.from('gate_passes_inward').insert([gp]).select().single(),
+
   getGrns: (companyId = 1) =>
     supabase.from('grns').select('*').eq('company_id', companyId).order('received_date', { ascending: false }),
+
+  addGrn: (grn) =>
+    supabase.from('grns').insert([grn]).select().single(),
+
+  addGrnLineItems: (items) =>
+    supabase.from('grn_line_items').insert(items).select(),
+
+  getPurchaseInvoices: (companyId = 1) =>
+    supabase.from('purchase_invoices').select('*').eq('company_id', companyId).order('bill_date', { ascending: false }),
+
+  addPurchaseInvoice: (pinv) =>
+    supabase.from('purchase_invoices').insert([pinv]).select().single(),
 
   getPurchaseReturns: () =>
     supabase.from('purchase_returns').select('*').order('return_date', { ascending: false }),

@@ -88,6 +88,13 @@
   border-top: 2px solid var(--border-default); padding-top: 12px; margin-top: 6px;
 }
 
+/* Section heading (e.g. Dr / Cr sections in Customer Balance) */
+.sectionHeading {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-secondary);
+  padding: 4px 0; border-bottom: 1px solid var(--border-subtle);
+}
+
 /* Bank Reconciliation */
 .reconSummary {
   display: flex; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-4);

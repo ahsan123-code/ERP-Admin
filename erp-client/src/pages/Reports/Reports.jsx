@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Scale, TrendingDown, TrendingUp, BarChart3,
   Printer, Users, Globe, Package, FileText, BadgeCheck, Truck, Landmark,
+  ClipboardList,
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
@@ -26,6 +27,7 @@ const SEG_TO_TAB = {
   'customer-ledger': 'customer-ledger', region: 'region',
   'sold-items': 'sold-items', 'invoice-summary': 'invoice-summary',
   gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
+  'cust-balance': 'cust-balance',
 };
 const TAB_TO_SEG = {
   ledger: 'ledger', trial: 'trial', receivables: 'receivables',
@@ -33,6 +35,7 @@ const TAB_TO_SEG = {
   'customer-ledger': 'customer-ledger', region: 'region',
   'sold-items': 'sold-items', 'invoice-summary': 'invoice-summary',
   gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
+  'cust-balance': 'cust-balance',
 };
 
 const PAGE_TABS = [
@@ -46,8 +49,9 @@ const PAGE_TABS = [
   { value: 'sold-items',      label: 'Sold Items',          icon: Package     },
   { value: 'invoice-summary', label: 'Invoice Summary',     icon: FileText    },
   { value: 'gst',             label: 'Order Wise GST',      icon: BadgeCheck  },
-  { value: 'challan',         label: 'Delivery Challan',    icon: Truck       },
-  { value: 'bank-recon',      label: 'Bank Reconciliation', icon: Landmark    },
+  { value: 'challan',         label: 'Delivery Challan',    icon: Truck         },
+  { value: 'bank-recon',      label: 'Bank Reconciliation', icon: Landmark      },
+  { value: 'cust-balance',    label: 'Customer Balance',    icon: ClipboardList },
 ];
 
 /* ── Account Ledger ─────────────────────────────────────────────────── */
@@ -549,6 +553,250 @@ function BankReconciliation({ bankAccounts, paymentReconciliation }) {
   );
 }
 
+/* ── Customer Current Balance ────────────────────────────────────────── */
+function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
+  const [search, setSearch] = useState('');
+
+  const report = useMemo(() => {
+    if (!customers) return [];
+    return customers.map(c => {
+      const cName = (c.name || '').toLowerCase();
+
+      // Latest invoice for this customer
+      const custInvs = (salesInvoices || []).filter(
+        inv => (inv.customer_name || '').toLowerCase() === cName
+      );
+      const lastInv = custInvs[0];
+
+      // Last receipt voucher matching customer name in account_name or narration
+      const custPay = (receiptVouchers || []).filter(v =>
+        (v.account_name || '').toLowerCase().includes(cName) ||
+        (v.narration    || '').toLowerCase().includes(cName)
+      );
+      const lastPay = custPay[0];
+
+      return {
+        customer_id:          c.customer_id,
+        name:                 c.name,
+        contact:              c.contact,
+        balance:              parseFloat(c.outstanding_balance) || 0,
+        last_payment_date:    lastPay?.date      || null,
+        last_payment_amount:  lastPay ? (parseFloat(lastPay.credit) || 0) : 0,
+        last_invoice_id:      lastInv?.sale_inv_id || null,
+        last_invoice_date:    lastInv?.date        || null,
+        last_invoice_amount:  parseFloat(lastInv?.grand_total) || 0,
+      };
+    }).filter(r => r.balance !== 0 || r.last_invoice_id);
+  }, [customers, salesInvoices, receiptVouchers]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return report;
+    return report.filter(r =>
+      (r.name    || '').toLowerCase().includes(q) ||
+      (r.contact || '').toLowerCase().includes(q)
+    );
+  }, [report, search]);
+
+  const drRows    = filtered.filter(r => r.balance >= 0).sort((a, b) => b.balance - a.balance);
+  const crRows    = filtered.filter(r => r.balance  < 0).sort((a, b) => a.balance - b.balance);
+  const totalDr   = drRows.reduce((s, r) => s + r.balance, 0);
+  const totalCr   = crRows.reduce((s, r) => s + Math.abs(r.balance), 0);
+  const netBalance= totalDr - totalCr;
+
+  const renderRow = (r, i) => (
+    <tr key={r.customer_id || r.name}>
+      <td className={styles.code}>{i + 1}</td>
+      <td>
+        <strong>{r.name}</strong>
+        {r.contact && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{r.contact}</div>}
+      </td>
+      <td className={`${styles.right} ${styles.mono}`} style={{ color: r.balance >= 0 ? 'var(--blue)' : 'var(--red)', fontWeight: 700 }}>
+        {r.balance >= 0
+          ? `${formatCurrency(r.balance)} Dr`
+          : `${formatCurrency(Math.abs(r.balance))} Cr`}
+      </td>
+      <td className={`${styles.code} ${styles.right}`}>
+        {r.last_payment_date ? formatDate(r.last_payment_date) : <span className={styles.nil}>—</span>}
+      </td>
+      <td className={`${styles.right} ${styles.mono}`}>
+        {r.last_payment_amount > 0 ? formatCurrency(r.last_payment_amount) : <span className={styles.nil}>—</span>}
+      </td>
+      <td className={styles.code}>
+        {r.last_invoice_id || <span className={styles.nil}>—</span>}
+      </td>
+      <td className={`${styles.code} ${styles.right}`}>
+        {r.last_invoice_date ? formatDate(r.last_invoice_date) : <span className={styles.nil}>—</span>}
+      </td>
+      <td className={`${styles.right} ${styles.mono}`}>
+        {r.last_invoice_amount > 0 ? formatCurrency(r.last_invoice_amount) : <span className={styles.nil}>—</span>}
+      </td>
+    </tr>
+  );
+
+  const handlePrint = () => {
+    const win = window.open('', '_blank', 'width=1150,height=820');
+    const allRows = [...drRows, ...crRows];
+    const tableRows = allRows.map((r, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td><strong>${r.name}</strong>${r.contact ? `<br><small style="color:#888">${r.contact}</small>` : ''}</td>
+        <td class="right" style="color:${r.balance >= 0 ? '#1a5276' : '#922b21'};font-weight:700;font-family:monospace">
+          ${r.balance >= 0 ? formatCurrency(r.balance) + ' Dr' : formatCurrency(Math.abs(r.balance)) + ' Cr'}
+        </td>
+        <td class="center">${r.last_payment_date ? formatDate(r.last_payment_date) : '—'}</td>
+        <td class="right mono">${r.last_payment_amount > 0 ? formatCurrency(r.last_payment_amount) : '—'}</td>
+        <td class="center mono">${r.last_invoice_id || '—'}</td>
+        <td class="center">${r.last_invoice_date ? formatDate(r.last_invoice_date) : '—'}</td>
+        <td class="right mono">${r.last_invoice_amount > 0 ? formatCurrency(r.last_invoice_amount) : '—'}</td>
+      </tr>`).join('');
+
+    win.document.write(`<!DOCTYPE html><html><head><title>Customer Current Balance</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff}
+      .wrap{max-width:1060px;margin:0 auto;padding:24px}
+      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:14px}
+      .co-name{font-size:20px;font-weight:700}
+      .co-meta{font-size:10px;color:#555;margin-top:4px}
+      .rpt-title{font-size:14px;font-weight:700;text-transform:uppercase;margin-top:6px;letter-spacing:1px}
+      table{width:100%;border-collapse:collapse;margin-top:10px}
+      thead th{background:#1a1a1a;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:7px 8px;text-align:left}
+      th.right,td.right{text-align:right} th.center,td.center{text-align:center}
+      tbody td{padding:6px 8px;border-bottom:1px solid #eee;vertical-align:top}
+      tbody tr:nth-child(even){background:#fafafa}
+      .mono{font-family:monospace}
+      .totals{display:flex;justify-content:flex-end;margin-top:14px}
+      .tbox{min-width:300px}
+      .trow{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px}
+      .trow.net{font-weight:700;font-size:14px;border-top:2px solid #000;border-bottom:none;padding-top:8px;margin-top:4px}
+      .footer{margin-top:20px;font-size:10px;color:#666;border-top:1px solid #ddd;padding-top:10px}
+      small{font-size:10px;color:#666}
+    </style></head><body><div class="wrap">
+    <div class="hdr">
+      <div class="co-name">${COMPANY.name}</div>
+      <div class="co-meta">${COMPANY.address} | NTN: ${COMPANY.ntn}</div>
+      <div class="rpt-title">Customer Current Balance Report</div>
+      <div class="co-meta">As of ${formatDate(new Date().toISOString())} — ${allRows.length} customers</div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Sr#</th><th>Customer</th><th class="right">Current Balance</th>
+        <th class="center">Last Pmt Date</th><th class="right">Last Pmt Amt</th>
+        <th class="center">Invoice #</th><th class="center">Invoice Date</th><th class="right">Invoice Amt</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+    <div class="totals">
+      <div class="tbox">
+        <div class="trow"><span>Total Debit (Receivable)</span><span class="mono" style="color:#1a5276">${formatCurrency(totalDr)}</span></div>
+        <div class="trow"><span>Total Credit (Advance)</span><span class="mono" style="color:#922b21">${formatCurrency(totalCr)}</span></div>
+        <div class="trow net"><span>Net Receivable</span><span class="mono">${formatCurrency(netBalance)}</span></div>
+      </div>
+    </div>
+    <div class="footer">Printed on ${new Date().toLocaleString('en-PK')} — ${COMPANY.name} ERP</div>
+    </div></body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
+  };
+
+  const tblHead = (
+    <thead>
+      <tr>
+        <th style={{ width: 50 }}>Sr#</th>
+        <th>Customer</th>
+        <th className={styles.right} style={{ width: 170 }}>Current Balance</th>
+        <th className={styles.right} style={{ width: 130 }}>Last Pmt Date</th>
+        <th className={styles.right} style={{ width: 140 }}>Last Pmt Amt</th>
+        <th style={{ width: 120 }}>Invoice No.</th>
+        <th className={styles.right} style={{ width: 110 }}>Invoice Date</th>
+        <th className={styles.right} style={{ width: 140 }}>Invoice Amt</th>
+      </tr>
+    </thead>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+      <div className={styles.filterRow}>
+        <div className={styles.filterGroup}>
+          <label className={styles.filterLabel}>Search Customer</label>
+          <input
+            className={styles.select}
+            placeholder="Type name or contact..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ minWidth: 260 }}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <span className={styles.mono} style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            {filtered.length} customers &nbsp;|&nbsp; Net Receivable:&nbsp;
+            <strong style={{ color: netBalance > 0 ? 'var(--blue)' : 'var(--red)' }}>
+              {formatCurrency(netBalance)} {netBalance >= 0 ? 'Dr' : 'Cr'}
+            </strong>
+          </span>
+          <Button variant="secondary" icon={<Printer size={14} strokeWidth={1.75} />} size="sm" onClick={handlePrint}>
+            Print Report
+          </Button>
+        </div>
+      </div>
+
+      {drRows.length > 0 && (
+        <div>
+          <div className={styles.sectionHeading} style={{ marginBottom: 6 }}>
+            Debit Balances (Receivable) — {drRows.length} customers
+          </div>
+          <div className={styles.reportTable}>
+            <table className={styles.tbl}>
+              {tblHead}
+              <tbody>
+                {drRows.map((r, i) => renderRow(r, i))}
+                <tr className={styles.totalRow}>
+                  <td colSpan={2}><strong>Total Debit</strong></td>
+                  <td className={`${styles.right} ${styles.mono}`} style={{ color: 'var(--blue)', fontWeight: 700 }}>
+                    {formatCurrency(totalDr)} Dr
+                  </td>
+                  <td colSpan={5}></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {crRows.length > 0 && (
+        <div>
+          <div className={styles.sectionHeading} style={{ marginBottom: 6 }}>
+            Credit Balances (Advance Received) — {crRows.length} customers
+          </div>
+          <div className={styles.reportTable}>
+            <table className={styles.tbl}>
+              {tblHead}
+              <tbody>
+                {crRows.map((r, i) => renderRow(r, i))}
+                <tr className={styles.totalRow}>
+                  <td colSpan={2}><strong>Total Credit</strong></td>
+                  <td className={`${styles.right} ${styles.mono}`} style={{ color: 'var(--red)', fontWeight: 700 }}>
+                    {formatCurrency(totalCr)} Cr
+                  </td>
+                  <td colSpan={5}></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 13 }}>
+          No customer balance data found{search ? ` for "${search}"` : ''}.
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main component ─────────────────────────────────────────────────── */
 export default function Reports() {
   const location = useLocation();
@@ -562,6 +810,7 @@ export default function Reports() {
   const { data: bankAccounts }         = useDb(() => financeDb.getBankAccounts(companyId), [companyId]);
   const { data: agingReport }          = useDb(() => financeDb.getAgingReport());
   const { data: paymentReconciliation }= useDb(() => financeDb.getPaymentReconciliation());
+  const { data: receiptVouchers }      = useDb(() => financeDb.getReceiptVouchers(companyId), [companyId]);
   const { data: customers }            = useDb(() => salesDb.getCustomers());
   const { data: salesOrders }          = useDb(() => salesDb.getSalesOrders(companyId),   [companyId]);
   const { data: salesInvoices }        = useDb(() => salesDb.getSalesInvoices(companyId), [companyId]);
@@ -655,6 +904,21 @@ export default function Reports() {
         <Card padding={false}>
           <CardHeader title="Bank Reconciliation" subtitle="Invoice vs payment matching across bank accounts" />
           <div className={styles.cardBody}><BankReconciliation bankAccounts={bankAccounts} paymentReconciliation={paymentReconciliation} /></div>
+        </Card>
+      )}
+      {pageTab === 'cust-balance' && (
+        <Card padding={false}>
+          <CardHeader
+            title="Customer Current Balance"
+            subtitle="Outstanding balances, last payment, and latest invoice per customer"
+          />
+          <div className={styles.cardBody}>
+            <CustomerCurrentBalance
+              customers={customers}
+              salesInvoices={salesInvoices}
+              receiptVouchers={receiptVouchers}
+            />
+          </div>
         </Card>
       )}
     </div>
