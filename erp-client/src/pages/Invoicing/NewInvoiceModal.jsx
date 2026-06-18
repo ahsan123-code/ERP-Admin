@@ -4,8 +4,9 @@ import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
-import { salesDb, mastersDb, invoicingDb } from '../../lib/db';
+import { mastersDb, invoicingDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
+import { useCustomers } from '../../context/CustomerContext';
 
 const today    = new Date().toISOString().split('T')[0];
 const nextInvNo = () => 'INV-' + String(50 + Math.floor(Math.random() * 50)).padStart(4, '0');
@@ -25,7 +26,7 @@ export default function NewInvoiceModal({ open, onClose, onSave, prefillCustomer
     : EMPTY
   );
 
-  const { data: customers }        = useDb(() => salesDb.getCustomers());
+  const { customers }              = useCustomers();
   const { data: productCatalogue } = useDb(() => mastersDb.getProductCatalogue());
 
   useEffect(() => {

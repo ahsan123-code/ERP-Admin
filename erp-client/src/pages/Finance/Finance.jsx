@@ -31,17 +31,6 @@ const AGING_COLS = [
     render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span> },
 ];
 
-const BANK_COLS = [
-  { key: 'account_id',    label: 'Account ID',  width: 100, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'bank_name',     label: 'Bank',        width: 170 },
-  { key: 'account_no',    label: 'Account No.', width: 160, render: v => <span className={styles.mono}>{v}</span> },
-  { key: 'account_title', label: 'Title',       width: 200 },
-  { key: 'account_type',  label: 'Type',        width: 90  },
-  { key: 'balance',       label: 'Balance',     width: 140, align: 'right',
-    render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
-  { key: 'status',        label: 'Status',      width: 90,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
-];
 
 const PAGE_TABS = [
   { value: 'vouchers',   label: 'Vouchers',            icon: FileCheck      },
@@ -134,9 +123,10 @@ export default function Finance() {
   const [crOpen,    setCrOpen]    = useState(false);
   const [ibtOpen,   setIbtOpen]   = useState(false);
   const [pcOpen,    setPcOpen]    = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
-  const [clearingId, setClearingId] = useState(null);
-  const [bouncingId, setBouncingId] = useState(null);
+  const [deletingId,     setDeletingId]     = useState(null);
+  const [clearingId,     setClearingId]     = useState(null);
+  const [bouncingId,     setBouncingId]     = useState(null);
+  const [deletingBankId, setDeletingBankId] = useState(null);
 
   const { data: dbVouchers, refetch: refetchVouchers } = useDb(() => financeDb.getVouchers(companyId), [companyId]);
   const { data: bankAccounts, refetch: refetchBanks } = useDb(() => financeDb.getBankAccounts(companyId), [companyId]);
@@ -156,6 +146,44 @@ export default function Finance() {
     refetchCOA();
     refetchBanks();
   };
+
+  const handleDeleteBankAccount = async (row) => {
+    setDeletingBankId(row.id);
+    const { error } = await financeDb.deleteBankAccount(row.id);
+    setDeletingBankId(null);
+    if (error) {
+      toast.error(error.message, 'Delete Failed');
+    } else {
+      refetchBanks();
+      toast.success(`${row.bank_name} account removed.`);
+    }
+  };
+
+  const BANK_COLS = [
+    { key: 'account_id',    label: 'Account ID',  width: 100, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'bank_name',     label: 'Bank',        width: 170 },
+    { key: 'account_no',    label: 'Account No.', width: 160, render: v => <span className={styles.mono}>{v}</span> },
+    { key: 'account_title', label: 'Title',       width: 200 },
+    { key: 'account_type',  label: 'Type',        width: 90  },
+    { key: 'balance',       label: 'Balance',     width: 140, align: 'right',
+      render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
+    { key: 'status',        label: 'Status',      width: 90,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    { key: '_del', label: '', width: 44, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingBankId === row.id}
+          onClick={e => { e.stopPropagation(); handleDeleteBankAccount(row); }}
+          title={`Delete ${row.bank_name}`}
+        >
+          {deletingBankId === row.id
+            ? <span style={{ fontSize: 10 }}>…</span>
+            : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
+  ];
 
   const handleDeleteVoucher = async (row) => {
     setDeletingId(row.id);

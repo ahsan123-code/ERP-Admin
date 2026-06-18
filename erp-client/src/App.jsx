@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { CompanyProvider } from './context/CompanyContext';
 import { CatalogueProvider } from './context/CatalogueContext';
+import { CustomerProvider } from './context/CustomerContext';
 import Login from './pages/Login/Login';
 
 import Dashboard  from './pages/Dashboard/Dashboard';
@@ -82,7 +83,9 @@ export default function App() {
       <AuthProvider>
         <CompanyProvider>
           <CatalogueProvider>
-            <AppRoutes />
+            <CustomerProvider>
+              <AppRoutes />
+            </CustomerProvider>
           </CatalogueProvider>
         </CompanyProvider>
       </AuthProvider>

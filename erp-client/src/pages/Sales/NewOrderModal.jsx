@@ -5,8 +5,8 @@ import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { salesDb } from '../../lib/db';
-import { useDb } from '../../hooks/useDb';
 import { useCatalogue } from '../../context/CatalogueContext';
+import { useCustomers } from '../../context/CustomerContext';
 import { useCompany } from '../../context/CompanyContext';
 
 const today = new Date().toISOString().split('T')[0];
@@ -19,7 +19,7 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(EMPTY_ORDER);
 
-  const { data: customers }    = useDb(() => salesDb.getCustomers());
+  const { customers }               = useCustomers();
   const { items: productCatalogue } = useCatalogue();
 
   useEffect(() => {

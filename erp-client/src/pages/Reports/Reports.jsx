@@ -3,15 +3,16 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Scale, TrendingDown, TrendingUp, BarChart3,
   Printer, Users, Globe, Package, FileText, BadgeCheck, Truck, Landmark,
-  ClipboardList,
+  ClipboardList, CalendarDays, Store,
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
-import { financeDb, salesDb } from '../../lib/db';
+import { financeDb, salesDb, procurementDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { useCustomers } from '../../context/CustomerContext';
 import { formatDate, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import styles from './Reports.module.css';
@@ -27,7 +28,7 @@ const SEG_TO_TAB = {
   'customer-ledger': 'customer-ledger', region: 'region',
   'sold-items': 'sold-items', 'invoice-summary': 'invoice-summary',
   gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
-  'cust-balance': 'cust-balance',
+  'cust-balance': 'cust-balance', 'day-book': 'day-book', 'vendor-balance': 'vendor-balance',
 };
 const TAB_TO_SEG = {
   ledger: 'ledger', trial: 'trial', receivables: 'receivables',
@@ -35,7 +36,7 @@ const TAB_TO_SEG = {
   'customer-ledger': 'customer-ledger', region: 'region',
   'sold-items': 'sold-items', 'invoice-summary': 'invoice-summary',
   gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
-  'cust-balance': 'cust-balance',
+  'cust-balance': 'cust-balance', 'day-book': 'day-book', 'vendor-balance': 'vendor-balance',
 };
 
 const PAGE_TABS = [
@@ -51,7 +52,9 @@ const PAGE_TABS = [
   { value: 'gst',             label: 'Order Wise GST',      icon: BadgeCheck  },
   { value: 'challan',         label: 'Delivery Challan',    icon: Truck         },
   { value: 'bank-recon',      label: 'Bank Reconciliation', icon: Landmark      },
-  { value: 'cust-balance',    label: 'Customer Balance',    icon: ClipboardList },
+  { value: 'cust-balance',    label: 'Customer Balance',    icon: ClipboardList  },
+  { value: 'vendor-balance',  label: 'Vendor Balance',      icon: Store          },
+  { value: 'day-book',        label: 'Daily Day Book',      icon: CalendarDays   },
 ];
 
 /* ── Account Ledger ─────────────────────────────────────────────────── */
@@ -562,25 +565,34 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
     return customers.map(c => {
       const cName = (c.name || '').toLowerCase();
 
-      // Latest invoice for this customer
+      // All invoices for this customer
       const custInvs = (salesInvoices || []).filter(
         inv => (inv.customer_name || '').toLowerCase() === cName
       );
       const lastInv = custInvs[0];
+      const totalInvoiced = custInvs.reduce((s, inv) => s + (parseFloat(inv.grand_total) || 0), 0);
 
-      // Last receipt voucher matching customer name in account_name or narration
+      // All receipt vouchers matching this customer
       const custPay = (receiptVouchers || []).filter(v =>
         (v.account_name || '').toLowerCase().includes(cName) ||
         (v.narration    || '').toLowerCase().includes(cName)
       );
       const lastPay = custPay[0];
+      const totalPaid = custPay.reduce((s, v) => s + (parseFloat(v.credit) || 0), 0);
+
+      // Derived balance: total invoiced minus total paid
+      const derivedBalance = totalInvoiced - totalPaid;
+      // Fall back to outstanding_balance if no invoice data exists
+      const balance = totalInvoiced > 0 ? derivedBalance : (parseFloat(c.outstanding_balance) || 0);
 
       return {
         customer_id:          c.customer_id,
         name:                 c.name,
         contact:              c.contact,
-        balance:              parseFloat(c.outstanding_balance) || 0,
-        last_payment_date:    lastPay?.date      || null,
+        balance,
+        total_invoiced:       totalInvoiced,
+        total_paid:           totalPaid,
+        last_payment_date:    lastPay?.date        || null,
         last_payment_amount:  lastPay ? (parseFloat(lastPay.credit) || 0) : 0,
         last_invoice_id:      lastInv?.sale_inv_id || null,
         last_invoice_date:    lastInv?.date        || null,
@@ -797,6 +809,198 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
   );
 }
 
+/* ── Daily Day Book ──────────────────────────────────────────────────── */
+function DailyDayBook({ vouchers }) {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const dayVouchers = useMemo(() =>
+    (vouchers || []).filter(v => v.date === date)
+  , [vouchers, date]);
+
+  const totalDr = dayVouchers.reduce((s, v) => s + (parseFloat(v.debit)  || 0), 0);
+  const totalCr = dayVouchers.reduce((s, v) => s + (parseFloat(v.credit) || 0), 0);
+
+  const handlePrint = () => {
+    const win = window.open('', '_blank', 'width=1000,height=750');
+    win.document.write(`<!DOCTYPE html><html><head><title>Daily Day Book — ${date}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px}
+      h2{text-align:center;font-size:16px;margin-bottom:2px}
+      .sub{text-align:center;font-size:12px;color:#555;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse}
+      th{background:#1a1a2e;color:#fff;padding:7px 10px;text-align:left;font-size:11px}
+      td{padding:6px 10px;border-bottom:1px solid #e0e0e0;font-size:11.5px}
+      .mono{font-family:monospace}.right{text-align:right}
+      .dr{color:#1a5276}.cr{color:#145a32}
+      tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
+    </style></head><body>
+    <h2>${COMPANY.name}</h2>
+    <div class="sub">Daily Day Book — ${date}</div>
+    <table>
+      <thead><tr><th>#</th><th>Voucher ID</th><th>Type</th><th>Account</th><th>Narration</th><th class="right">Debit</th><th class="right">Credit</th></tr></thead>
+      <tbody>${dayVouchers.map((v, i) => `<tr>
+        <td>${i + 1}</td>
+        <td class="mono">${v.voucher_id || '—'}</td>
+        <td>${v.voucher_type || '—'}</td>
+        <td>${v.account_name || '—'}</td>
+        <td>${v.narration || '—'}</td>
+        <td class="right mono dr">${v.debit  > 0 ? formatCurrency(v.debit)  : '—'}</td>
+        <td class="right mono cr">${v.credit > 0 ? formatCurrency(v.credit) : '—'}</td>
+      </tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="5" class="right">Totals</td>
+        <td class="right mono dr">${formatCurrency(totalDr)}</td>
+        <td class="right mono cr">${formatCurrency(totalCr)}</td>
+      </tr></tfoot>
+    </table></body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 400);
+  };
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Date</label>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '6px 12px', fontSize: 13 }} />
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{dayVouchers.length} entries</span>
+        <Button variant="secondary" icon={<Printer size={14} />} onClick={handlePrint} style={{ marginLeft: 'auto' }}>Print</Button>
+      </div>
+      {dayVouchers.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>No vouchers found for {date}.</div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-tertiary)' }}>
+              {['#','Voucher ID','Type','Account','Narration','Debit','Credit'].map(h => (
+                <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Debit' || h === 'Credit' ? 'right' : 'left', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {dayVouchers.map((v, i) => (
+              <tr key={v.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <td style={{ padding: '7px 12px', color: 'var(--text-muted)', fontSize: 11 }}>{i + 1}</td>
+                <td style={{ padding: '7px 12px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{v.voucher_id || '—'}</td>
+                <td style={{ padding: '7px 12px' }}>{v.voucher_type || '—'}</td>
+                <td style={{ padding: '7px 12px', fontWeight: 500 }}>{v.account_name || '—'}</td>
+                <td style={{ padding: '7px 12px', color: 'var(--text-secondary)', fontSize: 12 }}>{v.narration || '—'}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--blue)' }}>{v.debit  > 0 ? formatCurrency(v.debit)  : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{v.credit > 0 ? formatCurrency(v.credit) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: 'var(--bg-tertiary)', fontWeight: 700 }}>
+              <td colSpan={5} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)' }}>Totals</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--blue)' }}>{formatCurrency(totalDr)}</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{formatCurrency(totalCr)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ── Vendor Current Balance ───────────────────────────────────────────── */
+function VendorCurrentBalance({ vendors, purchaseInvoices }) {
+  const [search, setSearch] = useState('');
+
+  const report = useMemo(() => {
+    return (vendors || []).map(v => {
+      const vName = (v.name || '').toLowerCase();
+      const vInvs = (purchaseInvoices || []).filter(
+        inv => (inv.vendor_name || '').toLowerCase() === vName
+      );
+      const unpaid = vInvs.filter(inv => inv.status === 'unpaid' || inv.status === 'partial');
+      const balance = unpaid.reduce((s, inv) => s + (parseFloat(inv.grand_total) || 0), 0);
+      const lastInv = vInvs[0];
+      return {
+        id: v.id, name: v.name, contact: v.contact, category: v.category,
+        balance, last_bill_id: lastInv?.bill_id || null,
+        last_bill_date: lastInv?.bill_date || null,
+        last_bill_amount: parseFloat(lastInv?.grand_total) || 0,
+      };
+    }).filter(r => r.balance > 0 || r.last_bill_id);
+  }, [vendors, purchaseInvoices]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return report;
+    return report.filter(r => (r.name || '').toLowerCase().includes(q));
+  }, [report, search]);
+
+  const totalPayable = filtered.reduce((s, r) => s + r.balance, 0);
+
+  const handlePrint = () => {
+    const win = window.open('', '_blank', 'width=1000,height=750');
+    win.document.write(`<!DOCTYPE html><html><head><title>Vendor Current Balance</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;padding:24px}
+      h2{text-align:center;font-size:16px;margin-bottom:2px}.sub{text-align:center;color:#555;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse}th{background:#1a1a2e;color:#fff;padding:7px 10px;text-align:left;font-size:11px}
+      td{padding:6px 10px;border-bottom:1px solid #e0e0e0;font-size:11.5px}.right{text-align:right}.mono{font-family:monospace}
+      tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
+    </style></head><body>
+    <h2>${COMPANY.name}</h2><div class="sub">Vendor Current Balance</div>
+    <table><thead><tr><th>#</th><th>Vendor</th><th>Category</th><th>Balance (Payable)</th><th>Last Bill</th><th>Bill Date</th><th class="right">Bill Amount</th></tr></thead>
+    <tbody>${filtered.map((r, i) => `<tr>
+      <td>${i + 1}</td><td><strong>${r.name}</strong></td><td>${r.category || '—'}</td>
+      <td class="mono" style="color:#922b21;font-weight:700">${formatCurrency(r.balance)}</td>
+      <td class="mono">${r.last_bill_id || '—'}</td><td>${r.last_bill_date ? formatDate(r.last_bill_date) : '—'}</td>
+      <td class="right mono">${r.last_bill_amount > 0 ? formatCurrency(r.last_bill_amount) : '—'}</td>
+    </tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="3" class="right">Total Payable</td><td class="mono" style="color:#922b21">${formatCurrency(totalPayable)}</td><td colspan="3"></td></tr></tfoot>
+    </table></body></html>`);
+    win.document.close(); setTimeout(() => win.print(), 400);
+  };
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor..."
+          style={{ flex: 1, maxWidth: 280, background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '7px 12px', fontSize: 13 }} />
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{filtered.length} vendors · Total payable: <strong style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPayable)}</strong></span>
+        <Button variant="secondary" icon={<Printer size={14} />} onClick={handlePrint} style={{ marginLeft: 'auto' }}>Print</Button>
+      </div>
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>No vendor balances found{search ? ` for "${search}"` : ''}.</div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-tertiary)' }}>
+              {['#','Vendor','Category','Balance (Payable)','Last Bill','Bill Date','Bill Amount'].map(h => (
+                <th key={h} style={{ padding: '8px 12px', textAlign: 'right' === h ? 'right' : 'left', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r, i) => (
+              <tr key={r.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <td style={{ padding: '7px 12px', color: 'var(--text-muted)', fontSize: 11 }}>{i + 1}</td>
+                <td style={{ padding: '7px 12px', fontWeight: 500 }}>{r.name}</td>
+                <td style={{ padding: '7px 12px', color: 'var(--text-secondary)', fontSize: 12 }}>{r.category || '—'}</td>
+                <td style={{ padding: '7px 12px', fontFamily: 'var(--font-mono)', color: 'var(--red)', fontWeight: 700 }}>{formatCurrency(r.balance)}</td>
+                <td style={{ padding: '7px 12px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.last_bill_id || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.last_bill_date ? formatDate(r.last_bill_date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.last_bill_amount > 0 ? formatCurrency(r.last_bill_amount) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: 'var(--bg-tertiary)', fontWeight: 700 }}>
+              <td colSpan={3} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)' }}>Total Payable</td>
+              <td style={{ padding: '8px 12px', fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{formatCurrency(totalPayable)}</td>
+              <td colSpan={3} />
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
+
 /* ── Main component ─────────────────────────────────────────────────── */
 export default function Reports() {
   const location = useLocation();
@@ -811,7 +1015,10 @@ export default function Reports() {
   const { data: agingReport }          = useDb(() => financeDb.getAgingReport());
   const { data: paymentReconciliation }= useDb(() => financeDb.getPaymentReconciliation());
   const { data: receiptVouchers }      = useDb(() => financeDb.getReceiptVouchers(companyId), [companyId]);
-  const { data: customers }            = useDb(() => salesDb.getCustomers());
+  const { data: allVouchers }          = useDb(() => financeDb.getVouchers(companyId), [companyId]);
+  const { data: vendors }              = useDb(() => procurementDb.getVendors());
+  const { data: purchaseInvoices }     = useDb(() => procurementDb.getPurchaseInvoices(companyId), [companyId]);
+  const { customers }                  = useCustomers();
   const { data: salesOrders }          = useDb(() => salesDb.getSalesOrders(companyId),   [companyId]);
   const { data: salesInvoices }        = useDb(() => salesDb.getSalesInvoices(companyId), [companyId]);
   const { data: orderConfirmations }   = useDb(() => salesDb.getOrderConfirmations());
@@ -918,6 +1125,22 @@ export default function Reports() {
               salesInvoices={salesInvoices}
               receiptVouchers={receiptVouchers}
             />
+          </div>
+        </Card>
+      )}
+      {pageTab === 'vendor-balance' && (
+        <Card padding={false}>
+          <CardHeader title="Vendor Current Balance" subtitle="Outstanding payables per vendor from unpaid purchase invoices" />
+          <div className={styles.cardBody}>
+            <VendorCurrentBalance vendors={vendors} purchaseInvoices={purchaseInvoices} />
+          </div>
+        </Card>
+      )}
+      {pageTab === 'day-book' && (
+        <Card padding={false}>
+          <CardHeader title="Daily Day Book" subtitle="All voucher entries for a selected date" />
+          <div className={styles.cardBody}>
+            <DailyDayBook vouchers={allVouchers} />
           </div>
         </Card>
       )}

@@ -14,6 +14,7 @@ import DataTable from '../../components/shared/DataTable';
 import { useDb } from '../../hooks/useDb';
 import { dashboardDb, salesDb, inventoryDb, financeDb, procurementDb } from '../../lib/db';
 import { useCompany } from '../../context/CompanyContext';
+import { useCustomers } from '../../context/CustomerContext';
 import { formatDate, timeAgo, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import CustomerSearch from './CustomerSearch';
@@ -221,7 +222,7 @@ export default function Dashboard() {
   const { data: dbOrders }        = useDb(() => salesDb.getSalesOrders(companyId),        [companyId]);
   const { data: dbStockItems }    = useDb(() => inventoryDb.getStockItems(companyId),     [companyId]);
   const { data: dbSalesInvoices } = useDb(() => salesDb.getSalesInvoices(companyId),      [companyId]);
-  const { data: dbCustomers }     = useDb(() => salesDb.getCustomers());
+  const { customers: dbCustomers } = useCustomers();
   const { data: dbVouchers }      = useDb(() => financeDb.getVouchers(companyId),         [companyId]);
   const { data: dbPOs }           = useDb(() => procurementDb.getPurchaseOrders(companyId),[companyId]);
 

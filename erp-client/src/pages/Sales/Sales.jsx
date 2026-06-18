@@ -16,6 +16,7 @@ import Button from '../../components/ui/Button';
 import { salesDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { useCustomers } from '../../context/CustomerContext';
 import { useToast } from '../../components/shared/Toast';
 import { formatDate, formatCurrency, formatNumber } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
@@ -61,19 +62,6 @@ const OC_COLS = [
     render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
 ];
 
-const CUST_COLS = [
-  { key: 'customer_id',         label: 'ID',              width: 110, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'name',                label: 'Customer',        width: 220 },
-  { key: 'region',              label: 'Region/City',     width: 120 },
-  { key: 'ntn',                 label: 'NTN',             width: 130, render: v => <span className={styles.mono}>{v || '—'}</span> },
-  { key: 'contact',             label: 'Contact',         width: 140, render: v => <span className={styles.mono}>{v || '—'}</span> },
-  { key: 'credit_limit',        label: 'Credit Limit',    width: 140, align: 'right',
-    render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-  { key: 'outstanding_balance', label: 'Outstanding',     width: 140, align: 'right',
-    render: v => <span className={`${styles.mono} ${v > 0 ? styles.debit : ''}`}>{formatCurrency(v)}</span> },
-  { key: 'status',              label: 'Status',          width: 100,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
-];
 
 const DN_COLS = [
   { key: 'delivery_id',   label: 'Delivery No.', width: 130, render: v => <span className={styles.code}>{v}</span> },
@@ -140,7 +128,7 @@ export default function Sales() {
   const [dispatchWO,    setDispatchWO]    = useState(null);
   const [deletingId,    setDeletingId]    = useState(null);
 
-  const { data: customers }            = useDb(() => salesDb.getCustomers());
+  const { customers, addCustomer: addCustomerToContext, removeCustomer } = useCustomers();
   const { data: dbOrders }             = useDb(() => salesDb.getSalesOrders(companyId),    [companyId]);
   const { data: dbDeliveryNotes }      = useDb(() => salesDb.getDeliveryNotes(companyId),  [companyId]);
   const { data: dbOrderConfirmations } = useDb(() => salesDb.getOrderConfirmations());
@@ -150,14 +138,12 @@ export default function Sales() {
   const { data: salesReturns }         = useDb(() => salesDb.getSalesReturns(companyId),   [companyId]);
 
   const [orders,             setOrders]             = useState([]);
-  const [customerList,       setCustomerList]       = useState([]);
   const [orderConfirmations, setOrderConfirmations] = useState([]);
   const [workOrders,         setWorkOrders]         = useState([]);
   const [deliveryNotes,      setDeliveryNotes]      = useState([]);
   const [gatePasses,         setGatePasses]         = useState([]);
   const [salesInvoices,      setSalesInvoices]      = useState([]);
   useEffect(() => { setOrders(dbOrders); },   [dbOrders]);
-  useEffect(() => { setCustomerList(customers); }, [customers]);
   useEffect(() => { setOrderConfirmations(dbOrderConfirmations); }, [dbOrderConfirmations]);
   useEffect(() => { setWorkOrders(dbWorkOrders); }, [dbWorkOrders]);
   useEffect(() => { setDeliveryNotes(dbDeliveryNotes); }, [dbDeliveryNotes]);
@@ -165,7 +151,41 @@ export default function Sales() {
   useEffect(() => { setSalesInvoices(dbSalesInvoices); }, [dbSalesInvoices]);
 
   const handleSave         = (order) => setOrders(prev => [order, ...prev]);
-  const handleCustomerSave = (cust)  => setCustomerList(prev => [cust, ...prev]);
+  const handleCustomerSave = (cust)  => addCustomerToContext(cust);
+
+  const handleDeleteCustomer = async (row) => {
+    removeCustomer(row.id);
+    const { error } = await salesDb.deleteCustomer(row.id);
+    if (error) {
+      addCustomerToContext(row);
+      toast.error(error.message, 'Delete Failed');
+    }
+  };
+
+  const CUST_COLS = [
+    { key: 'customer_id',         label: 'ID',           width: 110, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'name',                label: 'Customer',     width: 220 },
+    { key: 'region',              label: 'Region/City',  width: 120 },
+    { key: 'ntn',                 label: 'NTN',          width: 130, render: v => <span className={styles.mono}>{v || '—'}</span> },
+    { key: 'contact',             label: 'Contact',      width: 140, render: v => <span className={styles.mono}>{v || '—'}</span> },
+    { key: 'credit_limit',        label: 'Credit Limit', width: 140, align: 'right',
+      render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
+    { key: 'outstanding_balance', label: 'Outstanding',  width: 140, align: 'right',
+      render: v => <span className={`${styles.mono} ${v > 0 ? styles.debit : ''}`}>{formatCurrency(v)}</span> },
+    { key: 'status',              label: 'Status',       width: 100,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    { key: '_del', label: '', width: 44, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          onClick={e => { e.stopPropagation(); handleDeleteCustomer(row); }}
+          title={`Delete ${row.name}`}
+        >
+          <Trash2 size={13} strokeWidth={2} />
+        </button>
+      ),
+    },
+  ];
 
   const handleConfirmSave = (confirmation, updatedOrder, workOrder) => {
     setOrderConfirmations(prev => [confirmation, ...prev]);
@@ -268,7 +288,7 @@ export default function Sales() {
 
   const openOrders      = orders.filter(o => ['pending', 'processing'].includes(o.status)).length;
   const dispatchedCount = orders.filter(o => o.status === 'dispatched').length;
-  const activeCustomers = customerList.filter(c => c.status === 'active').length;
+  const activeCustomers = customers.filter(c => c.status === 'active').length;
 
   const soData = soTab === 'all' ? orders : orders.filter(o => {
     if (soTab === 'active') return ['pending', 'processing'].includes(o.status);
@@ -277,7 +297,7 @@ export default function Sales() {
 
   const tabCounts = {
     orders: orders.length, confirmation: orderConfirmations.length,
-    'work-order': workOrders.length, customers: customerList.length,
+    'work-order': workOrders.length, customers: customers.length,
     deliveries: deliveryNotes.length, invoice: salesInvoices.length,
     returns: salesReturns.length, 'gate-pass': gatePasses.length,
   };
@@ -359,10 +379,10 @@ export default function Sales() {
         <Card padding={false}>
           <CardHeader
             title="Customers"
-            subtitle={`${customerList.length} registered customer accounts`}
+            subtitle={`${customers.length} registered customer accounts`}
             actions={<Button icon={<Plus size={15} />} onClick={() => setCustomerOpen(true)}>New Customer</Button>}
           />
-          <DataTable columns={CUST_COLS} data={customerList} keyField="customer_id" searchPlaceholder="Search by name, region, NTN..." />
+          <DataTable columns={CUST_COLS} data={customers} keyField="customer_id" searchPlaceholder="Search by name, region, NTN..." />
         </Card>
       )}
 

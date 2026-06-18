@@ -151,6 +151,9 @@ export const financeDb = {
   getBankAccounts: (companyId = 1) =>
     supabase.from('bank_accounts').select('*').eq('company_id', companyId),
 
+  deleteBankAccount: (id) =>
+    supabase.from('bank_accounts').delete().eq('id', id),
+
   getCashReceived: () =>
     supabase.from('cash_received').select('*').order('date', { ascending: false }),
 
@@ -304,7 +307,7 @@ export const salesDb = {
   getCustomers: () =>
     supabase.from('customers')
       .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance')
-      .order('name'),
+      .order('id', { ascending: false }),
 
   searchCustomers: (query) =>
     supabase.from('customers')
@@ -336,6 +339,9 @@ export const salesDb = {
 
   addCustomer: (c) =>
     supabase.from('customers').insert([c]).select().single(),
+
+  deleteCustomer: (id) =>
+    supabase.from('customers').delete().eq('id', id),
 
   getSalesOrders: (companyId = 1) =>
     supabase.from('sales_orders')
@@ -532,6 +538,9 @@ export const mastersDb = {
 
   getProductCatalogue: () =>
     supabase.from('product_catalogue').select('*').order('code'),
+
+  getCustomCatalogueItems: () =>
+    supabase.from('product_catalogue').select('*').like('code', 'CUSTOM-%').order('id', { ascending: false }),
 
   addProductCatalogueItem: (item) =>
     supabase.from('product_catalogue').insert([item]).select().single(),

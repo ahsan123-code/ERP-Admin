@@ -7,7 +7,7 @@ export function CatalogueProvider({ children }) {
   const [items, setItems] = useState([]);
 
   useEffect(() => {
-    mastersDb.getProductCatalogue().then(({ data }) => {
+    mastersDb.getCustomCatalogueItems().then(({ data }) => {
       if (data) setItems(data);
     });
   }, []);
