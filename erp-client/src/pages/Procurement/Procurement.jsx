@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Plus, ShoppingCart, Users, ClipboardList, Package, Trash2,
-  FileText, ReceiptText, ArrowDownToLine,
+  FileText, ReceiptText, ArrowDownToLine, CheckCircle2, Loader2,
 } from 'lucide-react';
 import NewPDNModal                   from './NewPDNModal';
-import NewPurchaseRequisitionModal   from './NewPurchaseRequisitionModal';
+import ApprovePRModal                from './ApprovePRModal';
 import NewPurchaseOrderModal         from './NewPurchaseOrderModal';
 import NewGatePassInwardModal        from './NewGatePassInwardModal';
 import NewGrnModal                   from './NewGrnModal';
 import NewPurchaseInvoiceModal       from './NewPurchaseInvoiceModal';
+import NewVendorModal                from './NewVendorModal';
 import PageHeader                    from '../../components/layout/PageHeader';
 import Card, { CardHeader }          from '../../components/shared/Card';
 import DataTable                     from '../../components/shared/DataTable';
@@ -53,21 +54,26 @@ export default function Procurement() {
   const setPageTab = (tab) => navigate(`/procurement/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
   // Modal open states
-  const [pdnOpen,   setPdnOpen]   = useState(false);
-  const [prOpen,    setPrOpen]    = useState(false);
-  const [poOpen,    setPoOpen]    = useState(false);
-  const [gpOpen,    setGpOpen]    = useState(false);
-  const [grnOpen,   setGrnOpen]   = useState(false);
-  const [pinvOpen,  setPinvOpen]  = useState(false);
+  const [pdnOpen,        setPdnOpen]        = useState(false);
+  const [approvePrOpen,  setApprovePrOpen]  = useState(false);
+  const [approvingPr,    setApprovingPr]    = useState(null);
+  const [poOpen,         setPoOpen]         = useState(false);
+  const [gpOpen,         setGpOpen]         = useState(false);
+  const [grnOpen,        setGrnOpen]        = useState(false);
+  const [pinvOpen,       setPinvOpen]       = useState(false);
+  const [vendorOpen,     setVendorOpen]     = useState(false);
+  const [editVendor,     setEditVendor]     = useState(null);
 
-  // Delete state
-  const [deletingId, setDeletingId] = useState(null);
+  // Delete / confirm states
+  const [deletingId,    setDeletingId]    = useState(null);
+  const [deletingVendorId, setDeletingVendorId] = useState(null);
+  const [confirmingPoId, setConfirmingPoId] = useState(null);
 
   // PO filter tab
   const [poTab, setPoTab] = useState('all');
 
   // Data fetches
-  const { data: vendors }          = useDb(() => procurementDb.getVendors());
+  const { data: vendors, refetch: refetchVendors } = useDb(() => procurementDb.getVendors());
   const { data: dbPOs }            = useDb(() => procurementDb.getPurchaseOrders(companyId),       [companyId]);
   const { data: dbGrns }           = useDb(() => procurementDb.getGrns(companyId),                [companyId]);
   const { data: dbPdns }           = useDb(() => procurementDb.getPdns(companyId),                [companyId]);
@@ -92,15 +98,66 @@ export default function Procurement() {
 
   const handleDeletePdn = async (row) => {
     setDeletingId(row.id);
+
+    // Walk the chain from local state: PDN → PR → PO → Gate Pass / GRN / Invoice
+    const prIds   = prList.filter(p => p.pdn_ref === row.pdn_id).map(p => p.pr_id);
+    const prSet   = new Set(prIds);
+    const poIds   = poList.filter(p => prSet.has(p.pr_ref)).map(p => p.po_id);
+    const poSet   = new Set(poIds);
+    const gpIds   = gpList.filter(g => poSet.has(g.po_ref)).map(g => g.gp_id);
+    const grnIds  = grnList.filter(g => poSet.has(g.po_ref)).map(g => g.grn_id);
+    const grnSet  = new Set(grnIds);
+    const billIds = pinvList.filter(b => poSet.has(b.po_ref) || grnSet.has(b.grn_ref)).map(b => b.bill_id);
+
     try {
-      const { error } = await procurementDb.deletePdn(row.id, row.pdn_id);
+      const { error } = await procurementDb.deletePdn(row.id, row.pdn_id, { prIds, poIds, gpIds, grnIds, billIds });
       if (error) throw new Error(error.message);
       setPdnList(prev => prev.filter(p => p.id !== row.id));
-      toast.success(`PDN "${row.pdn_id}" deleted.`);
+      setPrList(prev  => prev.filter(p => !prSet.has(p.pr_id)));
+      setPoList(prev  => prev.filter(p => !poSet.has(p.po_id)));
+      setGpList(prev  => prev.filter(g => !poSet.has(g.po_ref)));
+      setGrnList(prev => prev.filter(g => !poSet.has(g.po_ref)));
+      setPinvList(prev => prev.filter(b => !poSet.has(b.po_ref) && !grnSet.has(b.grn_ref)));
+
+      const extra = [prIds, poIds, gpIds, grnIds, billIds].reduce((n, a) => n + a.length, 0);
+      toast.success(`PDN "${row.pdn_id}" deleted${extra ? ` with ${extra} linked record(s)` : ''}.`);
     } catch (err) {
       toast.error(err.message, 'Delete Failed');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handlePrApproved = (updatedPr, newPo) => {
+    setPrList(prev => prev.map(p => p.pr_id === updatedPr.pr_id ? updatedPr : p));
+    if (newPo) setPoList(prev => [newPo, ...prev]);
+  };
+
+  const handleConfirmPo = async (row) => {
+    setConfirmingPoId(row.id);
+    try {
+      const { error } = await procurementDb.updatePurchaseOrderStatus(row.po_id, 'confirmed');
+      if (error) throw new Error(error.message);
+      setPoList(prev => prev.map(p => p.id === row.id ? { ...p, status: 'confirmed' } : p));
+      toast.success(`PO "${row.po_id}" confirmed by vendor.`);
+    } catch (err) {
+      toast.error(err.message, 'Confirm Failed');
+    } finally {
+      setConfirmingPoId(null);
+    }
+  };
+
+  const handleDeleteVendor = async (row) => {
+    setDeletingVendorId(row.id);
+    try {
+      const { error } = await procurementDb.deleteVendor(row.id);
+      if (error) throw new Error(error.message);
+      toast.success(`Vendor "${row.name}" deleted.`);
+      refetchVendors();
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingVendorId(null);
     }
   };
 
@@ -143,16 +200,25 @@ export default function Procurement() {
   ];
 
   const PR_COLS = [
-    { key: 'pr_id',        label: 'PR No.',     width: 120, render: v => <span className={styles.code}>{v}</span> },
-    { key: 'department',   label: 'Department', width: 170 },
-    { key: 'date',         label: 'Date',       width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-    { key: 'priority',     label: 'Priority',   width: 90,
-      render: v => <Badge variant={v === 'High' ? 'danger' : v === 'Medium' ? 'warning' : 'info'}>{v ?? '—'}</Badge> },
-    { key: 'requested_by', label: 'Requested By', width: 160 },
-    { key: 'item_count',   label: 'Items',      width: 65, align: 'right' },
-    { key: 'pdn_ref',      label: 'PDN Ref',    width: 110, render: v => v ? <span className={styles.code}>{v}</span> : '—' },
-    { key: 'status',       label: 'Status',     width: 120,
+    { key: 'pr_id',      label: 'PR No.',     width: 120, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'pdn_ref',    label: 'PDN Ref',    width: 120, render: v => v ? <span className={styles.code}>{v}</span> : '—' },
+    { key: 'department', label: 'Department', width: 170 },
+    { key: 'date',       label: 'Date',       width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+    { key: 'item_count', label: 'Items',      width: 65,  align: 'right' },
+    { key: 'status',     label: 'Status',     width: 120,
       render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    {
+      key: '_approve', label: '', width: 150, sortable: false,
+      render: (_, row) => row.status === 'submitted' ? (
+        <button
+          className={styles.approveBtn}
+          onClick={(e) => { e.stopPropagation(); setApprovingPr(row); setApprovePrOpen(true); }}
+        >
+          <CheckCircle2 size={13} strokeWidth={2} />
+          Approve
+        </button>
+      ) : null,
+    },
   ];
 
   const PO_COLS = [
@@ -164,8 +230,23 @@ export default function Procurement() {
     { key: 'item_count',       label: 'Items',   width: 65,  align: 'right' },
     { key: 'total_amount',     label: 'Amount',  width: 130, align: 'right',
       render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-    { key: 'status',           label: 'Status',  width: 130,
+    { key: 'status',  label: 'Status',  width: 130,
       render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    {
+      key: '_confirm', label: '', width: 140, sortable: false,
+      render: (_, row) => row.status === 'issued' ? (
+        <button
+          className={styles.confirmBtn}
+          disabled={confirmingPoId === row.id}
+          onClick={(e) => { e.stopPropagation(); handleConfirmPo(row); }}
+        >
+          {confirmingPoId === row.id
+            ? <Loader2 size={13} className={styles.spin} />
+            : <><CheckCircle2 size={13} strokeWidth={2} /> Confirm</>
+          }
+        </button>
+      ) : null,
+    },
   ];
 
   const GP_COLS = [
@@ -216,6 +297,19 @@ export default function Procurement() {
     { key: 'category', label: 'Category', width: 140 },
     { key: 'status',   label: 'Status',   width: 100,
       render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    {
+      key: '_del', label: '', width: 48, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingVendorId === row.id}
+          onClick={(e) => { e.stopPropagation(); handleDeleteVendor(row); }}
+          title={`Delete "${row.name}"`}
+        >
+          {deletingVendorId === row.id ? <span className={styles.rowDeleteSpinner}>…</span> : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
   ];
 
   const poData = poTab === 'all' ? poList : poList.filter(p => {
@@ -225,12 +319,12 @@ export default function Procurement() {
 
   const tabAction = {
     pdns:         <Button icon={<Plus size={15} />} onClick={() => setPdnOpen(true)}>New PDN</Button>,
-    requisitions: <Button icon={<Plus size={15} />} onClick={() => setPrOpen(true)}>New Requisition</Button>,
+    requisitions: null,
     orders:       <Button icon={<Plus size={15} />} onClick={() => setPoOpen(true)}>New Purchase Order</Button>,
     gatepass:     <Button icon={<Plus size={15} />} onClick={() => setGpOpen(true)}>New Gate Pass</Button>,
     grns:         <Button icon={<Plus size={15} />} onClick={() => setGrnOpen(true)}>New GRN</Button>,
     invoices:     <Button icon={<Plus size={15} />} onClick={() => setPinvOpen(true)}>New Purchase Invoice</Button>,
-    vendors:      null,
+    vendors:      <Button icon={<Plus size={15} />} onClick={() => setVendorOpen(true)}>New Vendor</Button>,
   };
 
   return (
@@ -324,17 +418,39 @@ export default function Procurement() {
 
       {pageTab === 'vendors' && (
         <Card padding={false}>
-          <CardHeader title="Vendor Portal" subtitle={`${(vendors || []).length} registered suppliers and vendors`} />
-          <DataTable columns={VENDOR_COLS} data={vendors || []} keyField="id" searchPlaceholder="Search vendors..." />
+          <CardHeader title="Vendor Portal" subtitle={`${(vendors || []).length} registered suppliers and vendors — click a row to edit`} />
+          <DataTable columns={VENDOR_COLS} data={vendors || []} keyField="id" searchPlaceholder="Search vendors..." onRowClick={setEditVendor} />
         </Card>
       )}
 
-      <NewPDNModal open={pdnOpen} onClose={() => setPdnOpen(false)} onSave={(p) => setPdnList(prev => [p, ...prev])} />
-      <NewPurchaseRequisitionModal open={prOpen} onClose={() => setPrOpen(false)} onSave={(p) => setPrList(prev => [p, ...prev])} />
+      <NewPDNModal
+        open={pdnOpen}
+        onClose={() => setPdnOpen(false)}
+        onSave={(pdn, pr) => {
+          setPdnList(prev => [pdn, ...prev]);
+          if (pr) setPrList(prev => [pr, ...prev]);
+        }}
+      />
+      <ApprovePRModal
+        open={approvePrOpen}
+        pr={approvingPr}
+        vendors={vendors || []}
+        onClose={() => { setApprovePrOpen(false); setApprovingPr(null); }}
+        onApproved={handlePrApproved}
+      />
       <NewPurchaseOrderModal open={poOpen} onClose={() => setPoOpen(false)} onSave={(p) => setPoList(prev => [p, ...prev])} />
       <NewGatePassInwardModal open={gpOpen} onClose={() => setGpOpen(false)} onSave={(p) => setGpList(prev => [p, ...prev])} />
-      <NewGrnModal open={grnOpen} onClose={() => setGrnOpen(false)} onSave={(p) => setGrnList(prev => [p, ...prev])} />
+      <NewGrnModal
+        open={grnOpen}
+        onClose={() => setGrnOpen(false)}
+        onSave={(grn, poRef) => {
+          setGrnList(prev => [grn, ...prev]);
+          if (poRef) setPoList(prev => prev.map(p => p.po_id === poRef ? { ...p, status: 'completed' } : p));
+        }}
+      />
       <NewPurchaseInvoiceModal open={pinvOpen} onClose={() => setPinvOpen(false)} onSave={(p) => setPinvList(prev => [p, ...prev])} />
+      <NewVendorModal open={vendorOpen} onClose={() => setVendorOpen(false)} onSave={refetchVendors} />
+      <NewVendorModal open={!!editVendor} vendor={editVendor} onClose={() => setEditVendor(null)} onSave={refetchVendors} />
     </div>
   );
 }

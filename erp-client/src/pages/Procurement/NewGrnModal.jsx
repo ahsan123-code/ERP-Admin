@@ -111,12 +111,17 @@ export default function NewGrnModal({ open, onClose, onSave }) {
         );
       } catch (_) { /* grn_line_items may not exist — non-fatal */ }
 
+      // Posting a GRN closes the linked PO (goods fully received)
+      if (form.po_ref) {
+        try { await procurementDb.updatePurchaseOrderStatus(form.po_ref, 'completed'); } catch (_) { /* non-fatal */ }
+      }
+
       toast.success(`Goods Receipt Note ${grnId} posted.`, 'GRN Created');
       onSave({
         ...(data || {}), grn_id: grnId, po_ref: form.po_ref,
         vendor_name: form.vendor_name, received_date: form.received_date,
         item_count: lineItems.length, total_value: totalValue, status: 'posted',
-      });
+      }, form.po_ref);
       onClose();
     } catch (err) {
       toast.error(err.message, 'Save Failed');
@@ -125,9 +130,9 @@ export default function NewGrnModal({ open, onClose, onSave }) {
     }
   };
 
-  const poOptions = (purchaseOrders || []).map(p => ({
-    value: p.po_id, label: `${p.po_id} — ${p.vendor_name}`, hint: p.status,
-  }));
+  const poOptions = (purchaseOrders || [])
+    .filter(p => ['issued', 'confirmed', 'partially_received'].includes(p.status))
+    .map(p => ({ value: p.po_id, label: `${p.po_id} — ${p.vendor_name}`, hint: p.status }));
   const gpOptions = (gatePasses || []).map(g => ({
     value: g.gp_id, label: `${g.gp_id} — ${g.vehicle_no || 'No vehicle'}`, hint: g.driver_name,
   }));

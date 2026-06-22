@@ -1,76 +1,100 @@
 import { useState, useEffect } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
-import SelectField from '../../components/ui/SelectField';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { formatCurrency } from '../../utils/format';
 
 const today = new Date().toISOString().split('T')[0];
 const genVoucherId = () => 'VCH-' + String(Date.now()).slice(-6);
 
-const VOUCHER_TYPES = [
-  { value: 'Journal',  label: 'Journal Voucher (JV)'  },
-  { value: 'Payment',  label: 'Payment Voucher (PV)'  },
-  { value: 'Receipt',  label: 'Receipt Voucher (RV)'  },
-  { value: 'Contra',   label: 'Contra Voucher (CV)'   },
-  { value: 'BankPay',  label: 'Bank Payment (BP)'     },
-  { value: 'BankRec',  label: 'Bank Receipt (BR)'     },
-];
-
-const EMPTY = { voucher_type: 'Journal', date: today, account_id: '', debit: '', credit: '', narration: '', reference: '' };
+const emptyLine = () => ({ account_id: '', narration: '', debit: '', credit: '' });
 
 export default function NewVoucherModal({ open, onClose, onSave }) {
   const toast = useToast();
   const { companyId } = useCompany();
   const [saving, setSaving] = useState(false);
   const [voucherId, setVoucherId] = useState(genVoucherId());
-  const [form, setForm] = useState(EMPTY);
+  const [date, setDate] = useState(today);
+  const [reference, setReference] = useState('');
+  const [lines, setLines] = useState([emptyLine(), emptyLine()]);
 
   const { data: chartOfAccounts } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
 
   useEffect(() => {
-    if (open) { setForm(EMPTY); setVoucherId(genVoucherId()); }
+    if (open) {
+      setVoucherId(genVoucherId());
+      setDate(today);
+      setReference('');
+      setLines([emptyLine(), emptyLine()]);
+    }
   }, [open]);
 
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const acctOptions = (chartOfAccounts || []).map(a => ({
+    value: a.account_id,
+    label: `${a.account_code} — ${a.account_name}`,
+    hint: a.account_type,
+  }));
+
+  const setLine = (i, key, value) =>
+    setLines(prev => prev.map((l, idx) => idx === i ? { ...l, [key]: value } : l));
+
+  // Typing in debit clears credit (and vice-versa) — a line is one side only.
+  const setAmount = (i, key) => (e) => {
+    const value = e.target.value;
+    setLines(prev => prev.map((l, idx) => idx === i
+      ? { ...l, [key]: value, [key === 'debit' ? 'credit' : 'debit']: '' }
+      : l));
+  };
+
+  const addLine = () => setLines(prev => [...prev, emptyLine()]);
+  const removeLine = (i) => setLines(prev => prev.length > 2 ? prev.filter((_, idx) => idx !== i) : prev);
+
+  const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
+  const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+  const balanced = totalDebit > 0 && Math.abs(totalDebit - totalCredit) < 0.005;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.voucher_type || !form.account_id || (!form.debit && !form.credit) || !form.narration) {
-      toast.error('Please fill in all required fields.');
+
+    const filled = lines.filter(l => l.account_id && ((parseFloat(l.debit) || 0) > 0 || (parseFloat(l.credit) || 0) > 0));
+    if (filled.length < 2) {
+      toast.error('A journal voucher needs at least two lines with an account and an amount.');
       return;
     }
-    if (form.debit && form.credit) {
-      toast.error('A voucher line cannot have both debit and credit. Use separate lines.');
+    if (filled.some(l => (parseFloat(l.debit) || 0) > 0 && (parseFloat(l.credit) || 0) > 0)) {
+      toast.error('Each line is one side only — either a debit or a credit, not both.');
+      return;
+    }
+    if (!balanced) {
+      toast.error(`Entry is not balanced. Debit ${formatCurrency(totalDebit)} ≠ Credit ${formatCurrency(totalCredit)}.`);
       return;
     }
 
-    const account = chartOfAccounts.find(a => a.account_id === form.account_id);
-    const debit  = parseFloat(form.debit) || 0;
-    const credit = parseFloat(form.credit) || 0;
     setSaving(true);
     try {
-      const { data, error } = await financeDb.addVoucher({
-        voucher_id:   voucherId,
-        voucher_type: form.voucher_type,
-        date:         form.date,
-        account_name: account?.account_name ?? '—',
-        debit,
-        credit,
-        narration:    form.narration,
-        reference:    form.reference.trim() || null,
-        company_id:   companyId,
+      const resolved = filled.map(l => {
+        const account = chartOfAccounts.find(a => a.account_id === l.account_id);
+        return {
+          account,
+          debit:  parseFloat(l.debit)  || 0,
+          credit: parseFloat(l.credit) || 0,
+          narration: l.narration.trim() || null,
+        };
       });
-      if (error) throw new Error(error.message);
+      if (resolved.some(r => !r.account)) throw new Error('One of the selected accounts could not be found.');
 
-      await financeDb.applyVoucherToBalances(account, debit, credit);
+      await financeDb.addJournalVoucher({
+        date, companyId, lines: resolved, reference: reference.trim() || null,
+      });
 
-      toast.success(`Voucher ${voucherId} posted to general ledger.`, 'Voucher Created');
-      onSave(data);
+      toast.success(`Journal voucher posted (${formatCurrency(totalDebit)}).`, 'Voucher Created');
+      onSave();
       onClose();
     } catch (err) {
       toast.error(err.message, 'Save Failed');
@@ -83,57 +107,80 @@ export default function NewVoucherModal({ open, onClose, onSave }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="New Voucher"
-      subtitle="Post an accounting entry to the general ledger"
-      size="md"
+      title="New Journal Voucher"
+      subtitle="Manual double-entry — add lines until Debit equals Credit"
+      size="lg"
       footer={
         <div className="factions">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? 'Posting…' : 'Post Voucher'}
+          <Button variant="primary" onClick={handleSubmit} disabled={saving || !balanced}>
+            {saving ? 'Posting…' : balanced ? `Post Voucher — ${formatCurrency(totalDebit)}` : 'Not balanced'}
           </Button>
         </div>
       }
     >
       <form className="fg" onSubmit={handleSubmit}>
         <Input label="Voucher No." value={voucherId} readOnly style={{ background: 'var(--bg-tertiary)' }} />
-        <Input label="Date *" type="date" value={form.date} onChange={set('date')} required />
-        <SelectField label="Voucher Type *" value={form.voucher_type} onChange={set('voucher_type')}>
-          {VOUCHER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </SelectField>
+        <Input label="Date *" type="date" value={date} onChange={e => setDate(e.target.value)} required />
+        <Input label="Reference" placeholder="Invoice/PO/SO No. (optional)" value={reference} onChange={e => setReference(e.target.value)} />
         <div />
+
         <div className="ff">
-          <SearchableSelect
-            label="Account"
-            required
-            placeholder={chartOfAccounts.length > 0 ? 'Search by account name or code…' : 'No accounts found'}
-            emptyText="No matching accounts"
-            value={form.account_id}
-            onChange={(val) => setForm(f => ({ ...f, account_id: val }))}
-            options={chartOfAccounts.map(a => ({
-              value: a.account_id,
-              label: `${a.account_code} — ${a.account_name}`,
-              hint: a.account_type,
-            }))}
-          />
-        </div>
-        <Input label="Debit (PKR)" type="number" min="0" step="0.01" value={form.debit} onChange={set('debit')} placeholder="0.00" />
-        <Input label="Credit (PKR)" type="number" min="0" step="0.01" value={form.credit} onChange={set('credit')} placeholder="0.00" />
-        <Input label="Reference" placeholder="Invoice/PO/SO No." value={form.reference} onChange={set('reference')} />
-        <div className="ff">
-          <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Narration *</label>
-          <textarea
-            value={form.narration}
-            onChange={set('narration')}
-            rows={3}
-            placeholder="Description of the transaction..."
-            required
-            style={{
-              width: '100%', background: 'var(--input-bg)', border: '1px solid var(--input-border)',
-              borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '10px 14px',
-              fontFamily: 'var(--font-ui)', fontSize: 13, resize: 'vertical', outline: 'none',
-            }}
-          />
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 32px', gap: 8, padding: '0 2px 6px', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            <span>Account</span><span>Narration</span>
+            <span style={{ textAlign: 'right' }}>Debit</span>
+            <span style={{ textAlign: 'right' }}>Credit</span>
+            <span />
+          </div>
+
+          {lines.map((l, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <SearchableSelect
+                placeholder="Search account…"
+                emptyText="No accounts"
+                value={l.account_id}
+                onChange={(val) => setLine(i, 'account_id', val)}
+                options={acctOptions}
+              />
+              <Input placeholder="Line narration" value={l.narration} onChange={e => setLine(i, 'narration', e.target.value)} />
+              <Input type="number" min="0" step="0.01" placeholder="0.00" value={l.debit} onChange={setAmount(i, 'debit')} />
+              <Input type="number" min="0" step="0.01" placeholder="0.00" value={l.credit} onChange={setAmount(i, 'credit')} />
+              <button
+                type="button"
+                onClick={() => removeLine(i)}
+                disabled={lines.length <= 2}
+                title={lines.length <= 2 ? 'A voucher needs at least two lines' : 'Remove line'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 30, height: 30, borderRadius: 6, cursor: lines.length <= 2 ? 'not-allowed' : 'pointer',
+                  border: '1px solid var(--border-subtle)', background: 'transparent',
+                  color: lines.length <= 2 ? 'var(--text-tertiary)' : 'var(--red, #ef4444)',
+                  opacity: lines.length <= 2 ? 0.4 : 1,
+                }}
+              >
+                <Trash2 size={13} strokeWidth={2} />
+              </button>
+            </div>
+          ))}
+
+          <Button type="button" variant="secondary" size="sm" icon={<Plus size={14} />} onClick={addLine} style={{ marginTop: 2 }}>
+            Add Line
+          </Button>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 32px', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-subtle)', fontSize: 13, fontWeight: 700 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Totals</span>
+            <span style={{ textAlign: 'right', color: balanced ? 'var(--green)' : 'var(--text-tertiary)' }}>
+              {balanced ? 'Balanced ✓' : 'Unbalanced'}
+            </span>
+            <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalDebit)}</span>
+            <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalCredit)}</span>
+            <span />
+          </div>
+          {!balanced && totalDebit !== totalCredit && (
+            <p style={{ fontSize: 11, color: 'var(--orange)', marginTop: 6, textAlign: 'right' }}>
+              Difference: {formatCurrency(Math.abs(totalDebit - totalCredit))}
+            </p>
+          )}
         </div>
       </form>
     </Modal>

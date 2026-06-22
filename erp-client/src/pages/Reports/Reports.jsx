@@ -9,6 +9,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { financeDb, salesDb, procurementDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
@@ -62,18 +63,11 @@ function LedgerReport() {
   const printRef = useRef();
   const { data: rawAccounts } = useDb(() => financeDb.getVoucherAccounts());
   const accountList = useMemo(() => [...new Set((rawAccounts || []).map(r => r.account_name).filter(Boolean))].sort(), [rawAccounts]);
-  const _now = new Date();
-  // Default to current fiscal year (Jul–Jun)
-  const _fyStart = _now.getMonth() >= 6
-    ? `${_now.getFullYear()}-07-01`
-    : `${_now.getFullYear() - 1}-07-01`;
-  const _fyEnd = _now.getMonth() >= 6
-    ? `${_now.getFullYear() + 1}-06-30`
-    : `${_now.getFullYear()}-06-30`;
 
+  // Default to ALL dates (historical data spans many years) — the user can narrow if needed.
   const [account,  setAccount] = useState('');
-  const [fromDate, setFrom]    = useState(_fyStart);
-  const [toDate,   setTo]      = useState(_fyEnd);
+  const [fromDate, setFrom]    = useState('');
+  const [toDate,   setTo]      = useState('');
 
   const { data: rawVouchers } = useDb(
     () => account ? financeDb.getVouchersByAccount(account, fromDate, toDate) : Promise.resolve({ data: [], error: null }),
@@ -129,12 +123,13 @@ function LedgerReport() {
       <div className={styles.filterRow}>
         <div className={styles.filterGroup} style={{ flex: 2 }}>
           <label className={styles.filterLabel}>Account</label>
-          <select className={styles.select} value={account} onChange={e => setAccount(e.target.value)}>
-            <option value="">— Select account ({accountList.length}) —</option>
-            {accountList.map(name => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
+          <SearchableSelect
+            placeholder={`Search account (${accountList.length})…`}
+            emptyText="No matching accounts"
+            value={account}
+            onChange={setAccount}
+            options={accountList.map(name => ({ value: name, label: name }))}
+          />
         </div>
         <div className={styles.filterGroup}>
           <label className={styles.filterLabel}>From</label>

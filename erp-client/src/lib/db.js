@@ -36,8 +36,24 @@ export const hrDb = {
     return q;
   },
 
-  updatePayroll: (payrollId, updates) =>
-    supabase.from('payroll_records').update(updates).eq('payroll_id', payrollId).select().single(),
+  // Resilient update: if the late_rate/late_amount columns haven't been added yet
+  // (optional migration), retry without them. The late deduction still persists via
+  // total_deductions + net_salary, which always exist.
+  updatePayroll: async (payrollId, updates) => {
+    let res = await supabase.from('payroll_records').update(updates).eq('payroll_id', payrollId).select().single();
+    if (res.error && /late_rate|late_amount/i.test(res.error.message || '')) {
+      const { late_rate, late_amount, ...rest } = updates;
+      res = await supabase.from('payroll_records').update(rest).eq('payroll_id', payrollId).select().single();
+    }
+    return res;
+  },
+
+  // How many payroll rows already exist for a month/year (used to block duplicate generation).
+  countPayrollForPeriod: (month, year) =>
+    supabase.from('payroll_records').select('id', { count: 'exact', head: true }).eq('month', month).eq('year', year),
+
+  addPayrollBatch: (records) =>
+    supabase.from('payroll_records').insert(records).select(),
 
   markAttendance: (record) =>
     supabase.from('attendance').insert([record]).select().single(),
@@ -77,6 +93,21 @@ export const financeDb = {
   getChartOfAccounts: (companyId = 1) =>
     supabase.from('chart_of_accounts').select('*').eq('company_id', companyId).order('account_code').limit(2000),
 
+  // How many transactions reference this account (by name on vouchers, by code on
+  // voucher_lines). Used to block deleting an account that has posted history.
+  getAccountUsage: async (account, companyId = 1) => {
+    const [byName, byCode] = await Promise.all([
+      supabase.from('vouchers').select('id', { count: 'exact', head: true })
+        .eq('account_name', account.account_name).eq('company_id', companyId),
+      supabase.from('voucher_lines').select('id', { count: 'exact', head: true })
+        .eq('account_code', account.account_code),
+    ]);
+    return (byName.count || 0) + (byCode.count || 0);
+  },
+
+  deleteChartAccount: (id) =>
+    supabase.from('chart_of_accounts').delete().eq('id', id),
+
   getVouchers: (companyId = 1) =>
     supabase.from('vouchers')
       .select('id, voucher_id, voucher_type, date, account_name, debit, credit, narration, reference, company_id')
@@ -87,8 +118,50 @@ export const financeDb = {
   addVoucher: (v) =>
     supabase.from('vouchers').insert([v]).select().single(),
 
+  // Posts a manual Journal Voucher: 2+ balanced lines (each its own account, narration,
+  // and debit/credit). Caller must ensure total debit === total credit. All lines share
+  // one voucher group id (VCH-xxxxxx) so they show together and delete together.
+  // lines: [{ account, debit, credit, narration }]
+  addJournalVoucher: async ({ date, companyId, lines, reference }) => {
+    const voucherId = 'VCH-' + String(Date.now()).slice(-6);
+    await financeDb.postJournalEntry({
+      voucherId, voucherType: 'Journal', date, companyId,
+      legs: lines.map(l => ({
+        account: l.account, debit: l.debit, credit: l.credit, narration: l.narration,
+      })),
+      narration: lines[0]?.narration || 'Journal entry',
+      reference: reference || voucherId,
+    });
+    return { voucherId };
+  },
+
   deleteVoucher: (id) =>
     supabase.from('vouchers').delete().eq('id', id),
+
+  // Deletes a whole multi-leg voucher (PV/RV/Contra) in one shot, given its group id
+  // (e.g. "RV-123456" — the part before the "-1"/"-2" leg suffix). Reverses every leg's
+  // balance by reading the legs back from voucher_lines (which carry the real account_code,
+  // unlike the display name on the voucher row), then removes the legs. Also clears the
+  // inter_bank_transfers summary if this group happens to be a transfer.
+  deleteVoucherGroup: async (groupId, companyId = 1) => {
+    const { data: lines } = await supabase
+      .from('voucher_lines').select('account_code, debit, credit')
+      .like('voucher_id', `${groupId}-%`);
+    // Reverse every leg's balance in parallel (each leg is a distinct account).
+    await Promise.all((lines || []).map(async (l) => {
+      const { data: acct } = await supabase
+        .from('chart_of_accounts').select('*')
+        .eq('account_code', l.account_code).eq('company_id', companyId).maybeSingle();
+      if (acct) await financeDb.applyVoucherToBalances(acct, -(l.debit || 0), -(l.credit || 0));
+    }));
+    // Then remove the rows (independent tables) together.
+    await Promise.all([
+      supabase.from('voucher_lines').delete().like('voucher_id', `${groupId}-%`),
+      supabase.from('inter_bank_transfers').delete().eq('ibt_id', groupId),
+      supabase.from('vouchers').delete().like('voucher_id', `${groupId}-%`),
+    ]);
+    return { error: null };
+  },
 
   // Applies a voucher's debit/credit to the matching chart-of-accounts balance
   // (and the linked bank account's balance, if the account is a bank account).
@@ -123,6 +196,75 @@ export const financeDb = {
     return chartOfAccounts.find(a => a.account_code === code) || null;
   },
 
+  // Self-heal: every bank account needs a matching ledger (chart_of_accounts) row under
+  // the bank group 11-05-001 so debits/credits have somewhere to post. If the seed data
+  // is missing it, create it on demand and return it. Returns null only if the bank's
+  // account_id isn't the expected BANK-<n> shape.
+  ensureBankLedgerAccount: async (bank, companyId = 1) => {
+    const m = bank?.account_id?.match(/^BANK-(\d+)$/);
+    if (!m) return null;
+    const code = '11-05-001-' + m[1].padStart(6, '0');
+    const { data: existing } = await supabase
+      .from('chart_of_accounts').select('*')
+      .eq('account_code', code).eq('company_id', companyId).maybeSingle();
+    if (existing) return existing;
+    const { data: created, error } = await supabase.from('chart_of_accounts').insert([{
+      account_id:   `AUTO-${code}-C${companyId}`,
+      account_code: code,
+      account_name: bank.account_title || `${bank.bank_name} - ${bank.account_no}`,
+      account_type: 'Asset',
+      parent_code:  '11-05-001',
+      balance:      bank.balance || 0,
+      company_id:   companyId,
+    }]).select().single();
+    if (error) return null;
+    return created;
+  },
+
+  // Generic self-heal for any ledger account (cash pockets, AR/AP control accounts, etc.):
+  // find by account_code+company, create it if missing, return the row.
+  ensureLedgerAccount: async ({ code, name, type = 'Asset', parent = null, companyId = 1 }) => {
+    const { data: existing } = await supabase
+      .from('chart_of_accounts').select('*')
+      .eq('account_code', code).eq('company_id', companyId).maybeSingle();
+    if (existing) return existing;
+    const { data: created } = await supabase.from('chart_of_accounts').insert([{
+      account_id:   `AUTO-${code}-C${companyId}`,
+      account_code: code,
+      account_name: name,
+      account_type: type,
+      parent_code:  parent,
+      balance:      0,
+      company_id:   companyId,
+    }]).select().single();
+    return created;
+  },
+
+  // Posts a Payment (PV) or Receipt (RV) voucher as a balanced double entry.
+  //   Receipt (money IN):  pocket DEBIT, party CREDIT  (party shown by name)
+  //   Payment (money OUT): party DEBIT,  pocket CREDIT
+  // The party leg posts to a control account (AR for receipts, AP for payments) but is
+  // *displayed* under the party's name so per-party reports match by account_name.
+  addPaymentReceipt: async ({ type, date, pocketAccount, partyControlAccount, partyName, amount, narration, companyId }) => {
+    const isReceipt = type === 'Receipt';
+    const voucherId = (isReceipt ? 'RV-' : 'PV-') + String(Date.now()).slice(-6);
+    const legs = isReceipt
+      ? [
+          { account: pocketAccount,       debit: amount, credit: 0 },
+          { account: partyControlAccount, debit: 0,      credit: amount, displayName: partyName },
+        ]
+      : [
+          { account: partyControlAccount, debit: amount, credit: 0,      displayName: partyName },
+          { account: pocketAccount,       debit: 0,      credit: amount },
+        ];
+    await financeDb.postJournalEntry({
+      voucherId, voucherType: type, date, companyId, legs,
+      narration: narration || `${isReceipt ? 'Received from' : 'Paid to'} ${partyName}`,
+      reference: partyName,
+    });
+    return { voucherId };
+  },
+
   // Posts a multi-leg double-entry journal: writes each leg to `vouchers` (so it shows
   // up in the Vouchers ledger) and `voucher_lines` (so it's included in per-account
   // reports like Daily Cash), then applies the balance updates via applyVoucherToBalances.
@@ -130,22 +272,35 @@ export const financeDb = {
   // `${voucherId}-N` id (voucher_lines mirrors it so the daily_cash_summary join still
   // matches); `reference` ties the legs together for display/grouping.
   // legs: [{ account, debit, credit }, ...]
+  // Each leg: { account, debit, credit, displayName? }. `displayName` overrides the name
+  // shown on the voucher/ledger row (e.g. show the customer's name on the party leg even
+  // though the balance posts to an Accounts-Receivable control account) — this is what
+  // lets the Customer Balance report match receipts to a customer by account_name.
   postJournalEntry: async ({ voucherId, voucherType, date, companyId, legs, narration, reference }) => {
-    let i = 1;
-    for (const leg of legs) {
-      const legVoucherId = `${voucherId}-${i++}`;
-      await supabase.from('vouchers').insert([{
+    // Build all rows up front, then fire the writes together instead of one-at-a-time.
+    // Each leg targets a different account, so the balance updates don't conflict.
+    const voucherRows = [];
+    const lineRows = [];
+    legs.forEach((leg, idx) => {
+      const legVoucherId = `${voucherId}-${idx + 1}`;
+      const shownName = leg.displayName || leg.account.account_name;
+      const legNarration = leg.narration || narration;   // per-line narration if provided
+      voucherRows.push({
         voucher_id: legVoucherId, voucher_type: voucherType, date,
-        account_name: leg.account.account_name, debit: leg.debit, credit: leg.credit,
-        narration, reference, company_id: companyId,
-      }]);
-      await supabase.from('voucher_lines').insert([{
+        account_name: shownName, debit: leg.debit, credit: leg.credit,
+        narration: legNarration, reference, company_id: companyId,
+      });
+      lineRows.push({
         voucher_id: legVoucherId, line_no: 1,
-        account_code: leg.account.account_code, account_title: leg.account.account_name,
-        debit: leg.debit, credit: leg.credit, narration, company_id: companyId,
-      }]);
-      await financeDb.applyVoucherToBalances(leg.account, leg.debit, leg.credit);
-    }
+        account_code: leg.account.account_code, account_title: shownName,
+        debit: leg.debit, credit: leg.credit, narration: legNarration, company_id: companyId,
+      });
+    });
+    await Promise.all([
+      supabase.from('vouchers').insert(voucherRows),
+      supabase.from('voucher_lines').insert(lineRows),
+      ...legs.map(leg => financeDb.applyVoucherToBalances(leg.account, leg.debit, leg.credit)),
+    ]);
   },
 
   getBankAccounts: (companyId = 1) =>
@@ -181,10 +336,17 @@ export const financeDb = {
   getInterBankTransfers: () =>
     supabase.from('inter_bank_transfers').select('*').order('date', { ascending: false }),
 
+  // Real inter-bank transfer = a Contra entry between two of the company's own banks.
+  // To account is DEBITED (money in), From account is CREDITED (money out), equal amount.
+  // We insert the summary row FIRST so a schema/constraint problem fails cleanly BEFORE
+  // any balances move (no partial posts). The journal voucher id is the ibt_id itself,
+  // so the entry can be reversed precisely on delete.
   addInterBankTransfer: async (ibt, { fromAccount, toAccount, companyId }) => {
-    const voucherId = 'IBT-' + String(Date.now()).slice(-6);
+    const { data, error } = await supabase.from('inter_bank_transfers').insert([ibt]).select().single();
+    if (error) return { error };
+
     await financeDb.postJournalEntry({
-      voucherId, voucherType: 'Contra', date: ibt.date, companyId,
+      voucherId: ibt.ibt_id, voucherType: 'Contra', date: ibt.date, companyId,
       legs: [
         { account: toAccount,   debit: ibt.amount, credit: 0 },
         { account: fromAccount, debit: 0,          credit: ibt.amount },
@@ -192,7 +354,28 @@ export const financeDb = {
       narration: ibt.narration || `Transfer: ${ibt.from_account} -> ${ibt.to_account}`,
       reference: ibt.ibt_id,
     });
-    return supabase.from('inter_bank_transfers').insert([ibt]).select().single();
+    return { data };
+  },
+
+  // Reverses an inter-bank transfer: unwinds both banks' balances (read back from
+  // voucher_lines so we don't depend on what was stored on the summary row), removes
+  // the journal legs, then deletes the summary row.
+  deleteInterBankTransfer: async (ibtId, companyId = 1) => {
+    const { data: lines } = await supabase
+      .from('voucher_lines').select('account_code, debit, credit')
+      .like('voucher_id', `${ibtId}-%`);
+    await Promise.all((lines || []).map(async (l) => {
+      const { data: acct } = await supabase
+        .from('chart_of_accounts').select('*')
+        .eq('account_code', l.account_code).eq('company_id', companyId).maybeSingle();
+      if (acct) await financeDb.applyVoucherToBalances(acct, -(l.debit || 0), -(l.credit || 0));
+    }));
+    await Promise.all([
+      supabase.from('voucher_lines').delete().like('voucher_id', `${ibtId}-%`),
+      supabase.from('vouchers').delete().eq('reference', ibtId),
+      supabase.from('inter_bank_transfers').delete().eq('ibt_id', ibtId),
+    ]);
+    return { error: null };
   },
 
   getPettyCash: () =>
@@ -353,11 +536,13 @@ export const salesDb = {
     supabase.from('sales_orders').insert([so]).select().single(),
 
   deleteSalesOrder: async (id, soId) => {
-    await supabase.from('order_confirmations').delete().eq('so_ref', soId);
-    await supabase.from('work_orders').delete().eq('so_ref', soId);
-    await supabase.from('delivery_notes').delete().eq('so_ref', soId);
-    await supabase.from('gate_passes').delete().eq('so_ref', soId);
-    await supabase.from('sales_invoices').delete().eq('so_ref', soId);
+    await Promise.all([
+      supabase.from('order_confirmations').delete().eq('so_ref', soId),
+      supabase.from('work_orders').delete().eq('so_ref', soId),
+      supabase.from('delivery_notes').delete().eq('so_ref', soId),
+      supabase.from('gate_passes').delete().eq('so_ref', soId),
+      supabase.from('sales_invoices').delete().eq('so_ref', soId),
+    ]);
     return supabase.from('sales_orders').delete().eq('id', id);
   },
 
@@ -413,6 +598,12 @@ export const procurementDb = {
   addVendor: (v) =>
     supabase.from('vendors').insert([v]).select().single(),
 
+  updateVendor: (id, updates) =>
+    supabase.from('vendors').update(updates).eq('id', id).select().single(),
+
+  deleteVendor: (id) =>
+    supabase.from('vendors').delete().eq('id', id),
+
   getPdns: (companyId = 1) =>
     supabase.from('pdns').select('*').eq('company_id', companyId).order('pdn_date', { ascending: false }),
 
@@ -422,10 +613,50 @@ export const procurementDb = {
   addPdnLineItems: (lineItems) =>
     supabase.from('pdn_line_items').insert(lineItems).select(),
 
-  deletePdn: async (id, pdnId) => {
-    await supabase.from('pdn_line_items').delete().eq('pdn_id', pdnId);
-    return supabase.from('pdns').delete().eq('id', id);
+  getPdnLineItems: (pdnId) =>
+    supabase.from('pdn_line_items').select('*').eq('pdn_id', pdnId).order('id'),
+
+  // Full downstream cascade: PDN → PR → PO → Gate Pass → GRN → Purchase Invoice.
+  // Caller passes the linked IDs it already holds in local state (most reliable);
+  // we still run pdn_ref/po_ref sweeps as a safety net for anything created elsewhere.
+  deletePdn: async (id, pdnId, refs = {}) => {
+    const { prIds = [], poIds = [], gpIds = [], grnIds = [], billIds = [] } = refs;
+
+    // No DB foreign keys force an order here, so fire every child delete at once.
+    const ops = [
+      supabase.from('purchase_requisitions').delete().eq('pdn_ref', pdnId),
+      supabase.from('pdn_line_items').delete().eq('pdn_id', pdnId),
+    ];
+    if (billIds.length) ops.push(supabase.from('purchase_invoices').delete().in('bill_id', billIds));
+    if (grnIds.length) {
+      ops.push(supabase.from('grn_line_items').delete().in('grn_id', grnIds));
+      ops.push(supabase.from('grns').delete().in('grn_id', grnIds));
+    }
+    if (gpIds.length) ops.push(supabase.from('gate_passes_inward').delete().in('gp_id', gpIds));
+    if (poIds.length) {
+      ops.push(supabase.from('purchase_invoices').delete().in('po_ref', poIds));
+      ops.push(supabase.from('grns').delete().in('po_ref', poIds));
+      ops.push(supabase.from('gate_passes_inward').delete().in('po_ref', poIds));
+      ops.push(supabase.from('po_line_items').delete().in('po_id', poIds));
+      ops.push(supabase.from('purchase_orders').delete().in('po_id', poIds));
+    }
+    if (prIds.length) {
+      ops.push(supabase.from('purchase_orders').delete().in('pr_ref', prIds));
+      ops.push(supabase.from('pr_line_items').delete().in('pr_id', prIds));
+      ops.push(supabase.from('purchase_requisitions').delete().in('pr_id', prIds));
+    }
+    await Promise.all(ops);
+
+    // Finally remove the PDN header itself.
+    const { error } = await supabase.from('pdns').delete().eq('id', id);
+    return { error };
   },
+
+  updatePurchaseRequisitionStatus: (prId, status) =>
+    supabase.from('purchase_requisitions').update({ status }).eq('pr_id', prId),
+
+  updatePurchaseOrderStatus: (poId, status) =>
+    supabase.from('purchase_orders').update({ status }).eq('po_id', poId),
 
   getPurchaseRequisitions: () =>
     supabase.from('purchase_requisitions').select('*').order('date', { ascending: false }),
@@ -438,7 +669,7 @@ export const procurementDb = {
 
   getPurchaseOrders: (companyId = 1) =>
     supabase.from('purchase_orders')
-      .select('id, po_id, vendor_name, po_date, delivery_due_date, item_count, total_amount, status, company_id, pr_ref, pdn_ref')
+      .select('id, po_id, vendor_name, po_date, delivery_due_date, item_count, total_amount, status, company_id, pr_ref')
       .eq('company_id', companyId)
       .order('po_date', { ascending: false }),
 

@@ -50,11 +50,15 @@ export default function Inventory() {
   const { data: warehouses } = useDb(() => mastersDb.getWarehouses());
   const { items: productCatalogue, addItem: addCatalogueItem, removeItem: removeCatalogueItem } = useCatalogue();
 
-  const handleDeleteCatalogueItem = (row) => {
+  const handleDeleteCatalogueItem = async (row) => {
     setDeletingId(row.id);
-    removeCatalogueItem(row.id);
-    toast.success(`"${row.name}" removed from catalogue.`);
+    const { error } = await removeCatalogueItem(row.id);
     setDeletingId(null);
+    if (error) {
+      toast.error(error.message, 'Delete Failed');
+    } else {
+      toast.success(`"${row.name}" removed from catalogue.`);
+    }
   };
 
   const PRODUCT_COLS = [

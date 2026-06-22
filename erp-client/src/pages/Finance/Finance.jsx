@@ -4,6 +4,7 @@ import { TrendingUp, Scale, Plus, Landmark, FileCheck, CreditCard, BarChart2, Bo
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import NewVoucherModal from './NewVoucherModal';
+import NewPaymentReceiptModal from './NewPaymentReceiptModal';
 import NewChequeModal from './NewChequeModal';
 import NewCashReceiptModal from './NewCashReceiptModal';
 import NewPettyCashModal from './NewPettyCashModal';
@@ -57,18 +58,6 @@ const CR_COLS = [
     render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
 ];
 
-const IBT_COLS = [
-  { key: 'ibt_id',       label: 'Ref No.',      width: 100, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'date',         label: 'Date',         width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-  { key: 'from_account', label: 'From Account', width: 220 },
-  { key: 'to_account',   label: 'To Account',   width: 220 },
-  { key: 'amount',       label: 'Amount',       width: 140, align: 'right',
-    render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
-  { key: 'narration',    label: 'Narration',    width: 160, render: v => <span className={styles.narration}>{v}</span> },
-  { key: 'status',       label: 'Status',       width: 110,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
-];
-
 const PC_COLS = [
   { key: 'pc_id',       label: 'Ref No.',     width: 100, render: v => <span className={styles.code}>{v}</span> },
   { key: 'date',        label: 'Date',        width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
@@ -88,14 +77,6 @@ const DC_COLS = [
   { key: 'payments',        label: 'Total Payments',  width: 160, align: 'right', render: v => <span className={`${styles.mono} ${styles.debit}`}>{formatCurrency(v)}</span> },
   { key: 'closing_balance', label: 'Closing Balance', width: 160, align: 'right',
     render: v => <span className={`${styles.mono} ${v >= 0 ? styles.credit : styles.debit}`}>{formatCurrency(Math.abs(v))}</span> },
-];
-
-const COA_COLS = [
-  { key: 'account_code', label: 'Code',    width: 90,  render: v => <span className={styles.code}>{v}</span> },
-  { key: 'account_name', label: 'Account', width: 280 },
-  { key: 'account_type', label: 'Type',    width: 100 },
-  { key: 'balance',      label: 'Balance', width: 180, align: 'right',
-    render: v => <span className={`${styles.mono} ${styles.credit}`}>{(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 0 })}</span> },
 ];
 
 const SEG_TO_TAB = {
@@ -123,10 +104,13 @@ export default function Finance() {
   const [crOpen,    setCrOpen]    = useState(false);
   const [ibtOpen,   setIbtOpen]   = useState(false);
   const [pcOpen,    setPcOpen]    = useState(false);
+  const [prvOpen,   setPrvOpen]   = useState(false);
+  const [prvType,   setPrvType]   = useState('Receipt');
   const [deletingId,     setDeletingId]     = useState(null);
   const [clearingId,     setClearingId]     = useState(null);
   const [bouncingId,     setBouncingId]     = useState(null);
   const [deletingBankId, setDeletingBankId] = useState(null);
+  const [deletingAcctId, setDeletingAcctId] = useState(null);
 
   const { data: dbVouchers, refetch: refetchVouchers } = useDb(() => financeDb.getVouchers(companyId), [companyId]);
   const { data: bankAccounts, refetch: refetchBanks } = useDb(() => financeDb.getBankAccounts(companyId), [companyId]);
@@ -141,8 +125,8 @@ export default function Finance() {
   const [voucherList, setVoucherList] = useState([]);
   useEffect(() => { setVoucherList(dbVouchers); }, [dbVouchers]);
 
-  const handleSave = (vch) => {
-    setVoucherList(prev => [vch, ...prev]);
+  const handleSave = () => {
+    refetchVouchers();
     refetchCOA();
     refetchBanks();
   };
@@ -185,19 +169,73 @@ export default function Finance() {
     },
   ];
 
+  const handleDeleteAccount = async (row) => {
+    setDeletingAcctId(row.id);
+    try {
+      const usage = await financeDb.getAccountUsage(row, companyId);
+      if (usage > 0) {
+        throw new Error(`"${row.account_name}" has ${usage} transaction(s) posted to it and cannot be deleted. Reverse/delete those vouchers first.`);
+      }
+      if (Math.abs(row.balance || 0) > 0.005) {
+        throw new Error(`"${row.account_name}" has a non-zero balance (${formatCurrency(row.balance)}) and cannot be deleted.`);
+      }
+      const { error } = await financeDb.deleteChartAccount(row.id);
+      if (error) throw new Error(error.message);
+      toast.success(`Account "${row.account_name}" deleted.`);
+      refetchCOA();
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingAcctId(null);
+    }
+  };
+
+  const COA_COLS = [
+    { key: 'account_code', label: 'Code',    width: 90,  render: v => <span className={styles.code}>{v}</span> },
+    { key: 'account_name', label: 'Account', width: 280 },
+    { key: 'account_type', label: 'Type',    width: 100 },
+    { key: 'balance',      label: 'Balance', width: 180, align: 'right',
+      render: v => <span className={`${styles.mono} ${styles.credit}`}>{(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 0 })}</span> },
+    { key: '_del', label: '', width: 44, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingAcctId === row.id}
+          onClick={e => { e.stopPropagation(); handleDeleteAccount(row); }}
+          title={`Delete ${row.account_name}`}
+        >
+          {deletingAcctId === row.id
+            ? <span style={{ fontSize: 10 }}>…</span>
+            : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
+  ];
+
   const handleDeleteVoucher = async (row) => {
     setDeletingId(row.id);
     try {
-      const { error } = await financeDb.deleteVoucher(row.id);
-      if (error) throw new Error(error.message);
+      // Multi-leg vouchers (PV/RV/Contra) have ids like "RV-123456-1" / "-2". Delete the
+      // whole group together so both legs reverse cleanly. Standalone vouchers (no "-N"
+      // suffix) delete as a single row.
+      const isGrouped = /-\d+$/.test(row.voucher_id || '');
+      if (isGrouped) {
+        const groupId = row.voucher_id.replace(/-\d+$/, '');
+        const { error } = await financeDb.deleteVoucherGroup(groupId, companyId);
+        if (error) throw new Error(error.message);
+        toast.success(`Voucher ${groupId} reversed and deleted (all legs).`);
+      } else {
+        const { error } = await financeDb.deleteVoucher(row.id);
+        if (error) throw new Error(error.message);
+        const account = chartOfAccounts.find(a => a.account_name === row.account_name);
+        if (account) await financeDb.applyVoucherToBalances(account, -(row.debit || 0), -(row.credit || 0));
+        toast.success(`Voucher ${row.voucher_id} deleted.`);
+      }
 
-      const account = chartOfAccounts.find(a => a.account_name === row.account_name);
-      if (account) await financeDb.applyVoucherToBalances(account, -(row.debit || 0), -(row.credit || 0));
-
-      setVoucherList(prev => prev.filter(v => v.id !== row.id));
+      refetchVouchers();
       refetchCOA();
       refetchBanks();
-      toast.success(`Voucher ${row.voucher_id} deleted.`);
+      refetchIBT();
     } catch (err) {
       toast.error(err.message, 'Delete Failed');
     } finally {
@@ -252,6 +290,47 @@ export default function Finance() {
     refetchIBT();
     refreshLedger();
   };
+
+  const handleDeleteTransfer = async (row) => {
+    setDeletingId(row.id);
+    try {
+      const { error } = await financeDb.deleteInterBankTransfer(row.ibt_id, companyId);
+      if (error) throw new Error(error.message);
+      toast.success(`Transfer ${row.ibt_id} reversed and deleted.`);
+      refetchIBT();
+      refreshLedger();
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const IBT_COLS = [
+    { key: 'ibt_id',       label: 'Ref No.',      width: 100, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'date',         label: 'Date',         width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+    { key: 'from_account', label: 'From Account', width: 220 },
+    { key: 'to_account',   label: 'To Account',   width: 220 },
+    { key: 'amount',       label: 'Amount',       width: 140, align: 'right',
+      render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
+    { key: 'narration',    label: 'Narration',    width: 160, render: v => <span className={styles.narration}>{v}</span> },
+    { key: 'status',       label: 'Status',       width: 110,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    { key: '_del', label: '', width: 44, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingId === row.id}
+          onClick={e => { e.stopPropagation(); handleDeleteTransfer(row); }}
+          title={`Reverse & delete ${row.ibt_id}`}
+        >
+          {deletingId === row.id
+            ? <span className={styles.rowDeleteSpinner}>…</span>
+            : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
+  ];
 
   const handleSavePettyCash = () => {
     refetchPetty();
@@ -335,6 +414,12 @@ export default function Finance() {
   const totalBankBalance = bankAccounts.reduce((sum, b) => sum + (b.balance || 0), 0);
   const pendingCheques   = chequeTracking.filter(c => c.status === 'pending').length;
 
+  // Cash pockets (Cash in Hand / Jazz Cash / Easypaisa) — the real ledger accounts used by
+  // the Payment/Receipt modal.
+  const CASH_POCKET_CODES = ['11-01-001-000001', '11-01-001-000002', '11-01-001-000004'];
+  const cashPockets    = (chartOfAccounts || []).filter(a => CASH_POCKET_CODES.includes(a.account_code));
+  const totalCashInHand = cashPockets.reduce((sum, a) => sum + (a.balance || 0), 0);
+
   // P&L / Balance Sheet derived from chart-of-accounts balances, grouped by the
   // top-level account_code prefix: 10=Income, 11=Asset, 12=Expense, 13=Owner Equity, 14=Liability
   const codePrefix = a => a.account_code?.slice(0, 2);
@@ -351,7 +436,17 @@ export default function Finance() {
       <PageHeader
         title="Finance"
         subtitle="General ledger, vouchers, bank accounts, cheques, and aging"
-        actions={<Button icon={<Plus size={15} />} onClick={() => setVchOpen(true)}>New Voucher</Button>}
+        actions={
+          pageTab === 'vouchers' ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Receipt'); setPrvOpen(true); }}>New Receipt</Button>
+              <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Payment'); setPrvOpen(true); }}>New Payment</Button>
+              <Button icon={<Plus size={15} />} onClick={() => setVchOpen(true)}>New Voucher</Button>
+            </div>
+          ) : (
+            <Button icon={<Plus size={15} />} onClick={() => setVchOpen(true)}>New Voucher</Button>
+          )
+        }
       />
 
       <div className={styles.summaryGrid}>
@@ -406,6 +501,28 @@ export default function Finance() {
               <div key={b.account_id} className={styles.plRow}>
                 <span>{b.bank_name}</span>
                 <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(b.balance)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.bankSummaryCard}>
+          <div className={styles.plHeader}>
+            <div className={`${styles.summaryIcon} ${styles.orange}`}>
+              <Coins size={20} strokeWidth={1.75} />
+            </div>
+            <div>
+              <p className={styles.summaryLabel}>Cash in Hand &amp; Wallets</p>
+              <p className={`${styles.summaryValue} ${styles.profit}`}>{formatCurrency(totalCashInHand)}</p>
+            </div>
+          </div>
+          <div className={styles.plRows}>
+            {cashPockets.length === 0 ? (
+              <div className={styles.plRow}><span style={{ color: 'var(--text-tertiary)' }}>No cash movements yet</span><span /></div>
+            ) : cashPockets.map(p => (
+              <div key={p.account_id} className={styles.plRow}>
+                <span>{p.account_name}</span>
+                <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(p.balance)}</span>
               </div>
             ))}
           </div>
@@ -524,6 +641,11 @@ export default function Finance() {
       )}
 
       <NewVoucherModal open={vchOpen} onClose={() => setVchOpen(false)} onSave={handleSave} />
+      <NewPaymentReceiptModal
+        open={prvOpen} type={prvType} onClose={() => setPrvOpen(false)}
+        onSave={refreshLedger}
+        bankAccounts={bankAccounts} chartOfAccounts={chartOfAccounts}
+      />
       <NewChequeModal
         open={chqOpen} onClose={() => setChqOpen(false)} onSave={handleSaveCheque}
         bankAccounts={bankAccounts} chartOfAccounts={chartOfAccounts}

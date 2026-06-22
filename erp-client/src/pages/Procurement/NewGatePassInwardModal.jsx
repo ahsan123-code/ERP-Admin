@@ -76,7 +76,7 @@ export default function NewGatePassInwardModal({ open, onClose, onSave }) {
   };
 
   const poOptions = (purchaseOrders || [])
-    .filter(p => ['issued', 'partially_received'].includes(p.status))
+    .filter(p => ['issued', 'confirmed', 'partially_received'].includes(p.status))
     .map(p => ({ value: p.po_id, label: `${p.po_id} — ${p.vendor_name}`, hint: p.status }));
 
   return (

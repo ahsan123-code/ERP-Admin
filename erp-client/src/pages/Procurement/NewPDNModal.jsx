@@ -89,8 +89,19 @@ export default function NewPDNModal({ open, onClose, onSave }) {
       );
       if (lineError) throw new Error(lineError.message);
 
-      toast.success('Purchase Demand Note submitted successfully.', 'PDN Created');
-      onSave(data);
+      const prId = 'PR-' + String(Date.now()).slice(-6);
+      const { data: prData, error: prError } = await procurementDb.addPurchaseRequisition({
+        pr_id: prId,
+        pdn_ref: data.pdn_id,
+        department: form.department,
+        date: today,
+        status: 'submitted',
+        item_count: lineItems.length,
+      });
+      if (prError) throw new Error(prError.message);
+
+      toast.success('Purchase Demand Note submitted and Requisition raised.', 'PDN Created');
+      onSave(data, prData);
       setForm(EMPTY_FORM);
       setDraft(EMPTY_DRAFT);
       setLineItems([]);

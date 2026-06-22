@@ -45,3 +45,15 @@ extract_frames.py
 # Large media — tracked intentionally for Vercel deployment
 # erp-client/public/Logo.jpeg
 # erp-client/public/Video.mp4
+
+# Large binaries & private data at repo root (never commit)
+DATABASE-BACKUP/
+*.bak
+Video.mp4
+Logo.jpeg
+*.jpeg
+*.pdf
+CUSTOMER LIST.pdf
+
+# Local agent/session files
+.claude/

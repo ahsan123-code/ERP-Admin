@@ -19,10 +19,12 @@ export default function SalarySheetModal({ records, employees, loans = [], month
   const totals = records.reduce((a, r) => ({
     gross_salary:    a.gross_salary    + (r.gross_salary    || 0),
     advance_salary:  a.advance_salary  + (r.advance_salary  || 0),
+    overtime_amount: a.overtime_amount + (r.overtime_amount || 0),
+    late_amount:     a.late_amount     + (r.late_amount     || 0),
     loan_deduction:  a.loan_deduction  + (r.loan_deduction  || 0),
     total_deductions:a.total_deductions+ (r.total_deductions|| 0),
     net_salary:      a.net_salary      + (r.net_salary      || 0),
-  }), { gross_salary: 0, advance_salary: 0, loan_deduction: 0, total_deductions: 0, net_salary: 0 });
+  }), { gross_salary: 0, advance_salary: 0, overtime_amount: 0, late_amount: 0, loan_deduction: 0, total_deductions: 0, net_salary: 0 });
 
   /* ─────────────────────────────────────────── XLSX export */
   const handleExportXLSX = () => {
@@ -32,6 +34,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       [`SALARY SHEET FOR THE MONTH OF ${month.toUpperCase()}-${year}`],
       ['Sr.', 'Name', 'Section', 'Designation', 'Gross Salary', 'Salary/Day',
        'Unpaid Leave Days', 'Leave Amt', 'OT Hrs', 'OT Rate', 'Total OT',
+       'Late Hrs', 'Late Rate', 'Late Amt',
        'Advance Salary', 'Granted Loan', 'Prev. Loan', 'Loan Deduction', 'Rem. Loan',
        'Total Deductions', 'Net Salary', 'Signatures'],
     ];
@@ -54,6 +57,9 @@ export default function SalarySheetModal({ records, employees, loans = [], month
         r.overtime_hours || 0,
         r.overtime_rate || 0,
         r.overtime_amount || 0,
+        r.late_hours || 0,
+        r.late_rate || 0,
+        r.late_amount || 0,
         r.advance_salary || 0,
         grantedLoan,
         prevLoan,
@@ -67,7 +73,8 @@ export default function SalarySheetModal({ records, employees, loans = [], month
 
     mainRows.push([
       '', 'TOTAL', '', '',
-      totals.gross_salary, '', '', '', '', '', '',
+      totals.gross_salary, '', '', '', '', '', totals.overtime_amount,
+      '', '', totals.late_amount,
       totals.advance_salary,
       '', '', totals.loan_deduction, '',
       totals.total_deductions,
@@ -75,11 +82,11 @@ export default function SalarySheetModal({ records, employees, loans = [], month
     ]);
 
     const ws1 = XLSX.utils.aoa_to_sheet(mainRows);
-    ws1['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 18 } }];
+    ws1['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 21 } }];
     XLSX.utils.book_append_sheet(wb, ws1, `${month} ${year}`);
 
     /* Salary slips sheet */
-    const slipRows = [`SALARY SLIPS — ${month.toUpperCase()}-${year}`, []];
+    const slipRows = [[`SALARY SLIPS — ${month.toUpperCase()}-${year}`], []];
     records.forEach((r) => {
       const loan    = getActiveLoan(r.employee_id);
       const remLoan = loan ? loan.remaining_balance : 0;
@@ -92,6 +99,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       slipRows.push(['Advance', '', '', r.advance_salary || 0]);
       slipRows.push(['Loan Deduction', '', '', r.loan_deduction || 0]);
       slipRows.push(['Overtime', r.overtime_rate || 0, r.overtime_hours || 0, r.overtime_amount || 0]);
+      slipRows.push(['Late Deduction', r.late_rate || 0, r.late_hours || 0, r.late_amount || 0]);
       slipRows.push(['Salary Payable', '', '', r.net_salary]);
       slipRows.push(['Remaining Loan', '', '', remLoan]);
       slipRows.push([]);
@@ -178,6 +186,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
                   <th>Gross Salary</th>
                   <th>Leave Ded.</th>
                   <th>OT Amt</th>
+                  <th>Late Ded.</th>
                   <th>Advance</th>
                   <th>Loan Ded.</th>
                   <th>Total Ded.</th>
@@ -195,6 +204,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
                     <td>{formatCurrency(r.gross_salary)}</td>
                     <td>{r.unpaid_leave_amount > 0 ? formatCurrency(r.unpaid_leave_amount) : '—'}</td>
                     <td>{r.overtime_amount > 0 ? formatCurrency(r.overtime_amount) : '—'}</td>
+                    <td>{r.late_amount > 0 ? formatCurrency(r.late_amount) : '—'}</td>
                     <td>{r.advance_salary > 0 ? formatCurrency(r.advance_salary) : '—'}</td>
                     <td>{r.loan_deduction > 0 ? formatCurrency(r.loan_deduction) : '—'}</td>
                     <td>{formatCurrency(r.total_deductions)}</td>
@@ -205,7 +215,9 @@ export default function SalarySheetModal({ records, employees, loans = [], month
                 <tr className="total-row">
                   <td colSpan={4} className="left">TOTAL</td>
                   <td>{formatCurrency(totals.gross_salary)}</td>
-                  <td>—</td><td>—</td>
+                  <td>—</td>
+                  <td>{totals.overtime_amount > 0 ? formatCurrency(totals.overtime_amount) : '—'}</td>
+                  <td>{totals.late_amount > 0 ? formatCurrency(totals.late_amount) : '—'}</td>
                   <td>{formatCurrency(totals.advance_salary)}</td>
                   <td>{formatCurrency(totals.loan_deduction)}</td>
                   <td>{formatCurrency(totals.total_deductions)}</td>

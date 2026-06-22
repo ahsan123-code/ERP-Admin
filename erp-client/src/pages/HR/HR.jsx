@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, Printer, Pencil, FileSpreadsheet, Trash2 } from 'lucide-react';
 import AddEmployeeModal from './AddEmployeeModal';
@@ -12,6 +12,7 @@ import EditLoanModal from './EditLoanModal';
 import PayslipModal from './PayslipModal';
 import PayrollManageModal from './PayrollManageModal';
 import SalarySheetModal from './SalarySheetModal';
+import GeneratePayrollModal from './GeneratePayrollModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import DataTable from '../../components/shared/DataTable';
@@ -141,12 +142,30 @@ export default function HR() {
   const [payslipRec,   setPayslipRec]   = useState(null);
   const [manageRec,    setManageRec]    = useState(null);
   const [sheetOpen,    setSheetOpen]    = useState(false);
+  const [genOpen,      setGenOpen]      = useState(false);
 
   const { data: employees,     loading: loadEmp,     refetch: refetchEmp }     = useDb(() => hrDb.getEmployees());
   const { data: attendance,    loading: loadAtt }   = useDb(() => hrDb.getAttendance());
   const { data: leaveRequests, loading: loadLeave, refetch: refetchLeave } = useDb(() => hrDb.getLeaveRequests());
   const { data: payrollRecords,loading: loadPay,     refetch: refetchPay }     = useDb(() => hrDb.getPayrollRecords());
   const { data: loans,         loading: loadLoans,   refetch: refetchLoans }   = useDb(() => hrDb.getLoans());
+
+  // Distinct payroll periods present in the data (newest first), for the period selector.
+  const MONTH_ORDER = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const periods = useMemo(() => {
+    const map = new Map();
+    (payrollRecords || []).forEach(r => {
+      if (r.month && r.year) map.set(`${r.month} ${r.year}`, { month: r.month, year: r.year });
+    });
+    return [...map.values()].sort((a, b) => b.year - a.year || MONTH_ORDER.indexOf(b.month) - MONTH_ORDER.indexOf(a.month));
+  }, [payrollRecords]);
+
+  const [period, setPeriod] = useState('');
+  // Default to the most recent period once data loads
+  const activePeriod = period || (periods[0] ? `${periods[0].month} ${periods[0].year}` : '');
+  const [selMonth, selYearStr] = activePeriod.split(/ (?=\d{4}$)/);
+  const selYear = Number(selYearStr);
+  const sheetRecords = (payrollRecords || []).filter(r => r.month === selMonth && r.year === selYear);
 
   const handleSave = async (emp) => {
     await hrDb.addEmployee(emp);
@@ -258,15 +277,35 @@ export default function HR() {
       {pageTab === 'payroll' && (
         <Card padding={false}>
           <CardHeader
-            title="Payroll — April 2026"
-            subtitle={loadPay ? 'Loading…' : `${payrollRecords.length} payroll records`}
+            title={`Payroll — ${activePeriod || '—'}`}
+            subtitle={loadPay ? 'Loading…' : `${sheetRecords.length} payroll records`}
             actions={
-              <Button variant="secondary" size="sm" icon={<FileSpreadsheet size={14} />} onClick={() => setSheetOpen(true)}>
-                Export Sheet
-              </Button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  value={activePeriod}
+                  onChange={e => setPeriod(e.target.value)}
+                  style={{
+                    background: 'var(--input-bg)', border: '1px solid var(--input-border)',
+                    borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
+                    padding: '7px 10px', fontSize: 13, outline: 'none', cursor: 'pointer',
+                  }}
+                >
+                  {periods.length === 0 && <option value="">No periods</option>}
+                  {periods.map(p => {
+                    const v = `${p.month} ${p.year}`;
+                    return <option key={v} value={v}>{v}</option>;
+                  })}
+                </select>
+                <Button size="sm" icon={<Plus size={14} />} onClick={() => setGenOpen(true)}>
+                  Generate Payroll
+                </Button>
+                <Button variant="secondary" size="sm" icon={<FileSpreadsheet size={14} />} onClick={() => setSheetOpen(true)} disabled={sheetRecords.length === 0}>
+                  Export Sheet
+                </Button>
+              </div>
             }
           />
-          <DataTable columns={PAY_COLS} data={payrollRecords} keyField="payroll_id" searchPlaceholder="Search payroll..." />
+          <DataTable columns={PAY_COLS} data={sheetRecords} keyField="payroll_id" searchPlaceholder="Search payroll..." />
         </Card>
       )}
 
@@ -289,7 +328,14 @@ export default function HR() {
       <EditLoanModal loan={editLoan} onClose={() => setEditLoan(null)} onSave={() => refetchLoans()} />
       {payslipRec && <PayslipModal record={payslipRec} onClose={() => setPayslipRec(null)} />}
       {manageRec  && <PayrollManageModal record={manageRec} onSave={handlePayrollSave} onClose={() => setManageRec(null)} />}
-      {sheetOpen  && <SalarySheetModal records={payrollRecords} employees={employees} loans={loans} month="April" year={2026} onClose={() => setSheetOpen(false)} />}
+      {sheetOpen  && <SalarySheetModal records={sheetRecords} employees={employees} loans={loans} month={selMonth} year={selYear} onClose={() => setSheetOpen(false)} />}
+      <GeneratePayrollModal
+        open={genOpen}
+        employees={employees}
+        loans={loans}
+        onClose={() => setGenOpen(false)}
+        onGenerated={(m, y) => { refetchPay(); setPeriod(`${m} ${y}`); }}
+      />
     </div>
   );
 }
