@@ -582,6 +582,24 @@ export const salesDb = {
       .eq('company_id', companyId)
       .order('date', { ascending: false }),
 
+  // Sold-item detail for a set of sales orders (so_line_items.so_id == invoice.so_ref).
+  // item_name carries the size (e.g. 'GI,2.50MM X 48"'); unit_price is the rate.
+  // Chunked to stay within Supabase's URL length limit when a customer has many orders.
+  getSoLineItems: async (soRefs = []) => {
+    const refs = [...new Set((soRefs || []).filter(Boolean))];
+    if (refs.length === 0) return { data: [], error: null };
+    const CHUNK = 150;
+    const all = [];
+    for (let i = 0; i < refs.length; i += CHUNK) {
+      const { data, error } = await supabase.from('so_line_items')
+        .select('so_id, item_name, unit, quantity, unit_price')
+        .in('so_id', refs.slice(i, i + CHUNK));
+      if (error) return { data: null, error };
+      if (data) all.push(...data);
+    }
+    return { data: all, error: null };
+  },
+
   addSalesInvoice: (inv) =>
     supabase.from('sales_invoices').insert([inv]).select().single(),
 

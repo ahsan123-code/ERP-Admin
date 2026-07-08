@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Scale, TrendingDown, TrendingUp, BarChart3,
   Printer, Users, Globe, Package, FileText, BadgeCheck, Truck, Landmark,
-  ClipboardList, CalendarDays, Store,
+  ClipboardList, CalendarDays, Store, BookUser,
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
@@ -30,6 +30,7 @@ const SEG_TO_TAB = {
   'sold-items': 'sold-items', 'invoice-summary': 'invoice-summary',
   gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
   'cust-balance': 'cust-balance', 'day-book': 'day-book', 'vendor-balance': 'vendor-balance',
+  'vendor-ledger': 'vendor-ledger',
 };
 const TAB_TO_SEG = {
   ledger: 'ledger', trial: 'trial', receivables: 'receivables',
@@ -38,6 +39,7 @@ const TAB_TO_SEG = {
   'sold-items': 'sold-items', 'invoice-summary': 'invoice-summary',
   gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
   'cust-balance': 'cust-balance', 'day-book': 'day-book', 'vendor-balance': 'vendor-balance',
+  'vendor-ledger': 'vendor-ledger',
 };
 
 const PAGE_TABS = [
@@ -47,6 +49,7 @@ const PAGE_TABS = [
   { value: 'payables',        label: 'Payables',            icon: TrendingDown},
   { value: 'income',          label: 'Income Statement',    icon: BarChart3   },
   { value: 'customer-ledger', label: 'Customer Ledger',     icon: Users       },
+  { value: 'vendor-ledger',   label: 'Vendor Ledger',       icon: BookUser    },
   { value: 'region',          label: 'Region Wise Sales',   icon: Globe       },
   { value: 'sold-items',      label: 'Sold Items',          icon: Package     },
   { value: 'invoice-summary', label: 'Invoice Summary',     icon: FileText    },
@@ -303,6 +306,20 @@ function CustomerLedger({ salesInvoices }) {
   const [customer, setCustomer] = useState(customerNames[0] ?? '');
   const invs = salesInvoices.filter(i => i.customer_name === customer);
 
+  // Pull the sold-item detail (item name + size + rate) for this customer's orders.
+  const soRefs = useMemo(() => invs.map(i => i.so_ref).filter(Boolean), [invs]);
+  const soRefsKey = soRefs.join(',');
+  const { data: lineItems } = useDb(() => salesDb.getSoLineItems(soRefs), [soRefsKey]);
+
+  // Group line items by their SO ref so each invoice can show what was sold.
+  const itemsByRef = useMemo(() => {
+    const map = {};
+    (lineItems || []).forEach(li => {
+      (map[li.so_id] ||= []).push(li);
+    });
+    return map;
+  }, [lineItems]);
+
   return (
     <div className={styles.ledgerWrap}>
       <div className={styles.filterRow}>
@@ -315,19 +332,40 @@ function CustomerLedger({ salesInvoices }) {
       </div>
       <div className={styles.reportTable}>
         <table className={styles.tbl}>
-          <thead><tr><th>Date</th><th>Invoice No.</th><th>SO Ref</th><th className={styles.right}>Subtotal</th><th className={styles.right}>Charges</th><th className={styles.right}>Grand Total</th><th>Status</th><th className={styles.right}>AG-DAYS</th></tr></thead>
+          <thead><tr><th>Date</th><th>Invoice No.</th><th>Item / Size</th><th className={styles.right}>Rate</th><th className={styles.right}>Subtotal</th><th className={styles.right}>Charges</th><th className={styles.right}>Grand Total</th><th>Status</th><th className={styles.right}>AG-DAYS</th></tr></thead>
           <tbody>
             {invs.length === 0
-              ? <tr><td colSpan={8} style={{ textAlign:'center', padding:'20px', color:'#666' }}>No invoices found</td></tr>
+              ? <tr><td colSpan={9} style={{ textAlign:'center', padding:'20px', color:'#666' }}>No invoices found</td></tr>
               : invs.map(inv => {
                 const days = agDays(inv.date);
                 const dayVariant = days > 60 ? 'error' : days > 30 ? 'warning' : 'neutral';
                 const s = getStatus(inv.status);
+                const items = itemsByRef[inv.so_ref] || [];
                 return (
                   <tr key={inv.sale_inv_id}>
                     <td className={styles.code}>{formatDate(inv.date)}</td>
                     <td className={styles.code}>{inv.sale_inv_id}</td>
-                    <td className={styles.code}>{inv.so_ref}</td>
+                    <td>
+                      {items.length === 0
+                        ? <span className={styles.nil}>—</span>
+                        : items.map((li, idx) => (
+                          <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                            {li.item_name || '—'}
+                            {li.quantity > 0 && (
+                              <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
+                            )}
+                          </div>
+                        ))}
+                    </td>
+                    <td className={styles.right}>
+                      {items.length === 0
+                        ? <span className={styles.nil}>—</span>
+                        : items.map((li, idx) => (
+                          <div key={idx} className={styles.mono} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                            {li.unit_price > 0 ? formatCurrency(li.unit_price) : '—'}
+                          </div>
+                        ))}
+                    </td>
                     <td className={styles.right}><span className={styles.mono}>{formatCurrency(inv.subtotal)}</span></td>
                     <td className={styles.right}><span className={styles.mono}>{formatCurrency(inv.total_charges || 0)}</span></td>
                     <td className={styles.right}><span className={`${styles.mono} ${styles.total}`}>{formatCurrency(inv.grand_total)}</span></td>
@@ -338,7 +376,7 @@ function CustomerLedger({ salesInvoices }) {
               })}
             {invs.length > 0 && (
               <tr className={styles.totalRow}>
-                <td colSpan={5}><strong>Total</strong></td>
+                <td colSpan={6}><strong>Total</strong></td>
                 <td className={styles.right}><strong className={styles.mono}>{formatCurrency(invs.reduce((s, i) => s + (i.grand_total||0), 0))}</strong></td>
                 <td colSpan={2}></td>
               </tr>
@@ -996,6 +1034,161 @@ function VendorCurrentBalance({ vendors, purchaseInvoices }) {
   );
 }
 
+/* ── Vendor Ledger ──────────────────────────────────────────────────── */
+function VendorLedger({ vendors }) {
+  const { data: rawAccounts } = useDb(() => financeDb.getVoucherAccounts());
+
+  // Only offer vendors that actually have ledger activity (name matches a voucher account).
+  const vendorList = useMemo(() => {
+    const ledgerNames = new Set((rawAccounts || []).map(r => r.account_name).filter(Boolean));
+    const names = (vendors || []).map(v => v.name).filter(Boolean);
+    return [...new Set(names.filter(n => ledgerNames.has(n)))].sort();
+  }, [rawAccounts, vendors]);
+
+  const [vendor,   setVendor] = useState('');
+  const [fromDate, setFrom]   = useState('');
+  const [toDate,   setTo]     = useState('');
+
+  const { data: rawVouchers } = useDb(
+    () => vendor ? financeDb.getVouchersByAccount(vendor, fromDate, toDate) : Promise.resolve({ data: [], error: null }),
+    [vendor, fromDate, toDate]
+  );
+
+  const entries = useMemo(() => {
+    let running = 0;
+    const out = [];
+    for (const v of (rawVouchers || [])) {
+      running += (parseFloat(v.debit) || 0) - (parseFloat(v.credit) || 0);
+      out.push({ ...v, balance: running });
+    }
+    return out;
+  }, [rawVouchers]);
+
+  const totalDr  = entries.reduce((s, e) => s + (parseFloat(e.debit)  || 0), 0);
+  const totalCr  = entries.reduce((s, e) => s + (parseFloat(e.credit) || 0), 0);
+  const closeBal = entries[entries.length - 1]?.balance ?? 0;
+
+  const handlePrint = () => {
+    if (!vendor) return;
+    const rows = entries.map(e => `
+      <tr>
+        <td>${formatDate((e.date || '').slice(0, 10))}</td>
+        <td>${e.voucher_id || '—'}</td>
+        <td>${e.voucher_type || '—'}</td>
+        <td>${e.narration || '—'}</td>
+        <td class="right">${e.debit  > 0 ? formatCurrency(e.debit)  : '—'}</td>
+        <td class="right">${e.credit > 0 ? formatCurrency(e.credit) : '—'}</td>
+        <td class="right">${formatCurrency(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
+      </tr>`).join('');
+    const win = window.open('', '_blank', 'width=900,height=720');
+    win.document.write(`<!DOCTYPE html><html><head><title>Vendor Ledger — ${vendor}</title>
+      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;padding:24px;color:#000}
+      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}.co{font-size:18px;font-weight:700}
+      .sub{font-size:11px;color:#555;margin-top:3px}.ttl{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:10px 0}
+      .meta{font-size:11px;color:#444;margin-bottom:12px}table{width:100%;border-collapse:collapse}
+      th{background:#1a1a1a;color:#fff;padding:6px 10px;font-size:10px;text-align:left}th.right{text-align:right}
+      td{padding:5px 10px;font-size:11px;border-bottom:1px solid #eee}td.right{text-align:right;font-family:monospace}
+      tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
+      .footer{text-align:center;margin-top:20px;font-size:10px;color:#999;border-top:1px solid #ddd;padding-top:10px}
+      </style></head><body>
+      <div class="hdr"><div class="co">${COMPANY.name}</div><div class="sub">${COMPANY.address} | NTN: ${COMPANY.ntn}</div></div>
+      <div class="ttl">Vendor Ledger</div>
+      <div class="meta">Vendor: <strong>${vendor}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}</div>
+      <table>
+        <thead><tr><th>Date</th><th>Voucher</th><th>Type</th><th>Narration</th><th class="right">Debit</th><th class="right">Credit</th><th class="right">Balance</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" style="text-align:center;padding:20px;color:#666">No entries for selected period</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="4" class="right">Totals</td>
+          <td class="right">${formatCurrency(totalDr)}</td>
+          <td class="right">${formatCurrency(totalCr)}</td>
+          <td class="right">${formatCurrency(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}</td>
+        </tr></tfoot>
+      </table>
+      <p class="footer">Closing Balance: ${formatCurrency(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'} | Printed: ${new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</p>
+      </body></html>`);
+    win.document.close(); win.focus();
+    setTimeout(() => win.print(), 400);
+  };
+
+  return (
+    <div className={styles.ledgerWrap}>
+      <div className={styles.filterRow}>
+        <div className={styles.filterGroup} style={{ flex: 2 }}>
+          <label className={styles.filterLabel}>Vendor</label>
+          <SearchableSelect
+            placeholder={`Search vendor (${vendorList.length})…`}
+            emptyText="No matching vendors"
+            value={vendor}
+            onChange={setVendor}
+            options={vendorList.map(name => ({ value: name, label: name }))}
+          />
+        </div>
+        <div className={styles.filterGroup}>
+          <label className={styles.filterLabel}>From</label>
+          <input className={styles.dateInput} type="date" value={fromDate} onChange={e => setFrom(e.target.value)} />
+        </div>
+        <div className={styles.filterGroup}>
+          <label className={styles.filterLabel}>To</label>
+          <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
+        </div>
+        <Button variant="primary" icon={<Printer size={14} />} onClick={handlePrint} disabled={!vendor}>
+          Print Ledger
+        </Button>
+      </div>
+
+      {!vendor ? (
+        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)', fontSize: 13 }}>
+          Select a vendor to view its ledger
+        </div>
+      ) : (
+        <div>
+          <table className={styles.tbl}>
+            <thead>
+              <tr>
+                <th>Date</th><th>Voucher</th><th>Type</th><th>Narration</th>
+                <th className={styles.right}>Debit</th>
+                <th className={styles.right}>Credit</th>
+                <th className={styles.right}>Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.length === 0
+                ? <tr><td colSpan={7} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
+                : entries.map((e, i) => (
+                  <tr key={e.id ?? i}>
+                    <td className={styles.date}>{formatDate((e.date || '').slice(0, 10))}</td>
+                    <td className={styles.code}>{e.voucher_id || '—'}</td>
+                    <td className={styles.type}>{e.voucher_type || '—'}</td>
+                    <td>{e.narration || '—'}</td>
+                    <td className={styles.right}>
+                      {parseFloat(e.debit) > 0 ? <span className={styles.mono}>{formatCurrency(e.debit)}</span> : <span className={styles.nil}>—</span>}
+                    </td>
+                    <td className={styles.right}>
+                      {parseFloat(e.credit) > 0 ? <span className={styles.mono}>{formatCurrency(e.credit)}</span> : <span className={styles.nil}>—</span>}
+                    </td>
+                    <td className={styles.right}>
+                      <span className={styles.mono}>{formatCurrency(Math.abs(e.balance))}</span>
+                      <span style={{ fontSize: 10, marginLeft: 4, color: e.balance >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {e.balance >= 0 ? 'Dr' : 'Cr'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          {entries.length > 0 && (
+            <div style={{ display:'flex', justifyContent:'flex-end', padding:'12px 0', gap:24, fontSize:12, color:'var(--text-secondary)' }}>
+              <span>Total Debit: <strong>{formatCurrency(totalDr)}</strong></span>
+              <span>Total Credit: <strong>{formatCurrency(totalCr)}</strong></span>
+              <span>Closing: <strong>{formatCurrency(Math.abs(closeBal))} {closeBal >= 0 ? 'Dr' : 'Cr'}</strong></span>
+              <span>Entries: <strong>{entries.length}</strong></span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main component ─────────────────────────────────────────────────── */
 export default function Reports() {
   const location = useLocation();
@@ -1070,6 +1263,12 @@ export default function Reports() {
         <Card padding={false}>
           <CardHeader title="Customer Sales Ledger" subtitle="Customer-wise invoice history with AG-DAYS aging" />
           <div className={styles.cardBody}><CustomerLedger salesInvoices={salesInvoices} /></div>
+        </Card>
+      )}
+      {pageTab === 'vendor-ledger' && (
+        <Card padding={false}>
+          <CardHeader title="Vendor Ledger" subtitle="Vendor-wise transaction history with running balance" />
+          <div className={styles.cardBody}><VendorLedger vendors={vendors} /></div>
         </Card>
       )}
       {pageTab === 'region' && (
