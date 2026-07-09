@@ -21,12 +21,13 @@ const CASH_POCKETS = [
   { code: '11-01-001-000004', name: 'Easypaisa (Maqsood Ahmad)' },
 ];
 
-const AR = { code: '11-03-001-000001', name: 'Accounts Receivable', type: 'Asset',     parent: '11-03-001' };
-const AP = { code: '14-01-001-000001', name: 'Accounts Payable',    type: 'Liability', parent: '14-01-001' };
+const AR = { code: '11-03-001-000001', name: 'Accounts Receivable', type: 'Asset', parent: '11-03-001' };
+const AP = { code: '14-01-001-000001', name: 'Accounts Payable', type: 'Liability', parent: '14-01-001' };
 
 const EMPTY = { date: today, pocket: '', party: '', amount: '', narration: '' };
 
-export default function NewPaymentReceiptModal({ open, onClose, onSave, type = 'Receipt', bankAccounts = [], chartOfAccounts = [] }) {
+// mode: 'cash' = cash/wallet only (PV/RV), 'bank' = bank accounts only (BPV/BRV)
+export default function NewPaymentReceiptModal({ open, onClose, onSave, type = 'Receipt', mode = 'cash', bankAccounts = [], chartOfAccounts = [] }) {
   const toast = useToast();
   const { companyId } = useCompany();
   const { customers } = useCustomers();
@@ -40,17 +41,19 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
-  // Pocket dropdown = the three fixed cash/wallet pockets only.
-  const pocketOptions = CASH_POCKETS.map(p => ({ value: `cash:${p.code}`, label: p.name }));
+  // Pocket dropdown — cash/wallet for PV/RV, bank accounts for BPV/BRV
+  const pocketOptions = mode === 'bank'
+    ? (bankAccounts || []).map(b => ({ value: `bank:${b.account_id}`, label: `${b.bank_name} — ${b.account_no}` }))
+    : CASH_POCKETS.map(p => ({ value: `cash:${p.code}`, label: p.name }));
 
   // Party dropdown = customers + vendors (type decides the control account: AR vs AP)
   const partyOptions = [
     ...(customers || []).map(c => ({ value: `cust:${c.id}`, label: c.name, hint: 'Customer' })),
-    ...(vendors  || []).map(v => ({ value: `vend:${v.id}`, label: v.name, hint: 'Vendor' })),
+    ...(vendors || []).map(v => ({ value: `vend:${v.id}`, label: v.name, hint: 'Vendor' })),
   ];
 
   const selectedPocket = pocketOptions.find(o => o.value === form.pocket);
-  const selectedParty  = partyOptions.find(o => o.value === form.party);
+  const selectedParty = partyOptions.find(o => o.value === form.party);
   const amountNum = parseFloat(form.amount) || 0;
 
   const handleSubmit = async (e) => {
@@ -106,22 +109,30 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
   // Live double-entry preview legs
   const preview = selectedPocket && selectedParty && amountNum > 0
     ? (isReceipt
-        ? [
-            { name: selectedPocket.label,  dr: amountNum, cr: 0 },
-            { name: selectedParty.label,   dr: 0, cr: amountNum },
-          ]
-        : [
-            { name: selectedParty.label,   dr: amountNum, cr: 0 },
-            { name: selectedPocket.label,  dr: 0, cr: amountNum },
-          ])
+      ? [
+        { name: selectedPocket.label, dr: amountNum, cr: 0 },
+        { name: selectedParty.label, dr: 0, cr: amountNum },
+      ]
+      : [
+        { name: selectedParty.label, dr: amountNum, cr: 0 },
+        { name: selectedPocket.label, dr: 0, cr: amountNum },
+      ])
     : null;
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={isReceipt ? 'New Receipt Voucher (RV)' : 'New Payment Voucher (PV)'}
-      subtitle={isReceipt ? 'Record money received into a cash/bank account' : 'Record money paid out of a cash/bank account'}
+      title={
+        mode === 'bank'
+          ? (isReceipt ? 'Bank Receipt Voucher (BRV)' : 'Bank Payment Voucher (BPV)')
+          : (isReceipt ? 'New Receipt Voucher (RV)' : 'New Payment Voucher (PV)')
+      }
+      subtitle={
+        mode === 'bank'
+          ? (isReceipt ? 'Record money received into a bank account' : 'Record money paid out of a bank account')
+          : (isReceipt ? 'Record money received into a cash/bank account' : 'Record money paid out of a cash/bank account')
+      }
       size="md"
       footer={
         <div className="factions">
@@ -137,7 +148,11 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
         <div />
         <div className="ff">
           <SelectField
-            label={isReceipt ? 'Receive Into (Account) *' : 'Pay From (Account) *'}
+            label={
+              mode === 'bank'
+                ? (isReceipt ? 'Receive Into (Bank Account) *' : 'Pay From (Bank Account) *')
+                : (isReceipt ? 'Receive Into (Account) *' : 'Pay From (Account) *')
+            }
             value={form.pocket}
             onChange={set('pocket')}
             required

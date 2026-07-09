@@ -9,6 +9,7 @@ import NewChequeModal from './NewChequeModal';
 import NewCashReceiptModal from './NewCashReceiptModal';
 import NewPettyCashModal from './NewPettyCashModal';
 import NewTransferModal from './NewTransferModal';
+import NewAccountModal from './NewAccountModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import DataTable from '../../components/shared/DataTable';
@@ -21,62 +22,76 @@ import { getStatus } from '../../utils/statusConfig';
 import styles from './Finance.module.css';
 
 const AGING_COLS = [
-  { key: 'party_name',     label: 'Party',      width: 220 },
-  { key: 'party_type',     label: 'Type',       width: 90  },
-  { key: 'current_amount', label: 'Current',    width: 130, align: 'right', render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-  { key: 'days_30',        label: '1–30 Days',  width: 130, align: 'right', render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-  { key: 'days_60',        label: '31–60 Days', width: 130, align: 'right', render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-  { key: 'over_90',        label: '90+ Days',   width: 130, align: 'right',
-    render: v => <span className={`${styles.mono} ${v > 0 ? styles.overdue : ''}`}>{formatCurrency(v)}</span> },
-  { key: 'total',          label: 'Total',      width: 140, align: 'right',
-    render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span> },
+  { key: 'party_name', label: 'Party', width: 220 },
+  { key: 'party_type', label: 'Type', width: 90 },
+  { key: 'current_amount', label: 'Current', width: 130, align: 'right', render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
+  { key: 'days_30', label: '1–30 Days', width: 130, align: 'right', render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
+  { key: 'days_60', label: '31–60 Days', width: 130, align: 'right', render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
+  {
+    key: 'over_90', label: '90+ Days', width: 130, align: 'right',
+    render: v => <span className={`${styles.mono} ${v > 0 ? styles.overdue : ''}`}>{formatCurrency(v)}</span>
+  },
+  {
+    key: 'total', label: 'Total', width: 140, align: 'right',
+    render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span>
+  },
 ];
 
 
 const PAGE_TABS = [
-  { value: 'vouchers',   label: 'Vouchers',            icon: FileCheck      },
-  { value: 'banks',      label: 'Bank Accounts',       icon: Landmark       },
-  { value: 'cheques',    label: 'Cheques',             icon: CreditCard     },
-  { value: 'accounts',   label: 'Chart of Accounts',   icon: BookOpen       },
-  { value: 'aging',      label: 'Aging',               icon: BarChart2      },
-  { value: 'cash',       label: 'Cash Received',       icon: Banknote       },
+  { value: 'vouchers', label: 'Vouchers', icon: FileCheck },
+  { value: 'banks', label: 'Bank Accounts', icon: Landmark },
+  { value: 'cheques', label: 'Cheques', icon: CreditCard },
+  { value: 'accounts', label: 'Chart of Accounts', icon: BookOpen },
+  { value: 'aging', label: 'Aging', icon: BarChart2 },
+  { value: 'cash', label: 'Cash Received', icon: Banknote },
   { value: 'inter-bank', label: 'Inter Bank Transfer', icon: ArrowRightLeft },
-  { value: 'petty',      label: 'Petty Cash',          icon: Coins          },
-  { value: 'daily',      label: 'Daily Cash',          icon: CalendarDays   },
+  { value: 'petty', label: 'Petty Cash', icon: Coins },
+  { value: 'daily', label: 'Daily Cash', icon: CalendarDays },
 ];
 
 const CR_COLS = [
-  { key: 'cr_id',      label: 'Ref No.', width: 100, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'date',       label: 'Date',    width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-  { key: 'party_name', label: 'Party',   width: 220 },
-  { key: 'amount',     label: 'Amount',  width: 140, align: 'right',
-    render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
-  { key: 'mode',       label: 'Mode',    width: 90  },
-  { key: 'bank_name',  label: 'Bank',    width: 140, render: v => v || <span className={styles.nil}>—</span> },
-  { key: 'narration',  label: 'Narration', width: 200, render: v => <span className={styles.narration}>{v}</span> },
-  { key: 'status',     label: 'Status',  width: 100,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+  { key: 'cr_id', label: 'Ref No.', width: 100, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'date', label: 'Date', width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+  { key: 'party_name', label: 'Party', width: 220 },
+  {
+    key: 'amount', label: 'Amount', width: 140, align: 'right',
+    render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span>
+  },
+  { key: 'mode', label: 'Mode', width: 90 },
+  { key: 'bank_name', label: 'Bank', width: 140, render: v => v || <span className={styles.nil}>—</span> },
+  { key: 'narration', label: 'Narration', width: 200, render: v => <span className={styles.narration}>{v}</span> },
+  {
+    key: 'status', label: 'Status', width: 100,
+    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+  },
 ];
 
 const PC_COLS = [
-  { key: 'pc_id',       label: 'Ref No.',     width: 100, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'date',        label: 'Date',        width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+  { key: 'pc_id', label: 'Ref No.', width: 100, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'date', label: 'Date', width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
   { key: 'description', label: 'Description', width: 250 },
-  { key: 'category',    label: 'Category',    width: 110 },
-  { key: 'amount',      label: 'Amount',      width: 130, align: 'right',
-    render: v => <span className={`${styles.mono} ${styles.debit}`}>{formatCurrency(v)}</span> },
+  { key: 'category', label: 'Category', width: 110 },
+  {
+    key: 'amount', label: 'Amount', width: 130, align: 'right',
+    render: v => <span className={`${styles.mono} ${styles.debit}`}>{formatCurrency(v)}</span>
+  },
   { key: 'approved_by', label: 'Approved By', width: 140 },
-  { key: 'status',      label: 'Status',      width: 100,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+  {
+    key: 'status', label: 'Status', width: 100,
+    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+  },
 ];
 
 const DC_COLS = [
-  { key: 'date',            label: 'Date',            width: 130, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+  { key: 'date', label: 'Date', width: 130, render: v => <span className={styles.date}>{formatDate(v)}</span> },
   { key: 'opening_balance', label: 'Opening Balance', width: 160, align: 'right', render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-  { key: 'receipts',        label: 'Total Receipts',  width: 160, align: 'right', render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
-  { key: 'payments',        label: 'Total Payments',  width: 160, align: 'right', render: v => <span className={`${styles.mono} ${styles.debit}`}>{formatCurrency(v)}</span> },
-  { key: 'closing_balance', label: 'Closing Balance', width: 160, align: 'right',
-    render: v => <span className={`${styles.mono} ${v >= 0 ? styles.credit : styles.debit}`}>{formatCurrency(Math.abs(v))}</span> },
+  { key: 'receipts', label: 'Total Receipts', width: 160, align: 'right', render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
+  { key: 'payments', label: 'Total Payments', width: 160, align: 'right', render: v => <span className={`${styles.mono} ${styles.debit}`}>{formatCurrency(v)}</span> },
+  {
+    key: 'closing_balance', label: 'Closing Balance', width: 160, align: 'right',
+    render: v => <span className={`${styles.mono} ${v >= 0 ? styles.credit : styles.debit}`}>{formatCurrency(Math.abs(v))}</span>
+  },
 ];
 
 const SEG_TO_TAB = {
@@ -91,7 +106,7 @@ const TAB_TO_SEG = {
 
 export default function Finance() {
   const location = useLocation();
-  const navigate  = useNavigate();
+  const navigate = useNavigate();
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'vouchers';
   const setPageTab = (tab) => navigate(`/finance/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
@@ -99,16 +114,18 @@ export default function Finance() {
   const toast = useToast();
   const { companyId } = useCompany();
   const [chequeTab, setChequeTab] = useState('all');
-  const [vchOpen,   setVchOpen]   = useState(false);
-  const [chqOpen,   setChqOpen]   = useState(false);
-  const [crOpen,    setCrOpen]    = useState(false);
-  const [ibtOpen,   setIbtOpen]   = useState(false);
-  const [pcOpen,    setPcOpen]    = useState(false);
-  const [prvOpen,   setPrvOpen]   = useState(false);
-  const [prvType,   setPrvType]   = useState('Receipt');
-  const [deletingId,     setDeletingId]     = useState(null);
-  const [clearingId,     setClearingId]     = useState(null);
-  const [bouncingId,     setBouncingId]     = useState(null);
+  const [vchOpen, setVchOpen] = useState(false);
+  const [chqOpen, setChqOpen] = useState(false);
+  const [crOpen, setCrOpen] = useState(false);
+  const [ibtOpen, setIbtOpen] = useState(false);
+  const [pcOpen, setPcOpen] = useState(false);
+  const [prvOpen, setPrvOpen] = useState(false);
+  const [acctOpen, setAcctOpen] = useState(false);
+  const [prvType, setPrvType] = useState('Receipt');
+  const [prvMode, setPrvMode] = useState('cash'); // 'cash' = PV/RV, 'bank' = BPV/BRV
+  const [deletingId, setDeletingId] = useState(null);
+  const [clearingId, setClearingId] = useState(null);
+  const [bouncingId, setBouncingId] = useState(null);
   const [deletingBankId, setDeletingBankId] = useState(null);
   const [deletingAcctId, setDeletingAcctId] = useState(null);
 
@@ -116,7 +133,7 @@ export default function Finance() {
   const { data: bankAccounts, refetch: refetchBanks } = useDb(() => financeDb.getBankAccounts(companyId), [companyId]);
   const { data: chequeTracking, refetch: refetchCheques } = useDb(() => financeDb.getChequeTracking());
   const { data: chartOfAccounts, refetch: refetchCOA } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
-  const { data: agingReport }        = useDb(() => financeDb.getAgingReport(companyId), [companyId]);
+  const { data: agingReport } = useDb(() => financeDb.getAgingReport(companyId), [companyId]);
   const { data: cashReceived, refetch: refetchCash } = useDb(() => financeDb.getCashReceived());
   const { data: interBankTransfers, refetch: refetchIBT } = useDb(() => financeDb.getInterBankTransfers());
   const { data: pettyCash, refetch: refetchPetty } = useDb(() => financeDb.getPettyCash());
@@ -144,16 +161,21 @@ export default function Finance() {
   };
 
   const BANK_COLS = [
-    { key: 'account_id',    label: 'Account ID',  width: 100, render: v => <span className={styles.code}>{v}</span> },
-    { key: 'bank_name',     label: 'Bank',        width: 170 },
-    { key: 'account_no',    label: 'Account No.', width: 160, render: v => <span className={styles.mono}>{v}</span> },
-    { key: 'account_title', label: 'Title',       width: 200 },
-    { key: 'account_type',  label: 'Type',        width: 90  },
-    { key: 'balance',       label: 'Balance',     width: 140, align: 'right',
-      render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
-    { key: 'status',        label: 'Status',      width: 90,
-      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
-    { key: '_del', label: '', width: 44, sortable: false,
+    { key: 'account_id', label: 'Account ID', width: 100, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'bank_name', label: 'Bank', width: 170 },
+    { key: 'account_no', label: 'Account No.', width: 160, render: v => <span className={styles.mono}>{v}</span> },
+    { key: 'account_title', label: 'Title', width: 200 },
+    { key: 'account_type', label: 'Type', width: 90 },
+    {
+      key: 'balance', label: 'Balance', width: 140, align: 'right',
+      render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span>
+    },
+    {
+      key: 'status', label: 'Status', width: 90,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+    },
+    {
+      key: '_del', label: '', width: 44, sortable: false,
       render: (_, row) => (
         <button
           className={styles.rowDeleteBtn}
@@ -191,12 +213,15 @@ export default function Finance() {
   };
 
   const COA_COLS = [
-    { key: 'account_code', label: 'Code',    width: 90,  render: v => <span className={styles.code}>{v}</span> },
+    { key: 'account_code', label: 'Code', width: 90, render: v => <span className={styles.code}>{v}</span> },
     { key: 'account_name', label: 'Account', width: 280 },
-    { key: 'account_type', label: 'Type',    width: 100 },
-    { key: 'balance',      label: 'Balance', width: 180, align: 'right',
-      render: v => <span className={`${styles.mono} ${styles.credit}`}>{(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 0 })}</span> },
-    { key: '_del', label: '', width: 44, sortable: false,
+    { key: 'account_type', label: 'Type', width: 100 },
+    {
+      key: 'balance', label: 'Balance', width: 180, align: 'right',
+      render: v => <span className={`${styles.mono} ${styles.credit}`}>{(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 0 })}</span>
+    },
+    {
+      key: '_del', label: '', width: 44, sortable: false,
       render: (_, row) => (
         <button
           className={styles.rowDeleteBtn}
@@ -244,15 +269,19 @@ export default function Finance() {
   };
 
   const VCH_COLS = [
-    { key: 'voucher_id',   label: 'Voucher No.', width: 110, render: v => <span className={styles.code}>{v}</span> },
-    { key: 'voucher_type', label: 'Type',        width: 90  },
-    { key: 'date',         label: 'Date',        width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-    { key: 'account_name', label: 'Account',     width: 220 },
-    { key: 'debit',        label: 'Debit',       width: 130, align: 'right',
-      render: v => v > 0 ? <span className={`${styles.mono} ${styles.debit}`}>{formatCurrency(v)}</span> : <span className={styles.nil}>—</span> },
-    { key: 'credit',       label: 'Credit',      width: 130, align: 'right',
-      render: v => v > 0 ? <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> : <span className={styles.nil}>—</span> },
-    { key: 'narration',    label: 'Narration',   width: 160, render: v => <span className={styles.narration}>{v}</span> },
+    { key: 'voucher_id', label: 'Voucher No.', width: 110, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'voucher_type', label: 'Type', width: 90 },
+    { key: 'date', label: 'Date', width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+    { key: 'account_name', label: 'Account', width: 220 },
+    {
+      key: 'debit', label: 'Debit', width: 130, align: 'right',
+      render: v => v > 0 ? <span className={`${styles.mono} ${styles.debit}`}>{formatCurrency(v)}</span> : <span className={styles.nil}>—</span>
+    },
+    {
+      key: 'credit', label: 'Credit', width: 130, align: 'right',
+      render: v => v > 0 ? <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> : <span className={styles.nil}>—</span>
+    },
+    { key: 'narration', label: 'Narration', width: 160, render: v => <span className={styles.narration}>{v}</span> },
     {
       key: '_actions', label: '', width: 48, sortable: false,
       render: (_, row) => (
@@ -307,16 +336,21 @@ export default function Finance() {
   };
 
   const IBT_COLS = [
-    { key: 'ibt_id',       label: 'Ref No.',      width: 100, render: v => <span className={styles.code}>{v}</span> },
-    { key: 'date',         label: 'Date',         width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+    { key: 'ibt_id', label: 'Ref No.', width: 100, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'date', label: 'Date', width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
     { key: 'from_account', label: 'From Account', width: 220 },
-    { key: 'to_account',   label: 'To Account',   width: 220 },
-    { key: 'amount',       label: 'Amount',       width: 140, align: 'right',
-      render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span> },
-    { key: 'narration',    label: 'Narration',    width: 160, render: v => <span className={styles.narration}>{v}</span> },
-    { key: 'status',       label: 'Status',       width: 110,
-      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
-    { key: '_del', label: '', width: 44, sortable: false,
+    { key: 'to_account', label: 'To Account', width: 220 },
+    {
+      key: 'amount', label: 'Amount', width: 140, align: 'right',
+      render: v => <span className={`${styles.mono} ${styles.credit}`}>{formatCurrency(v)}</span>
+    },
+    { key: 'narration', label: 'Narration', width: 160, render: v => <span className={styles.narration}>{v}</span> },
+    {
+      key: 'status', label: 'Status', width: 110,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+    },
+    {
+      key: '_del', label: '', width: 44, sortable: false,
       render: (_, row) => (
         <button
           className={styles.rowDeleteBtn}
@@ -373,15 +407,19 @@ export default function Finance() {
   };
 
   const CHEQUE_COLS = [
-    { key: 'cheque_id',  label: 'Cheque ID',  width: 100, render: v => <span className={styles.code}>{v}</span> },
-    { key: 'party_name', label: 'Party',      width: 190 },
-    { key: 'cheque_no',  label: 'Cheque No.', width: 110, render: v => <span className={styles.mono}>{v}</span> },
-    { key: 'bank_name',  label: 'Bank',       width: 150 },
-    { key: 'amount',     label: 'Amount',     width: 130, align: 'right',
-      render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-    { key: 'due_date',   label: 'Due Date',   width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-    { key: 'status',     label: 'Status',     width: 100,
-      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    { key: 'cheque_id', label: 'Cheque ID', width: 100, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'party_name', label: 'Party', width: 190 },
+    { key: 'cheque_no', label: 'Cheque No.', width: 110, render: v => <span className={styles.mono}>{v}</span> },
+    { key: 'bank_name', label: 'Bank', width: 150 },
+    {
+      key: 'amount', label: 'Amount', width: 130, align: 'right',
+      render: v => <span className={styles.mono}>{formatCurrency(v)}</span>
+    },
+    { key: 'due_date', label: 'Due Date', width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+    {
+      key: 'status', label: 'Status', width: 100,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+    },
     {
       key: '_actions', label: '', width: 70, sortable: false,
       render: (_, row) => row.status !== 'pending' ? null : (
@@ -412,23 +450,23 @@ export default function Finance() {
   ];
 
   const totalBankBalance = bankAccounts.reduce((sum, b) => sum + (b.balance || 0), 0);
-  const pendingCheques   = chequeTracking.filter(c => c.status === 'pending').length;
+  const pendingCheques = chequeTracking.filter(c => c.status === 'pending').length;
 
   // Cash pockets (Cash in Hand / Jazz Cash / Easypaisa) — the real ledger accounts used by
   // the Payment/Receipt modal.
   const CASH_POCKET_CODES = ['11-01-001-000001', '11-01-001-000002', '11-01-001-000004'];
-  const cashPockets    = (chartOfAccounts || []).filter(a => CASH_POCKET_CODES.includes(a.account_code));
+  const cashPockets = (chartOfAccounts || []).filter(a => CASH_POCKET_CODES.includes(a.account_code));
   const totalCashInHand = cashPockets.reduce((sum, a) => sum + (a.balance || 0), 0);
 
   // P&L / Balance Sheet derived from chart-of-accounts balances, grouped by the
   // top-level account_code prefix: 10=Income, 11=Asset, 12=Expense, 13=Owner Equity, 14=Liability
   const codePrefix = a => a.account_code?.slice(0, 2);
-  const revenue  = chartOfAccounts.filter(a => codePrefix(a) === '10').reduce((s, a) => s + (a.balance || 0), 0);
+  const revenue = chartOfAccounts.filter(a => codePrefix(a) === '10').reduce((s, a) => s + (a.balance || 0), 0);
   const expenses = chartOfAccounts.filter(a => codePrefix(a) === '12').reduce((s, a) => s + (a.balance || 0), 0);
-  const assets   = chartOfAccounts.filter(a => codePrefix(a) === '11').reduce((s, a) => s + (a.balance || 0), 0);
-  const liabs    = chartOfAccounts.filter(a => ['13','14'].includes(codePrefix(a))).reduce((s, a) => s + (a.balance || 0), 0);
+  const assets = chartOfAccounts.filter(a => codePrefix(a) === '11').reduce((s, a) => s + (a.balance || 0), 0);
+  const liabs = chartOfAccounts.filter(a => ['13', '14'].includes(codePrefix(a))).reduce((s, a) => s + (a.balance || 0), 0);
 
-  const plReport     = { netProfit: revenue - expenses, revenue, costOfGoodsSold: 0, grossProfit: revenue, operatingExpenses: expenses };
+  const plReport = { netProfit: revenue - expenses, revenue, costOfGoodsSold: 0, grossProfit: revenue, operatingExpenses: expenses };
   const balanceSheet = { asAt: new Date().toISOString().split('T')[0], totalAssets: assets, totalLiabilities: liabs, equity: assets - liabs };
 
   return (
@@ -438,9 +476,11 @@ export default function Finance() {
         subtitle="General ledger, vouchers, bank accounts, cheques, and aging"
         actions={
           pageTab === 'vouchers' ? (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Receipt'); setPrvOpen(true); }}>New Receipt</Button>
-              <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Payment'); setPrvOpen(true); }}>New Payment</Button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Receipt'); setPrvMode('cash'); setPrvOpen(true); }}>New Receipt</Button>
+              <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Payment'); setPrvMode('cash'); setPrvOpen(true); }}>New Payment</Button>
+              <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Receipt'); setPrvMode('bank'); setPrvOpen(true); }}>Bank Receipt (BRV)</Button>
+              <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Payment'); setPrvMode('bank'); setPrvOpen(true); }}>Bank Payment (BPV)</Button>
               <Button icon={<Plus size={15} />} onClick={() => setVchOpen(true)}>New Voucher</Button>
             </div>
           ) : (
@@ -572,7 +612,7 @@ export default function Finance() {
             keyField="cheque_id"
             searchPlaceholder="Search cheques..."
             filterTabs={[
-              { value: 'all',     label: 'All',     count: chequeTracking.length },
+              { value: 'all', label: 'All', count: chequeTracking.length },
               { value: 'pending', label: 'Pending', count: chequeTracking.filter(c => c.status === 'pending').length },
               { value: 'cleared', label: 'Cleared', count: chequeTracking.filter(c => c.status === 'cleared').length },
               { value: 'bounced', label: 'Bounced', count: chequeTracking.filter(c => c.status === 'bounced').length },
@@ -585,7 +625,11 @@ export default function Finance() {
 
       {pageTab === 'accounts' && (
         <Card padding={false}>
-          <CardHeader title="Chart of Accounts" subtitle={`${chartOfAccounts.length} accounts`} />
+          <CardHeader
+            title="Chart of Accounts"
+            subtitle={`${chartOfAccounts.length} accounts`}
+            actions={<Button icon={<Plus size={15} />} onClick={() => setAcctOpen(true)}>New Account</Button>}
+          />
           <DataTable columns={COA_COLS} data={chartOfAccounts} keyField="account_id" searchPlaceholder="Search accounts..." />
         </Card>
       )}
@@ -641,8 +685,14 @@ export default function Finance() {
       )}
 
       <NewVoucherModal open={vchOpen} onClose={() => setVchOpen(false)} onSave={handleSave} />
+      <NewAccountModal
+        open={acctOpen}
+        onClose={() => setAcctOpen(false)}
+        onSave={() => { refetchCOA(); }}
+        existingAccounts={chartOfAccounts}
+      />
       <NewPaymentReceiptModal
-        open={prvOpen} type={prvType} onClose={() => setPrvOpen(false)}
+        open={prvOpen} type={prvType} mode={prvMode} onClose={() => setPrvOpen(false)}
         onSave={refreshLedger}
         bankAccounts={bankAccounts} chartOfAccounts={chartOfAccounts}
       />

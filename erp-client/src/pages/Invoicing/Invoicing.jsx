@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BadgeCheck, AlertCircle, RefreshCw, ReceiptText, Plus,
-  CloudUpload, Wifi, WifiOff, Printer, RotateCcw, FileText,
+  CloudUpload, Wifi, WifiOff, Printer, RotateCcw, FileText, Trash2,
 } from 'lucide-react';
 import NewInvoiceModal from './NewInvoiceModal';
 import PageHeader from '../../components/layout/PageHeader';
@@ -13,6 +13,7 @@ import Button from '../../components/ui/Button';
 import { invoicingDb, salesDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { useToast } from '../../components/shared/Toast';
 import { formatDate, formatDateTime, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import { checkFbrServiceStatus, submitInvoice } from '../../services/fbrApi';
@@ -30,45 +31,59 @@ const TAB_TO_SEG = { invoices: 'list', fbr: 'fbr', returns: 'sale-return' };
 
 const PAGE_TABS = [
   { value: 'invoices', label: 'Sales Invoices', icon: ReceiptText },
-  { value: 'fbr',      label: 'FBR Queue',      icon: CloudUpload },
-  { value: 'returns',  label: 'Sale Returns',   icon: RotateCcw  },
+  { value: 'fbr', label: 'FBR Queue', icon: CloudUpload },
+  { value: 'returns', label: 'Sale Returns', icon: RotateCcw },
 ];
 
 const CRN_COLS = [
-  { key: 'crn_id',       label: 'Credit Note No.', width: 130, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'sr_ref',       label: 'Return Ref.',     width: 110, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'customer_name',label: 'Customer',        width: 200 },
-  { key: 'date',         label: 'Date',            width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-  { key: 'reason',       label: 'Reason',          width: 200 },
-  { key: 'tax_amount',   label: 'Tax',             width: 120, align: 'right',
-    render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-  { key: 'total_amount', label: 'Total',           width: 140, align: 'right',
-    render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span> },
-  { key: 'status',       label: 'Status',          width: 100,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+  { key: 'crn_id', label: 'Credit Note No.', width: 130, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'sr_ref', label: 'Return Ref.', width: 110, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'customer_name', label: 'Customer', width: 200 },
+  { key: 'date', label: 'Date', width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+  { key: 'reason', label: 'Reason', width: 200 },
+  {
+    key: 'tax_amount', label: 'Tax', width: 120, align: 'right',
+    render: v => <span className={styles.mono}>{formatCurrency(v)}</span>
+  },
+  {
+    key: 'total_amount', label: 'Total', width: 140, align: 'right',
+    render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span>
+  },
+  {
+    key: 'status', label: 'Status', width: 100,
+    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+  },
 ];
 
 const RETRY_COLS = [
-  { key: 'invoice_id',    label: 'Invoice No.',    width: 130, render: v => <span className={styles.code}>{v}</span> },
-  { key: 'customer_name', label: 'Customer',       width: 200 },
-  { key: 'total_value',   label: 'Total',          width: 150, align: 'right',
-    render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-  { key: 'fbr_retry_count', label: 'Retries',      width: 80, align: 'center',
-    render: v => <span className={`${styles.mono} ${styles.retryCount}`}>{v}</span> },
-  { key: 'fbr_status',    label: 'Status',         width: 280,
-    render: v => <span className={styles.failReason}>{v}</span> },
-  { key: 'fbr_submitted_at',label: 'Last Attempt', width: 170,
-    render: v => <span className={styles.date}>{formatDateTime(v)}</span> },
+  { key: 'invoice_id', label: 'Invoice No.', width: 130, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'customer_name', label: 'Customer', width: 200 },
+  {
+    key: 'total_value', label: 'Total', width: 150, align: 'right',
+    render: v => <span className={styles.mono}>{formatCurrency(v)}</span>
+  },
+  {
+    key: 'fbr_retry_count', label: 'Retries', width: 80, align: 'center',
+    render: v => <span className={`${styles.mono} ${styles.retryCount}`}>{v}</span>
+  },
+  {
+    key: 'fbr_status', label: 'Status', width: 280,
+    render: v => <span className={styles.failReason}>{v}</span>
+  },
+  {
+    key: 'fbr_submitted_at', label: 'Last Attempt', width: 170,
+    render: v => <span className={styles.date}>{formatDateTime(v)}</span>
+  },
 ];
 
 function printSalesInvoice(inv) {
   const win = window.open('', '_blank', 'width=900,height=720');
   const charges = [
-    inv.freight         > 0 ? `<div class="charge-row"><span>Freight</span><span>${formatCurrency(inv.freight)}</span></div>` : '',
+    inv.freight > 0 ? `<div class="charge-row"><span>Freight</span><span>${formatCurrency(inv.freight)}</span></div>` : '',
     inv.loading_unloading > 0 ? `<div class="charge-row"><span>Loading / Unloading</span><span>${formatCurrency(inv.loading_unloading)}</span></div>` : '',
-    inv.packing         > 0 ? `<div class="charge-row"><span>Packing</span><span>${formatCurrency(inv.packing)}</span></div>` : '',
-    inv.toll_tax        > 0 ? `<div class="charge-row"><span>Toll Tax</span><span>${formatCurrency(inv.toll_tax)}</span></div>` : '',
-    inv.slitting        > 0 ? `<div class="charge-row"><span>Slitting</span><span>${formatCurrency(inv.slitting)}</span></div>` : '',
+    inv.packing > 0 ? `<div class="charge-row"><span>Packing</span><span>${formatCurrency(inv.packing)}</span></div>` : '',
+    inv.toll_tax > 0 ? `<div class="charge-row"><span>Toll Tax</span><span>${formatCurrency(inv.toll_tax)}</span></div>` : '',
+    inv.slitting > 0 ? `<div class="charge-row"><span>Slitting</span><span>${formatCurrency(inv.slitting)}</span></div>` : '',
   ].filter(Boolean).join('');
 
   win.document.write(`<!DOCTYPE html><html><head><title>Invoice ${inv.sale_inv_id}</title>
@@ -146,18 +161,21 @@ function printSalesInvoice(inv) {
 }
 
 export default function Invoicing() {
-  const location  = useLocation();
-  const navigate  = useNavigate();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { companyId } = useCompany();
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'invoices';
   const setPageTab = (tab) => navigate(`/invoicing/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
-  const [invOpen,       setInvOpen]       = useState(false);
+  const [invOpen, setInvOpen] = useState(false);
   const [serviceStatus, setServiceStatus] = useState(null);
-  const [submitting,    setSubmitting]    = useState({});
+  const [submitting, setSubmitting] = useState({});
   const [submitResults, setSubmitResults] = useState({});
-  const [statusFilter,  setStatusFilter]  = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [deletingSalesId, setDeletingSalesId] = useState(null);
+  const [deletingFbrId, setDeletingFbrId] = useState(null);
+  const toast = useToast();
 
   const { data: salesInvoices } =
     useDb(() => salesDb.getSalesInvoices(companyId), [companyId]);
@@ -166,16 +184,44 @@ export default function Invoicing() {
   const { data: saleReturnInvoices } = useDb(() => invoicingDb.getSaleReturnInvoices());
 
   const [salesInvoiceList, setSalesInvoiceList] = useState([]);
-  const [fbrInvoiceList,   setFbrInvoiceList]   = useState([]);
+  const [fbrInvoiceList, setFbrInvoiceList] = useState([]);
 
   useEffect(() => { setSalesInvoiceList(salesInvoices || []); }, [salesInvoices]);
-  useEffect(() => { setFbrInvoiceList(dbFbrInvoices   || []); }, [dbFbrInvoices]);
+  useEffect(() => { setFbrInvoiceList(dbFbrInvoices || []); }, [dbFbrInvoices]);
 
-  const totalSales  = salesInvoiceList.length;
+  const handleDeleteSalesInvoice = async (row) => {
+    setDeletingSalesId(row.id);
+    try {
+      const { error } = await salesDb.deleteSalesInvoice(row.id);
+      if (error) throw new Error(error.message);
+      setSalesInvoiceList(prev => prev.filter(i => i.id !== row.id));
+      toast.success(`Invoice ${row.sale_inv_id} deleted.`);
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingSalesId(null);
+    }
+  };
+
+  const handleDeleteFbrInvoice = async (row) => {
+    setDeletingFbrId(row.invoice_id);
+    try {
+      const { error } = await invoicingDb.deleteFbrInvoice(row.invoice_id);
+      if (error) throw new Error(error.message);
+      setFbrInvoiceList(prev => prev.filter(i => i.invoice_id !== row.invoice_id));
+      toast.success(`Invoice ${row.invoice_id} deleted.`);
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingFbrId(null);
+    }
+  };
+
+  const totalSales = salesInvoiceList.length;
   const postedCount = salesInvoiceList.filter(i => i.status === 'posted').length;
-  const fbrSynced   = fbrInvoiceList.filter(i => i.fbr_status === 'synced').length;
-  const fbrFailed   = fbrInvoiceList.filter(i => i.fbr_status === 'failed').length;
-  const fbrQueue    = fbrInvoiceList.filter(i => i.fbr_status === 'failed');
+  const fbrSynced = fbrInvoiceList.filter(i => i.fbr_status === 'synced').length;
+  const fbrFailed = fbrInvoiceList.filter(i => i.fbr_status === 'failed').length;
+  const fbrQueue = fbrInvoiceList.filter(i => i.fbr_status === 'failed');
 
   const displayedSales = statusFilter === 'all'
     ? salesInvoiceList
@@ -224,19 +270,31 @@ export default function Invoicing() {
   };
 
   const SALES_INV_COLS = [
-    { key: 'sale_inv_id',   label: 'Invoice No.', width: 130,
-      render: v => <span className={styles.code}>{v}</span> },
-    { key: 'customer_name', label: 'Customer',    width: 200 },
-    { key: 'date',          label: 'Date',        width: 110,
-      render: v => <span className={styles.date}>{formatDate(v)}</span> },
-    { key: 'so_ref',        label: 'SO Ref',      width: 110,
-      render: v => v ? <span className={styles.code}>{v}</span> : '—' },
-    { key: 'subtotal',      label: 'Subtotal',    width: 130, align: 'right',
-      render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-    { key: 'grand_total',   label: 'Grand Total', width: 140, align: 'right',
-      render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span> },
-    { key: 'status',        label: 'Status',      width: 110,
-      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    {
+      key: 'sale_inv_id', label: 'Invoice No.', width: 130,
+      render: v => <span className={styles.code}>{v}</span>
+    },
+    { key: 'customer_name', label: 'Customer', width: 200 },
+    {
+      key: 'date', label: 'Date', width: 110,
+      render: v => <span className={styles.date}>{formatDate(v)}</span>
+    },
+    {
+      key: 'so_ref', label: 'SO Ref', width: 110,
+      render: v => v ? <span className={styles.code}>{v}</span> : '—'
+    },
+    {
+      key: 'subtotal', label: 'Subtotal', width: 130, align: 'right',
+      render: v => <span className={styles.mono}>{formatCurrency(v)}</span>
+    },
+    {
+      key: 'grand_total', label: 'Grand Total', width: 140, align: 'right',
+      render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span>
+    },
+    {
+      key: 'status', label: 'Status', width: 110,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+    },
     {
       key: '_print', label: '', width: 100,
       render: (_, row) => (
@@ -250,22 +308,43 @@ export default function Invoicing() {
         </Button>
       ),
     },
+    {
+      key: '_del', label: '', width: 44, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingSalesId === row.id}
+          onClick={e => { e.stopPropagation(); handleDeleteSalesInvoice(row); }}
+          title={`Delete invoice ${row.sale_inv_id}`}
+        >
+          {deletingSalesId === row.id
+            ? <span className={styles.rowDeleteSpinner}>…</span>
+            : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
   ];
 
   const FBR_COLS = [
-    { key: 'invoice_id',    label: 'Invoice No.', width: 120, render: v => <span className={styles.code}>{v}</span> },
-    { key: 'customer_name', label: 'Customer',    width: 190 },
-    { key: 'invoice_date',  label: 'Date',        width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-    { key: 'tax_amount',    label: 'Tax',         width: 120, align: 'right',
-      render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
-    { key: 'total_value',   label: 'Total',       width: 130, align: 'right',
-      render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span> },
-    { key: 'fbr_status',    label: 'FBR Status',  width: 110,
-      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    { key: 'invoice_id', label: 'Invoice No.', width: 120, render: v => <span className={styles.code}>{v}</span> },
+    { key: 'customer_name', label: 'Customer', width: 190 },
+    { key: 'invoice_date', label: 'Date', width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
+    {
+      key: 'tax_amount', label: 'Tax', width: 120, align: 'right',
+      render: v => <span className={styles.mono}>{formatCurrency(v)}</span>
+    },
+    {
+      key: 'total_value', label: 'Total', width: 130, align: 'right',
+      render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span>
+    },
+    {
+      key: 'fbr_status', label: 'FBR Status', width: 110,
+      render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
+    },
     {
       key: '_action', label: '', width: 180,
       render: (_, row) => {
-        const res  = submitResults[row.invoice_id];
+        const res = submitResults[row.invoice_id];
         const busy = submitting[row.invoice_id];
         return (
           <div className={styles.actionCell}>
@@ -290,6 +369,21 @@ export default function Invoicing() {
         );
       },
     },
+    {
+      key: '_del', label: '', width: 44, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingFbrId === row.invoice_id}
+          onClick={e => { e.stopPropagation(); handleDeleteFbrInvoice(row); }}
+          title={`Delete invoice ${row.invoice_id}`}
+        >
+          {deletingFbrId === row.invoice_id
+            ? <span className={styles.rowDeleteSpinner}>…</span>
+            : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -306,10 +400,10 @@ export default function Invoicing() {
 
       <div className={styles.summaryGrid}>
         {[
-          { icon: FileText,    label: 'Sales Invoices', value: totalSales,  color: 'blue'   },
-          { icon: ReceiptText, label: 'Posted',         value: postedCount, color: 'green'  },
-          { icon: BadgeCheck,  label: 'FBR Synced',     value: fbrSynced,   color: 'purple' },
-          { icon: AlertCircle, label: 'FBR Failed',     value: fbrFailed,   color: 'red'    },
+          { icon: FileText, label: 'Sales Invoices', value: totalSales, color: 'blue' },
+          { icon: ReceiptText, label: 'Posted', value: postedCount, color: 'green' },
+          { icon: BadgeCheck, label: 'FBR Synced', value: fbrSynced, color: 'purple' },
+          { icon: AlertCircle, label: 'FBR Failed', value: fbrFailed, color: 'red' },
         ].map((s) => (
           <div key={s.label} className={styles.summaryCard}>
             <div className={`${styles.summaryIcon} ${styles[s.color]}`}>
@@ -351,7 +445,7 @@ export default function Invoicing() {
             keyField="sale_inv_id"
             searchPlaceholder="Search by customer or invoice no..."
             filterTabs={[
-              { value: 'all',    label: 'All',    count: totalSales  },
+              { value: 'all', label: 'All', count: totalSales },
               { value: 'posted', label: 'Posted', count: postedCount },
             ]}
             activeTab={statusFilter}
@@ -367,14 +461,14 @@ export default function Invoicing() {
               {serviceStatus === 'online'
                 ? <Wifi size={16} strokeWidth={1.75} />
                 : serviceStatus === 'offline'
-                ? <WifiOff size={16} strokeWidth={1.75} />
-                : <RefreshCw size={16} strokeWidth={1.75} className={styles.spin} />}
+                  ? <WifiOff size={16} strokeWidth={1.75} />
+                  : <RefreshCw size={16} strokeWidth={1.75} className={styles.spin} />}
             </span>
             <span className={styles.serviceText}>
               {serviceStatus === 'checking' && 'Checking AJK-IRD fiscal service…'}
-              {serviceStatus === 'online'   && 'AJK-IRD local fiscal service is online'}
-              {serviceStatus === 'offline'  && 'AJK-IRD local fiscal service is offline — using cloud fallback'}
-              {serviceStatus === null       && 'AJK-IRD fiscal service status unknown'}
+              {serviceStatus === 'online' && 'AJK-IRD local fiscal service is online'}
+              {serviceStatus === 'offline' && 'AJK-IRD local fiscal service is offline — using cloud fallback'}
+              {serviceStatus === null && 'AJK-IRD fiscal service status unknown'}
             </span>
             <Button variant="ghost" size="sm" icon={<RefreshCw size={13} strokeWidth={1.75} />} onClick={checkService}>
               Recheck

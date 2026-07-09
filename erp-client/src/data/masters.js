@@ -8,9 +8,9 @@ export const branches = [
   { id: 2, name: 'Main Branch', companyId: 2 },
 ];
 export const fiscalYears = [
-  { id: 1, label: 'F-2025-2026', startDate: '2025-07-01', endDate: '2026-06-30', isActive: true },
+  { id: 1, label: 'F-2026-2027', startDate: '2026-07-01', endDate: '2027-06-30', isActive: true },
 ];
 export const departments = [];
-export const warehouses  = [];
-export const units       = [];
+export const warehouses = [];
+export const units = [];
 export const productCatalogue = [];

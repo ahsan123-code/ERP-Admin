@@ -93,6 +93,9 @@ export const financeDb = {
   getChartOfAccounts: (companyId = 1) =>
     supabase.from('chart_of_accounts').select('*').eq('company_id', companyId).order('account_code').limit(2000),
 
+  addChartAccount: (account) =>
+    supabase.from('chart_of_accounts').insert([account]).select().single(),
+
   // How many transactions reference this account (by name on vouchers, by code on
   // voucher_lines). Used to block deleting an account that has posted history.
   getAccountUsage: async (account, companyId = 1) => {
@@ -209,13 +212,13 @@ export const financeDb = {
       .eq('account_code', code).eq('company_id', companyId).maybeSingle();
     if (existing) return existing;
     const { data: created, error } = await supabase.from('chart_of_accounts').insert([{
-      account_id:   `AUTO-${code}-C${companyId}`,
+      account_id: `AUTO-${code}-C${companyId}`,
       account_code: code,
       account_name: bank.account_title || `${bank.bank_name} - ${bank.account_no}`,
       account_type: 'Asset',
-      parent_code:  '11-05-001',
-      balance:      bank.balance || 0,
-      company_id:   companyId,
+      parent_code: '11-05-001',
+      balance: bank.balance || 0,
+      company_id: companyId,
     }]).select().single();
     if (error) return null;
     return created;
@@ -229,13 +232,13 @@ export const financeDb = {
       .eq('account_code', code).eq('company_id', companyId).maybeSingle();
     if (existing) return existing;
     const { data: created } = await supabase.from('chart_of_accounts').insert([{
-      account_id:   `AUTO-${code}-C${companyId}`,
+      account_id: `AUTO-${code}-C${companyId}`,
       account_code: code,
       account_name: name,
       account_type: type,
-      parent_code:  parent,
-      balance:      0,
-      company_id:   companyId,
+      parent_code: parent,
+      balance: 0,
+      company_id: companyId,
     }]).select().single();
     return created;
   },
@@ -250,13 +253,13 @@ export const financeDb = {
     const voucherId = (isReceipt ? 'RV-' : 'PV-') + String(Date.now()).slice(-6);
     const legs = isReceipt
       ? [
-          { account: pocketAccount,       debit: amount, credit: 0 },
-          { account: partyControlAccount, debit: 0,      credit: amount, displayName: partyName },
-        ]
+        { account: pocketAccount, debit: amount, credit: 0 },
+        { account: partyControlAccount, debit: 0, credit: amount, displayName: partyName },
+      ]
       : [
-          { account: partyControlAccount, debit: amount, credit: 0,      displayName: partyName },
-          { account: pocketAccount,       debit: 0,      credit: amount },
-        ];
+        { account: partyControlAccount, debit: amount, credit: 0, displayName: partyName },
+        { account: pocketAccount, debit: 0, credit: amount },
+      ];
     await financeDb.postJournalEntry({
       voucherId, voucherType: type, date, companyId, legs,
       narration: narration || `${isReceipt ? 'Received from' : 'Paid to'} ${partyName}`,
@@ -325,7 +328,7 @@ export const financeDb = {
       voucherId, voucherType: 'Receipt', date: cr.date, companyId,
       legs: [
         { account: depositAccount, debit: cr.amount, credit: 0 },
-        { account: ledgerAccount,  debit: 0,         credit: cr.amount },
+        { account: ledgerAccount, debit: 0, credit: cr.amount },
       ],
       narration: cr.narration || `Cash receipt from ${cr.party_name}`,
       reference: cr.cr_id,
@@ -348,8 +351,8 @@ export const financeDb = {
     await financeDb.postJournalEntry({
       voucherId: ibt.ibt_id, voucherType: 'Contra', date: ibt.date, companyId,
       legs: [
-        { account: toAccount,   debit: ibt.amount, credit: 0 },
-        { account: fromAccount, debit: 0,          credit: ibt.amount },
+        { account: toAccount, debit: ibt.amount, credit: 0 },
+        { account: fromAccount, debit: 0, credit: ibt.amount },
       ],
       narration: ibt.narration || `Transfer: ${ibt.from_account} -> ${ibt.to_account}`,
       reference: ibt.ibt_id,
@@ -387,7 +390,7 @@ export const financeDb = {
       voucherId, voucherType: 'Payment', date: pc.date, companyId,
       legs: [
         { account: expenseAccount, debit: pc.amount, credit: 0 },
-        { account: sourceAccount,  debit: 0,         credit: pc.amount },
+        { account: sourceAccount, debit: 0, credit: pc.amount },
       ],
       narration: pc.description,
       reference: pc.pc_id,
@@ -416,13 +419,13 @@ export const financeDb = {
     const narration = `Cheque ${cheque.cheque_no} cleared - ${cheque.party_name}`;
     const legs = cheque.party_type === 'Vendor'
       ? [
-          { account: ledgerAccount, debit: cheque.amount, credit: 0 },
-          { account: bankAccount,   debit: 0,             credit: cheque.amount },
-        ]
+        { account: ledgerAccount, debit: cheque.amount, credit: 0 },
+        { account: bankAccount, debit: 0, credit: cheque.amount },
+      ]
       : [
-          { account: bankAccount,   debit: cheque.amount, credit: 0 },
-          { account: ledgerAccount, debit: 0,             credit: cheque.amount },
-        ];
+        { account: bankAccount, debit: cheque.amount, credit: 0 },
+        { account: ledgerAccount, debit: 0, credit: cheque.amount },
+      ];
     await financeDb.postJournalEntry({ voucherId, voucherType: 'BankRec', date: cheque.due_date, companyId, legs, narration, reference: cheque.cheque_no });
     return supabase.from('cheque_tracking').update({ status: 'cleared' }).eq('id', cheque.id).select().single();
   },
@@ -605,6 +608,9 @@ export const salesDb = {
 
   getSalesReturns: (companyId = 1) =>
     supabase.from('sales_returns').select('*').eq('company_id', companyId).order('return_date', { ascending: false }),
+
+  deleteSalesInvoice: (id) =>
+    supabase.from('sales_invoices').delete().eq('id', id),
 };
 
 // ── PROCUREMENT ───────────────────────────────────────────────────────────
@@ -768,6 +774,9 @@ export const invoicingDb = {
 
   getFbrLog: () =>
     supabase.from('fbr_submission_log').select('*').order('attempted_at', { ascending: false }),
+
+  deleteFbrInvoice: (invoiceId) =>
+    supabase.from('invoices').delete().eq('invoice_id', invoiceId),
 };
 
 // ── MASTERS ───────────────────────────────────────────────────────────────
