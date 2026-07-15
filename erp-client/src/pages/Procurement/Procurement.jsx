@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Plus, ShoppingCart, Users, ClipboardList, Package, Trash2,
@@ -96,6 +96,31 @@ export default function Procurement() {
   useEffect(() => { setGrnList(dbGrns  || []); }, [dbGrns]);
   useEffect(() => { setPinvList(dbPinvs|| []); }, [dbPinvs]);
 
+  // Requested item names for each PDN (and PR, via its linked PDN) so the pipeline
+  // lists show what's being purchased instead of a repeated department name.
+  const pdnIdKey = useMemo(
+    () => [...new Set([...pdnList.map(p => p.pdn_id), ...prList.map(p => p.pdn_ref)].filter(Boolean))].join(','),
+    [pdnList, prList]
+  );
+  const { data: pdnLineItems } = useDb(
+    () => procurementDb.getPdnLineItemsBulk(pdnIdKey ? pdnIdKey.split(',') : []),
+    [pdnIdKey]
+  );
+  const pdnItemsMap = useMemo(() => {
+    const m = {};
+    (pdnLineItems || []).forEach(li => { (m[li.pdn_id] ||= []).push(li.item_name); });
+    return m;
+  }, [pdnLineItems]);
+  const renderItems = (names = []) => {
+    if (!names.length) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+    const extra = names.length - 2;
+    return (
+      <span title={names.join(', ')}>
+        {names.slice(0, 2).join(', ')}{extra > 0 ? ` +${extra} more` : ''}
+      </span>
+    );
+  };
+
   const handleDeletePdn = async (row) => {
     setDeletingId(row.id);
 
@@ -177,7 +202,7 @@ export default function Procurement() {
   // Column definitions
   const PDN_COLS = [
     { key: 'pdn_id',     label: 'PDN No.',    width: 120, render: v => <span className={styles.code}>{v}</span> },
-    { key: 'department', label: 'Department', width: 180 },
+    { key: '_items',     label: 'Items',      width: 240, sortable: false, render: (_, row) => renderItems(pdnItemsMap[row.pdn_id]) },
     { key: 'pdn_date',   label: 'Date',       width: 120, render: v => <span className={styles.date}>{formatDate(v)}</span> },
     { key: 'priority',   label: 'Priority',   width: 90,
       render: v => <Badge variant={v === 'High' ? 'danger' : v === 'Medium' ? 'warning' : 'info'}>{v}</Badge> },
@@ -202,7 +227,7 @@ export default function Procurement() {
   const PR_COLS = [
     { key: 'pr_id',      label: 'PR No.',     width: 120, render: v => <span className={styles.code}>{v}</span> },
     { key: 'pdn_ref',    label: 'PDN Ref',    width: 120, render: v => v ? <span className={styles.code}>{v}</span> : '—' },
-    { key: 'department', label: 'Department', width: 170 },
+    { key: '_items',     label: 'Items',      width: 220, sortable: false, render: (_, row) => renderItems(pdnItemsMap[row.pdn_ref]) },
     { key: 'date',       label: 'Date',       width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
     { key: 'item_count', label: 'Items',      width: 65,  align: 'right' },
     { key: 'status',     label: 'Status',     width: 120,

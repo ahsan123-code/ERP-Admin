@@ -6,7 +6,7 @@ import SelectField from '../../components/ui/SelectField';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
-import { procurementDb, mastersDb } from '../../lib/db';
+import { procurementDb, mastersDb, inventoryDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
 import { useCatalogue } from '../../context/CatalogueContext';
@@ -81,6 +81,7 @@ export default function NewGrnModal({ open, onClose, onSave }) {
 
   const handleSubmit = async () => {
     if (!form.vendor_name) { toast.error('Vendor name is required.'); return; }
+    if (!form.warehouse) { toast.error('Select the warehouse where the goods were received.'); return; }
     if (lineItems.length === 0) { toast.error('Add at least one received item.'); return; }
 
     setSaving(true);
@@ -94,6 +95,7 @@ export default function NewGrnModal({ open, onClose, onSave }) {
         received_by:        form.received_by || null,
         item_count:         lineItems.length,
         total_qty_received: totalQtyReceived,
+        warehouse:          form.warehouse || null,
         status:             'posted',
         company_id:         companyId,
       });
@@ -111,12 +113,19 @@ export default function NewGrnModal({ open, onClose, onSave }) {
         );
       } catch (_) { /* grn_line_items may not exist — non-fatal */ }
 
+      // Add the received goods into stock, in the selected warehouse.
+      const { error: stockErr } = await inventoryDb.receiveIntoStock(lineItems, form.warehouse, companyId);
+      if (stockErr) {
+        toast.error(`GRN saved, but stock could not be updated: ${stockErr.message}`, 'Stock Not Updated');
+      }
+
       // Posting a GRN closes the linked PO (goods fully received)
       if (form.po_ref) {
         try { await procurementDb.updatePurchaseOrderStatus(form.po_ref, 'completed'); } catch (_) { /* non-fatal */ }
       }
 
-      toast.success(`Goods Receipt Note ${grnId} posted.`, 'GRN Created');
+      const whNote = form.warehouse ? ` Stock updated in ${form.warehouse}.` : '';
+      toast.success(`Goods Receipt Note ${grnId} posted.${whNote}`, 'GRN Created');
       onSave({
         ...(data || {}), grn_id: grnId, po_ref: form.po_ref,
         vendor_name: form.vendor_name, received_date: form.received_date,
@@ -183,12 +192,12 @@ export default function NewGrnModal({ open, onClose, onSave }) {
         <Input label="Vendor / Supplier *" value={form.vendor_name} onChange={set('vendor_name')} placeholder="Vendor name" required />
         <Input label="Received By" value={form.received_by} onChange={set('received_by')} placeholder="Store keeper name" />
         {warehouseOptions.length > 0 ? (
-          <SelectField label="Warehouse" value={form.warehouse} onChange={set('warehouse')}>
+          <SelectField label="Warehouse * (received goods added to stock here)" value={form.warehouse} onChange={set('warehouse')} required>
             <option value="">Select warehouse...</option>
             {warehouseOptions.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
           </SelectField>
         ) : (
-          <Input label="Warehouse" value={form.warehouse} onChange={set('warehouse')} placeholder="e.g. Main Store" />
+          <Input label="Warehouse *" value={form.warehouse} onChange={set('warehouse')} placeholder="e.g. Main Store" required />
         )}
         <div className="ff">
           <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Remarks</label>

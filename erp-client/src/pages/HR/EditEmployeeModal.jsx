@@ -39,8 +39,8 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.designation || !form.department || !form.gross_salary || !form.cnic) {
-      toast.error('Please fill in all required fields.');
+    if (!form.name || !form.department || !form.gross_salary) {
+      toast.error('Name, department and gross salary are required.');
       return;
     }
     setSaving(true);
@@ -53,7 +53,7 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
         joining_date: form.joining_date || null,
         gross_salary: parseFloat(form.gross_salary),
         contact:      form.contact || null,
-        cnic:         form.cnic,
+        cnic:         form.cnic || null,
         address:      form.address || null,
         status:       form.status,
       };
@@ -89,7 +89,7 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
         <div className="ff">
           <Input label="Full Name *" value={form.name} onChange={set('name')} required />
         </div>
-        <Input label="Designation *" placeholder="e.g. Machine Operator" value={form.designation} onChange={set('designation')} required />
+        <Input label="Designation" placeholder="e.g. Machine Operator" value={form.designation} onChange={set('designation')} />
         <Input label="Department *" placeholder="e.g. Production" value={form.department} onChange={set('department')} required />
         <SelectField label="Section" value={form.section} onChange={set('section')}>
           <option value="">— Select section —</option>
@@ -98,7 +98,7 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
         <Input label="Joining Date" type="date" value={form.joining_date} onChange={set('joining_date')} />
         <Input label="Gross Salary (PKR) *" type="number" min="1" value={form.gross_salary} onChange={set('gross_salary')} required />
         <Input label="Contact No." placeholder="0300-1234567" value={form.contact} onChange={set('contact')} />
-        <Input label="CNIC *" placeholder="xxxxx-xxxxxxx-x" value={form.cnic} onChange={set('cnic')} required />
+        <Input label="CNIC" placeholder="xxxxx-xxxxxxx-x" value={form.cnic} onChange={set('cnic')} />
         <SelectField label="Status" value={form.status} onChange={set('status')}>
           {STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
         </SelectField>

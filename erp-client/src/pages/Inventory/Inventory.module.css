@@ -210,3 +210,83 @@
   font-size: 0.85rem;
   color: var(--red, #ef4444);
 }
+
+/* Page tabs (Items & Stock / Warehouse / Low Stock Alerts) */
+.pageTabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.pageTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
+.pageTabActive {
+  background: var(--primary-muted);
+  border-color: var(--primary-border, var(--primary));
+  color: var(--primary-text, var(--primary));
+  font-weight: 600;
+}
+.tabBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--orange, #f59e0b);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Set / edit low-stock alert limit — clear inline call-to-action */
+.limitBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px dashed var(--blue, #3b82f6);
+  background: var(--blue-muted, rgba(59, 130, 246, 0.1));
+  color: var(--blue, #3b82f6);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast, 0.15s), border-color var(--transition-fast, 0.15s), color var(--transition-fast, 0.15s);
+}
+
+.limitBtn:hover {
+  background: var(--blue, #3b82f6);
+  border-color: var(--blue, #3b82f6);
+  color: #fff;
+}
+
+/* When a limit is already set: solid border, quieter until hovered */
+.limitBtnSet {
+  border-style: solid;
+  border-color: var(--border-subtle, #e5e7eb);
+  background: transparent;
+  color: var(--text-secondary, #6b7280);
+}
+
+.limitBtnSet:hover {
+  background: var(--bg-tertiary, #f3f4f6);
+  border-color: var(--blue, #3b82f6);
+  color: var(--blue, #3b82f6);
+}

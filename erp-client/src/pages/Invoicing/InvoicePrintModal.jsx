@@ -6,7 +6,7 @@ import { formatCurrency, formatDate } from '../../utils/format';
 import styles from './InvoicePrintModal.module.css';
 
 const COMPANY = {
-  name:    'Ahsan Brothers Steel',
+  name:    'Allied Steel Center',
   address: 'Main Market, Lahore, Punjab, Pakistan',
   ntn:     '9207491-5',
   strn:    '3277876323039',

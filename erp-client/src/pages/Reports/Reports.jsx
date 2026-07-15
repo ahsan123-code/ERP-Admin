@@ -1,9 +1,9 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Scale, TrendingDown, TrendingUp, BarChart3,
   Printer, Users, Globe, Package, FileText, BadgeCheck, Truck, Landmark,
-  ClipboardList, CalendarDays, Store, BookUser,
+  ClipboardList, CalendarDays, Store, BookUser, Trash2,
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
@@ -13,6 +13,7 @@ import SearchableSelect from '../../components/ui/SearchableSelect';
 import { financeDb, salesDb, procurementDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { useToast } from '../../components/shared/Toast';
 import { useCustomers } from '../../context/CustomerContext';
 import { formatDate, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
@@ -62,8 +63,9 @@ const PAGE_TABS = [
 ];
 
 /* ── Account Ledger ─────────────────────────────────────────────────── */
-function LedgerReport() {
+function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const printRef = useRef();
+  const toast = useToast();
   const { data: rawAccounts } = useDb(() => financeDb.getVoucherAccounts());
   const accountList = useMemo(() => [...new Set((rawAccounts || []).map(r => r.account_name).filter(Boolean))].sort(), [rawAccounts]);
 
@@ -71,11 +73,40 @@ function LedgerReport() {
   const [account,  setAccount] = useState('');
   const [fromDate, setFrom]    = useState('');
   const [toDate,   setTo]      = useState('');
+  const [deletingId, setDeletingId] = useState(null);
 
-  const { data: rawVouchers } = useDb(
+  const { data: rawVouchers, refetch: refetchVouchers } = useDb(
     () => account ? financeDb.getVouchersByAccount(account, fromDate, toDate) : Promise.resolve({ data: [], error: null }),
     [account, fromDate, toDate]
   );
+
+  // Delete a transaction straight from the account history — mirrors the Finance
+  // Vouchers tab: grouped legs reverse together, standalone rows reverse their
+  // own balance impact. Confirmed first, since this is a reporting screen.
+  const handleDelete = async (row) => {
+    if (!window.confirm(`Delete voucher "${row.voucher_id}" from the ledger? This cannot be undone.`)) return;
+    setDeletingId(row.id);
+    try {
+      const isGrouped = /-\d+$/.test(row.voucher_id || '');
+      if (isGrouped) {
+        const groupId = row.voucher_id.replace(/-\d+$/, '');
+        const { error } = await financeDb.deleteVoucherGroup(groupId, companyId);
+        if (error) throw new Error(error.message);
+        toast.success(`Voucher ${groupId} reversed and deleted (all legs).`);
+      } else {
+        const { error } = await financeDb.deleteVoucher(row.id);
+        if (error) throw new Error(error.message);
+        const acct = chartOfAccounts.find(a => a.account_name === row.account_name);
+        if (acct) await financeDb.applyVoucherToBalances(acct, -(row.debit || 0), -(row.credit || 0));
+        toast.success(`Voucher ${row.voucher_id} deleted.`);
+      }
+      refetchVouchers();
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const entries = useMemo(() => {
     let running = 0;
@@ -160,11 +191,12 @@ function LedgerReport() {
                 <th className={styles.right}>Debit</th>
                 <th className={styles.right}>Credit</th>
                 <th className={styles.right}>Balance</th>
+                <th style={{ width: 48 }}></th>
               </tr>
             </thead>
             <tbody>
               {entries.length === 0
-                ? <tr><td colSpan={6} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
+                ? <tr><td colSpan={7} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
                 : entries.map((e, i) => (
                   <tr key={e.id ?? i}>
                     <td className={styles.date}>{formatDate((e.date || '').slice(0, 10))}</td>
@@ -181,6 +213,18 @@ function LedgerReport() {
                       <span style={{ fontSize: 10, marginLeft: 4, color: e.balance >= 0 ? 'var(--green)' : 'var(--red)' }}>
                         {e.balance >= 0 ? 'Dr' : 'Cr'}
                       </span>
+                    </td>
+                    <td className={styles.right}>
+                      <button
+                        className={styles.rowDeleteBtn}
+                        disabled={deletingId === e.id}
+                        onClick={() => handleDelete(e)}
+                        title={`Delete voucher "${e.voucher_id}"`}
+                      >
+                        {deletingId === e.id
+                          ? <span className={styles.rowDeleteSpinner}>…</span>
+                          : <Trash2 size={13} strokeWidth={2} />}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -302,9 +346,26 @@ function IncomeStatement({ chartOfAccounts }) {
 
 /* ── Customer Sales Ledger ──────────────────────────────────────────── */
 function CustomerLedger({ salesInvoices }) {
-  const customerNames = [...new Set(salesInvoices.map(i => i.customer_name).filter(Boolean))];
-  const [customer, setCustomer] = useState(customerNames[0] ?? '');
-  const invs = salesInvoices.filter(i => i.customer_name === customer);
+  const customerNames = useMemo(
+    () => [...new Set(salesInvoices.map(i => i.customer_name).filter(Boolean))],
+    [salesInvoices]
+  );
+  const [customer, setCustomer] = useState('');
+  const [fromDate, setFrom] = useState('');
+  const [toDate,   setTo]   = useState('');
+
+  // Default to the first customer once invoice data has loaded.
+  useEffect(() => {
+    setCustomer(c => c || customerNames[0] || '');
+  }, [customerNames]);
+
+  const invs = useMemo(() => salesInvoices.filter(i => {
+    if (i.customer_name !== customer) return false;
+    const d = (i.date || '').slice(0, 10);
+    if (fromDate && d < fromDate) return false;
+    if (toDate   && d > toDate)   return false;
+    return true;
+  }), [salesInvoices, customer, fromDate, toDate]);
 
   // Pull the sold-item detail (item name + size + rate) for this customer's orders.
   const soRefs = useMemo(() => invs.map(i => i.so_ref).filter(Boolean), [invs]);
@@ -320,15 +381,78 @@ function CustomerLedger({ salesInvoices }) {
     return map;
   }, [lineItems]);
 
+  const grandTotal = invs.reduce((s, i) => s + (i.grand_total || 0), 0);
+
+  const handlePrint = () => {
+    if (!customer) return;
+    const rows = invs.map(inv => {
+      const items = itemsByRef[inv.so_ref] || [];
+      const itemText = items.length
+        ? items.map(li => `${li.item_name || '—'}${li.quantity > 0 ? ` · ${li.quantity} ${li.unit || ''}` : ''}`).join('<br>')
+        : '—';
+      const rateText = items.length
+        ? items.map(li => li.unit_price > 0 ? formatCurrency(li.unit_price) : '—').join('<br>')
+        : '—';
+      return `<tr>
+        <td>${formatDate(inv.date)}</td>
+        <td>${inv.sale_inv_id || '—'}</td>
+        <td>${itemText}</td>
+        <td class="right">${rateText}</td>
+        <td class="right">${formatCurrency(inv.subtotal)}</td>
+        <td class="right">${formatCurrency(inv.total_charges || 0)}</td>
+        <td class="right">${formatCurrency(inv.grand_total)}</td>
+        <td>${getStatus(inv.status).label}</td>
+      </tr>`;
+    }).join('');
+    const win = window.open('', '_blank', 'width=1000,height=750');
+    win.document.write(`<!DOCTYPE html><html><head><title>Customer Sales Ledger — ${customer}</title>
+      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;padding:24px;color:#000}
+      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}.co{font-size:18px;font-weight:700}
+      .sub{font-size:11px;color:#555;margin-top:3px}.ttl{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:10px 0}
+      .meta{font-size:11px;color:#444;margin-bottom:12px}table{width:100%;border-collapse:collapse}
+      th{background:#1a1a1a;color:#fff;padding:6px 10px;font-size:10px;text-align:left}th.right{text-align:right}
+      td{padding:5px 10px;font-size:11px;border-bottom:1px solid #eee;vertical-align:top}td.right{text-align:right;font-family:monospace}
+      tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
+      .footer{text-align:center;margin-top:20px;font-size:10px;color:#999;border-top:1px solid #ddd;padding-top:10px}
+      </style></head><body>
+      <div class="hdr"><div class="co">${COMPANY.name}</div><div class="sub">${COMPANY.address} | NTN: ${COMPANY.ntn}</div></div>
+      <div class="ttl">Customer Sales Ledger</div>
+      <div class="meta">Customer: <strong>${customer}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}</div>
+      <table>
+        <thead><tr><th>Date</th><th>Invoice No.</th><th>Item / Size</th><th class="right">Rate</th><th class="right">Subtotal</th><th class="right">Charges</th><th class="right">Grand Total</th><th>Status</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="8" style="text-align:center;padding:20px;color:#666">No invoices for selected period</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="6" class="right">Total</td><td class="right">${formatCurrency(grandTotal)}</td><td></td></tr></tfoot>
+      </table>
+      <p class="footer">Printed: ${new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</p>
+      </body></html>`);
+    win.document.close(); win.focus();
+    setTimeout(() => win.print(), 400);
+  };
+
   return (
     <div className={styles.ledgerWrap}>
       <div className={styles.filterRow}>
-        <div className={styles.filterGroup}>
+        <div className={styles.filterGroup} style={{ flex: 2 }}>
           <label className={styles.filterLabel}>Customer</label>
-          <select className={styles.select} value={customer} onChange={e => setCustomer(e.target.value)}>
-            {customerNames.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <SearchableSelect
+            placeholder={`Search customer (${customerNames.length})…`}
+            emptyText="No matching customers"
+            value={customer}
+            onChange={setCustomer}
+            options={customerNames.map(name => ({ value: name, label: name }))}
+          />
         </div>
+        <div className={styles.filterGroup}>
+          <label className={styles.filterLabel}>From</label>
+          <input className={styles.dateInput} type="date" value={fromDate} onChange={e => setFrom(e.target.value)} />
+        </div>
+        <div className={styles.filterGroup}>
+          <label className={styles.filterLabel}>To</label>
+          <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
+        </div>
+        <Button variant="primary" icon={<Printer size={14} />} onClick={handlePrint} disabled={!customer}>
+          Print Ledger
+        </Button>
       </div>
       <div className={styles.reportTable}>
         <table className={styles.tbl}>
@@ -937,26 +1061,24 @@ function DailyDayBook({ vouchers }) {
 }
 
 /* ── Vendor Current Balance ───────────────────────────────────────────── */
-function VendorCurrentBalance({ vendors, purchaseInvoices }) {
+function VendorCurrentBalance({ vendorBalances }) {
   const [search, setSearch] = useState('');
 
+  // Ledger-derived: purchases credit the vendor (payable up), payments debit it.
+  // A positive balance is a payable (we owe the vendor); negative is an advance.
   const report = useMemo(() => {
-    return (vendors || []).map(v => {
-      const vName = (v.name || '').toLowerCase();
-      const vInvs = (purchaseInvoices || []).filter(
-        inv => (inv.vendor_name || '').toLowerCase() === vName
-      );
-      const unpaid = vInvs.filter(inv => inv.status === 'unpaid' || inv.status === 'partial');
-      const balance = unpaid.reduce((s, inv) => s + (parseFloat(inv.grand_total) || 0), 0);
-      const lastInv = vInvs[0];
-      return {
-        id: v.id, name: v.name, contact: v.contact, category: v.category,
-        balance, last_bill_id: lastInv?.bill_id || null,
-        last_bill_date: lastInv?.bill_date || null,
-        last_bill_amount: parseFloat(lastInv?.grand_total) || 0,
-      };
-    }).filter(r => r.balance > 0 || r.last_bill_id);
-  }, [vendors, purchaseInvoices]);
+    return (vendorBalances || []).map(v => ({
+      id:              v.vendor_id,
+      name:            v.vendor_name,
+      contact:         v.contact,
+      category:        v.category,
+      purchases:       parseFloat(v.total_purchases) || 0,
+      paid:            parseFloat(v.total_paid) || 0,
+      balance:         parseFloat(v.balance_payable) || 0,
+      last_txn_date:   v.last_txn_date || null,
+      txn_count:       Number(v.txn_count) || 0,
+    })).filter(r => r.txn_count > 0 || r.balance !== 0);
+  }, [vendorBalances]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -964,37 +1086,52 @@ function VendorCurrentBalance({ vendors, purchaseInvoices }) {
     return report.filter(r => (r.name || '').toLowerCase().includes(q));
   }, [report, search]);
 
-  const totalPayable = filtered.reduce((s, r) => s + r.balance, 0);
+  const totalPurchases = filtered.reduce((s, r) => s + r.purchases, 0);
+  const totalPaid      = filtered.reduce((s, r) => s + r.paid, 0);
+  const totalPayable   = filtered.reduce((s, r) => s + r.balance, 0);
+
+  const balLabel = (b) => b >= 0
+    ? `${formatCurrency(b)} Payable`
+    : `${formatCurrency(Math.abs(b))} Advance`;
 
   const handlePrint = () => {
-    const win = window.open('', '_blank', 'width=1000,height=750');
+    const win = window.open('', '_blank', 'width=1050,height=750');
     win.document.write(`<!DOCTYPE html><html><head><title>Vendor Current Balance</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;padding:24px}
       h2{text-align:center;font-size:16px;margin-bottom:2px}.sub{text-align:center;color:#555;margin-bottom:16px}
       table{width:100%;border-collapse:collapse}th{background:#1a1a2e;color:#fff;padding:7px 10px;text-align:left;font-size:11px}
-      td{padding:6px 10px;border-bottom:1px solid #e0e0e0;font-size:11.5px}.right{text-align:right}.mono{font-family:monospace}
+      th.right,td.right{text-align:right}
+      td{padding:6px 10px;border-bottom:1px solid #e0e0e0;font-size:11.5px}.mono{font-family:monospace}
       tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
     </style></head><body>
     <h2>${COMPANY.name}</h2><div class="sub">Vendor Current Balance</div>
-    <table><thead><tr><th>#</th><th>Vendor</th><th>Category</th><th>Balance (Payable)</th><th>Last Bill</th><th>Bill Date</th><th class="right">Bill Amount</th></tr></thead>
+    <table><thead><tr><th>#</th><th>Vendor</th><th>Category</th><th class="right">Total Purchases</th><th class="right">Total Paid</th><th class="right">Balance</th><th>Last Txn</th></tr></thead>
     <tbody>${filtered.map((r, i) => `<tr>
       <td>${i + 1}</td><td><strong>${r.name}</strong></td><td>${r.category || '—'}</td>
-      <td class="mono" style="color:#922b21;font-weight:700">${formatCurrency(r.balance)}</td>
-      <td class="mono">${r.last_bill_id || '—'}</td><td>${r.last_bill_date ? formatDate(r.last_bill_date) : '—'}</td>
-      <td class="right mono">${r.last_bill_amount > 0 ? formatCurrency(r.last_bill_amount) : '—'}</td>
+      <td class="right mono">${formatCurrency(r.purchases)}</td>
+      <td class="right mono">${formatCurrency(r.paid)}</td>
+      <td class="right mono" style="color:${r.balance >= 0 ? '#922b21' : '#1e7d34'};font-weight:700">${balLabel(r.balance)}</td>
+      <td>${r.last_txn_date ? formatDate(r.last_txn_date) : '—'}</td>
     </tr>`).join('')}</tbody>
-    <tfoot><tr><td colspan="3" class="right">Total Payable</td><td class="mono" style="color:#922b21">${formatCurrency(totalPayable)}</td><td colspan="3"></td></tr></tfoot>
+    <tfoot><tr><td colspan="3" class="right">Totals</td>
+      <td class="right mono">${formatCurrency(totalPurchases)}</td>
+      <td class="right mono">${formatCurrency(totalPaid)}</td>
+      <td class="right mono" style="color:#922b21">${balLabel(totalPayable)}</td>
+      <td></td></tr></tfoot>
     </table></body></html>`);
     win.document.close(); setTimeout(() => win.print(), 400);
   };
+
+  const thRight = { padding: '8px 12px', textAlign: 'right', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' };
+  const thLeft  = { ...thRight, textAlign: 'left' };
 
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor..."
           style={{ flex: 1, maxWidth: 280, background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '7px 12px', fontSize: 13 }} />
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{filtered.length} vendors · Total payable: <strong style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPayable)}</strong></span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{filtered.length} vendors · Purchases: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPurchases)}</strong> · Payable: <strong style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPayable)}</strong></span>
         <Button variant="secondary" icon={<Printer size={14} />} onClick={handlePrint} style={{ marginLeft: 'auto' }}>Print</Button>
       </div>
       {filtered.length === 0 ? (
@@ -1003,9 +1140,13 @@ function VendorCurrentBalance({ vendors, purchaseInvoices }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-tertiary)' }}>
-              {['#','Vendor','Category','Balance (Payable)','Last Bill','Bill Date','Bill Amount'].map(h => (
-                <th key={h} style={{ padding: '8px 12px', textAlign: 'right' === h ? 'right' : 'left', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' }}>{h}</th>
-              ))}
+              <th style={thLeft}>#</th>
+              <th style={thLeft}>Vendor</th>
+              <th style={thLeft}>Category</th>
+              <th style={thRight}>Total Purchases</th>
+              <th style={thRight}>Total Paid</th>
+              <th style={thRight}>Balance</th>
+              <th style={thLeft}>Last Txn</th>
             </tr>
           </thead>
           <tbody>
@@ -1014,18 +1155,20 @@ function VendorCurrentBalance({ vendors, purchaseInvoices }) {
                 <td style={{ padding: '7px 12px', color: 'var(--text-muted)', fontSize: 11 }}>{i + 1}</td>
                 <td style={{ padding: '7px 12px', fontWeight: 500 }}>{r.name}</td>
                 <td style={{ padding: '7px 12px', color: 'var(--text-secondary)', fontSize: 12 }}>{r.category || '—'}</td>
-                <td style={{ padding: '7px 12px', fontFamily: 'var(--font-mono)', color: 'var(--red)', fontWeight: 700 }}>{formatCurrency(r.balance)}</td>
-                <td style={{ padding: '7px 12px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.last_bill_id || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.last_bill_date ? formatDate(r.last_bill_date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.last_bill_amount > 0 ? formatCurrency(r.last_bill_amount) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.purchases > 0 ? formatCurrency(r.purchases) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.paid > 0 ? formatCurrency(r.paid) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: r.balance >= 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>{balLabel(r.balance)}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.last_txn_date ? formatDate(r.last_txn_date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr style={{ background: 'var(--bg-tertiary)', fontWeight: 700 }}>
-              <td colSpan={3} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)' }}>Total Payable</td>
-              <td style={{ padding: '8px 12px', fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{formatCurrency(totalPayable)}</td>
-              <td colSpan={3} />
+              <td colSpan={3} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)' }}>Totals</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalPurchases)}</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalPaid)}</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{balLabel(totalPayable)}</td>
+              <td />
             </tr>
           </tfoot>
         </table>
@@ -1205,7 +1348,7 @@ export default function Reports() {
   const { data: receiptVouchers }      = useDb(() => financeDb.getReceiptVouchers(companyId), [companyId]);
   const { data: allVouchers }          = useDb(() => financeDb.getVouchers(companyId), [companyId]);
   const { data: vendors }              = useDb(() => procurementDb.getVendors());
-  const { data: purchaseInvoices }     = useDb(() => procurementDb.getPurchaseInvoices(companyId), [companyId]);
+  const { data: vendorBalances }       = useDb(() => procurementDb.getVendorBalances(companyId), [companyId]);
   const { customers }                  = useCustomers();
   const { data: salesOrders }          = useDb(() => salesDb.getSalesOrders(companyId),   [companyId]);
   const { data: salesInvoices }        = useDb(() => salesDb.getSalesInvoices(companyId), [companyId]);
@@ -1232,7 +1375,7 @@ export default function Reports() {
       {pageTab === 'ledger' && (
         <Card padding={false}>
           <CardHeader title="Account Ledger" subtitle="Party-wise transaction history with running balance" />
-          <div className={styles.cardBody}><LedgerReport /></div>
+          <div className={styles.cardBody}><LedgerReport chartOfAccounts={chartOfAccounts} companyId={companyId} /></div>
         </Card>
       )}
       {pageTab === 'trial' && (
@@ -1324,9 +1467,9 @@ export default function Reports() {
       )}
       {pageTab === 'vendor-balance' && (
         <Card padding={false}>
-          <CardHeader title="Vendor Current Balance" subtitle="Outstanding payables per vendor from unpaid purchase invoices" />
+          <CardHeader title="Vendor Current Balance" subtitle="Total purchases, payments, and outstanding payable per vendor (from the ledger)" />
           <div className={styles.cardBody}>
-            <VendorCurrentBalance vendors={vendors} purchaseInvoices={purchaseInvoices} />
+            <VendorCurrentBalance vendorBalances={vendorBalances} />
           </div>
         </Card>
       )}

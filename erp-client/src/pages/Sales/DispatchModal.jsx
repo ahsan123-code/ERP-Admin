@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
+import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { salesDb } from '../../lib/db';
@@ -10,8 +11,13 @@ const today = new Date().toISOString().split('T')[0];
 
 const EMPTY = {
   delivery_date: today, vehicle_no: '', driver_name: '', driver_mobile: '', dispatched_by: '',
+  sale_type: 'credit',
   freight: '0', loading_unloading: '0', packing: '0', toll_tax: '0', slitting: '0',
 };
+
+// A "Cash" payment term on the work order means the goods are paid for on the spot;
+// anything else (Net 7/15/30…) is a credit sale.
+const defaultSaleType = (wo) => (wo?.payment_type === 'Cash' ? 'cash' : 'credit');
 
 const genId = (prefix) => `${prefix}-${String(Date.now()).slice(-6)}`;
 
@@ -22,8 +28,8 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
   const [form, setForm] = useState(EMPTY);
 
   useEffect(() => {
-    if (open) setForm(EMPTY);
-  }, [open]);
+    if (open) setForm({ ...EMPTY, sale_type: defaultSaleType(workOrder) });
+  }, [open, workOrder]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -79,6 +85,7 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
         slitting:           parseFloat(form.slitting) || 0,
         total_charges:      charges,
         grand_total:        grandTotal,
+        sale_type:          form.sale_type,
         status:             'posted',
         company_id:         companyId,
       });
@@ -118,6 +125,11 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
     >
       <form className="fg" onSubmit={handleSubmit}>
         <Input label="Delivery Date *" type="date" value={form.delivery_date} onChange={set('delivery_date')} required />
+        <SelectField label="Sale Type *" value={form.sale_type} onChange={set('sale_type')}>
+          <option value="cash">Cash Sale</option>
+          <option value="credit">Credit Sale</option>
+        </SelectField>
+
         <Input label="Dispatched By" value={form.dispatched_by} onChange={set('dispatched_by')} placeholder="Name / employee" />
 
         <Input label="Vehicle No *"     value={form.vehicle_no}    onChange={set('vehicle_no')}    placeholder="e.g. LEA-1234" required />

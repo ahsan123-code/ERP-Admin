@@ -125,7 +125,7 @@ export default function Login({ onLogin }) {
 
         </div>
 
-        <p className={styles.rFooter}>&copy; 2026 Ahsan Brothers &middot; All rights reserved</p>
+        <p className={styles.rFooter}>&copy; 2026 Allied Steel Center &middot; All rights reserved</p>
       </div>
     </div>
   );

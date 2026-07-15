@@ -68,9 +68,8 @@ export default function TopBar({ collapsed, onMenuOpen }) {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { companies, companyId, setCompanyId } = useCompany();
+  const { companyId, setCompanyId } = useCompany();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [branchId, setBranchId] = useState(branches[0]?.id ?? 1);
   const [fyId,     setFyId]     = useState(fiscalYears[0]?.id ?? 1);
 
   const toggleFullscreen = () => {
@@ -81,7 +80,7 @@ export default function TopBar({ collapsed, onMenuOpen }) {
     }
   };
 
-  const companyBranches = branches.filter(b => b.companyId === companyId);
+  const COMPANY_OPTIONS = [{ id: 1, name: 'Allied Steel Center' }];
 
   return (
     <header className={`${styles.topbar} ${collapsed ? styles.topbarCollapsed : ''}`}>
@@ -102,17 +101,17 @@ export default function TopBar({ collapsed, onMenuOpen }) {
         <DropdownSelect
           label="Company"
           icon={Building2}
-          options={companies}
-          value={companyId}
-          onChange={setCompanyId}
+          options={COMPANY_OPTIONS}
+          value={1}
+          onChange={() => {}}
         />
         <span className={styles.divider} />
         <DropdownSelect
           label="Branch"
           icon={MapPin}
-          options={companyBranches}
-          value={branchId}
-          onChange={setBranchId}
+          options={branches}
+          value={companyId}
+          onChange={setCompanyId}
         />
         <span className={styles.divider} />
         <DropdownSelect

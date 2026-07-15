@@ -5,7 +5,7 @@ import { formatCurrency } from '../../utils/format';
 import styles from './PayslipModal.module.css';
 
 const COMPANY = {
-  name:    'Ahsan Brothers Steel',
+  name:    'Allied Steel Center',
   address: 'Main Market, Lahore, Punjab, Pakistan',
   ntn:     '9207491-5',
 };

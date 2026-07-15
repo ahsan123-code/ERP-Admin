@@ -90,8 +90,24 @@ export const hrDb = {
 // ── FINANCE ───────────────────────────────────────────────────────────────
 
 export const financeDb = {
-  getChartOfAccounts: (companyId = 1) =>
-    supabase.from('chart_of_accounts').select('*').eq('company_id', companyId).order('account_code').limit(2000),
+  // Supabase caps a single response at 1000 rows regardless of .limit(), so the
+  // full chart (≈1774 accounts) must be paged — otherwise higher account codes
+  // (e.g. 12* expense accounts) are silently dropped from selectors.
+  getChartOfAccounts: async (companyId = 1) => {
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('chart_of_accounts')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('account_code')
+        .range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: all, error: null };
+  },
 
   addChartAccount: (account) =>
     supabase.from('chart_of_accounts').insert([account]).select().single(),
@@ -436,17 +452,44 @@ export const financeDb = {
   getPaymentReconciliation: () =>
     supabase.from('payment_reconciliation').select('*').order('payment_date', { ascending: false }),
 
-  getVoucherAccounts: () =>
-    supabase.from('distinct_voucher_accounts').select('account_name'),
+  // Paged so the full account list (≈1800) survives Supabase's 1000-row cap —
+  // otherwise accounts past the first 1000 (many banks included) go missing
+  // from the ledger's account selector.
+  getVoucherAccounts: async () => {
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('distinct_voucher_accounts')
+        .select('account_name')
+        .order('account_name')
+        .range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: all, error: null };
+  },
 
-  getVouchersByAccount: (accountName, fromDate, toDate) => {
-    let q = supabase.from('vouchers')
-      .select('id, voucher_id, voucher_type, date, narration, debit, credit, reference')
-      .eq('account_name', accountName)
-      .order('date');
-    if (fromDate) q = q.gte('date', fromDate);
-    if (toDate) q = q.lte('date', toDate);
-    return q;
+  // Paged so busy accounts (e.g. CASH SALES has ~8,800 vouchers) return their
+  // complete history — a single request would stop at 1000 rows and the running
+  // balance would be wrong.
+  getVouchersByAccount: async (accountName, fromDate, toDate) => {
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      let q = supabase.from('vouchers')
+        .select('id, voucher_id, voucher_type, date, narration, debit, credit, reference')
+        .eq('account_name', accountName)
+        .order('date').order('id')
+        .range(from, from + PAGE - 1);
+      if (fromDate) q = q.gte('date', fromDate);
+      if (toDate) q = q.lte('date', toDate);
+      const { data, error } = await q;
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: all, error: null };
   },
 };
 
@@ -458,6 +501,49 @@ export const inventoryDb = {
       .select('id, item_code, item_name, category, gauge, current_stock, reorder_level, warehouse, batch_no, status, unit, company_id')
       .eq('company_id', companyId)
       .order('item_code'),
+
+  updateStockItem: (id, updates) =>
+    supabase.from('stock_items').update(updates).eq('id', id).select().single(),
+
+  // Receive GRN line items into stock: add the received quantity to each item's
+  // current stock and place it in the given warehouse (one warehouse per item).
+  // Creates the stock row if the item isn't tracked yet. Matched by item code.
+  receiveIntoStock: async (lineItems = [], warehouse = null, companyId = 1) => {
+    const today = new Date().toISOString().slice(0, 10);
+    let updated = 0;
+    for (const it of lineItems) {
+      const code = it.product_code || it.item_code;
+      const qty  = Number(it.received_qty) || 0;
+      if (!code || qty <= 0) continue;
+
+      const { data: existing, error: findErr } = await supabase
+        .from('stock_items').select('id, current_stock')
+        .eq('item_code', code).maybeSingle();
+      if (findErr) return { data: null, error: findErr };
+
+      if (existing) {
+        const update = { current_stock: (Number(existing.current_stock) || 0) + qty, last_updated: today };
+        if (warehouse) update.warehouse = warehouse;
+        const { error } = await supabase.from('stock_items').update(update).eq('id', existing.id);
+        if (error) return { data: null, error };
+      } else {
+        const { error } = await supabase.from('stock_items').insert([{
+          item_code: code,
+          item_name: it.product_name || it.item_name || code,
+          current_stock: qty,
+          reorder_level: 0,
+          warehouse: warehouse || null,
+          unit: it.unit || null,
+          status: 'normal',
+          company_id: companyId,
+          last_updated: today,
+        }]);
+        if (error) return { data: null, error };
+      }
+      updated += 1;
+    }
+    return { data: { updated }, error: null };
+  },
 
   getBatches: () =>
     supabase.from('batches').select('*').order('received_date', { ascending: false }),
@@ -619,6 +705,14 @@ export const procurementDb = {
   getVendors: () =>
     supabase.from('vendors').select('*').order('name'),
 
+  // Vendor purchases / payments / outstanding payable, derived from the ledger
+  // (voucher_lines). See server/migrate-vendor-balances.js.
+  getVendorBalances: (companyId = 1) =>
+    supabase.from('vendor_balances')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('total_purchases', { ascending: false }),
+
   addVendor: (v) =>
     supabase.from('vendors').insert([v]).select().single(),
 
@@ -639,6 +733,23 @@ export const procurementDb = {
 
   getPdnLineItems: (pdnId) =>
     supabase.from('pdn_line_items').select('*').eq('pdn_id', pdnId).order('id'),
+
+  // Line items for many PDNs at once (chunked to stay under URL limits) — used to
+  // show the requested item names against each PDN/PR row in the pipeline lists.
+  getPdnLineItemsBulk: async (pdnIds = []) => {
+    const ids = [...new Set((pdnIds || []).filter(Boolean))];
+    if (ids.length === 0) return { data: [], error: null };
+    const CHUNK = 150;
+    const all = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const { data, error } = await supabase.from('pdn_line_items')
+        .select('pdn_id, item_name, quantity, unit')
+        .in('pdn_id', ids.slice(i, i + CHUNK));
+      if (error) return { data: null, error };
+      if (data) all.push(...data);
+    }
+    return { data: all, error: null };
+  },
 
   // Full downstream cascade: PDN → PR → PO → Gate Pass → GRN → Purchase Invoice.
   // Caller passes the linked IDs it already holds in local state (most reliable);

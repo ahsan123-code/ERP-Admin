@@ -35,18 +35,18 @@ const NAV = [
         sub: [
           { path: '/inventory/items',     label: 'Items & Stock' },
           { path: '/inventory/warehouse', label: 'Warehouse Stock' },
-          { path: '/inventory/transfers', label: 'Transfers' },
           { path: '/inventory/alerts',    label: 'Low Stock Alerts' },
         ],
       },
       {
         path: '/procurement', label: 'Procurement', icon: ShoppingCart,
         sub: [
-          { path: '/procurement/pdn',          label: 'Purchase Demand Note' },
-          { path: '/procurement/pdn-approval', label: 'PDN Approval' },
+          { path: '/procurement/pdns',         label: 'Purchase Demand Notes' },
           { path: '/procurement/requisitions', label: 'Requisitions' },
           { path: '/procurement/orders',       label: 'Purchase Orders' },
-          { path: '/procurement/grn',          label: 'Goods Received Note' },
+          { path: '/procurement/gatepass',     label: 'Gate Pass Inward' },
+          { path: '/procurement/grns',         label: 'Goods Received Notes' },
+          { path: '/procurement/invoices',     label: 'Purchase Invoices' },
           { path: '/procurement/vendors',      label: 'Vendors' },
         ],
       },
@@ -114,6 +114,10 @@ const NAV = [
           { path: '/reports/gst',             label: 'Order Wise GST' },
           { path: '/reports/challan',         label: 'Delivery Challan' },
           { path: '/reports/bank-recon',      label: 'Bank Reconciliation' },
+          { path: '/reports/vendor-ledger',   label: 'Vendor Ledger' },
+          { path: '/reports/cust-balance',    label: 'Customer Balance' },
+          { path: '/reports/vendor-balance',  label: 'Vendor Balance' },
+          { path: '/reports/day-book',        label: 'Daily Day Book' },
         ],
       },
     ],
@@ -235,7 +239,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         )}
         {!collapsed && (
           <div className={styles.logoText}>
-            <h1>Ahsan Brothers</h1>
+            <h1>Allied Steel</h1>
             <p>Steel ERP</p>
           </div>
         )}

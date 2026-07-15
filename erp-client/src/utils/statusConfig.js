@@ -62,3 +62,16 @@ export const STATUS_CONFIG = {
 
 export const getStatus = (key) =>
   STATUS_CONFIG[key] ?? { label: key, variant: 'info' };
+
+// Derive a stock alert level from current stock vs the item's reorder limit.
+// No limit set (<= 0) → not alerting; out of stock → critical; at or below the
+// limit → low; otherwise normal. This is the single source of truth for the
+// low-stock alert across Inventory and Dashboard.
+export const stockStatus = (item) => {
+  const stock = Number(item?.current_stock) || 0;
+  const limit = Number(item?.reorder_level) || 0;
+  if (limit <= 0)     return 'normal';
+  if (stock <= 0)     return 'critical';
+  if (stock <= limit) return 'low';
+  return 'normal';
+};

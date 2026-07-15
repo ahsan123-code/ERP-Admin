@@ -16,7 +16,7 @@ import { dashboardDb, salesDb, inventoryDb, financeDb, procurementDb } from '../
 import { useCompany } from '../../context/CompanyContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { formatDate, timeAgo, formatCurrency } from '../../utils/format';
-import { getStatus } from '../../utils/statusConfig';
+import { getStatus, stockStatus } from '../../utils/statusConfig';
 import CustomerSearch from './CustomerSearch';
 import CustomerProfilePanel from './CustomerProfilePanel';
 import NewInvoiceModal from '../Invoicing/NewInvoiceModal';
@@ -64,11 +64,11 @@ const STOCK_COLS = [
   { key: 'item_code',     label: 'Item Code',     width: 130, render: v => <span className={styles.code}>{v}</span> },
   { key: 'item_name',     label: 'Item Name',     width: 260 },
   { key: 'current_stock', label: 'Current Stock', width: 140, align: 'right',
-    render: (v, row) => <span className={`${styles.mono} ${Number(v) <= Number(row.reorder_level) ? styles.stockLow : styles.stockOk}`}>{Number(v).toLocaleString()} {row.unit || ''}</span> },
-  { key: 'reorder_level', label: 'Reorder Level', width: 130, align: 'right', render: v => <span className={styles.mono}>{Number(v).toLocaleString()}</span> },
+    render: (v, row) => <span className={`${styles.mono} ${stockStatus(row) === 'normal' ? styles.stockOk : styles.stockLow}`}>{Number(v).toLocaleString()} {row.unit || ''}</span> },
+  { key: 'reorder_level', label: 'Reorder Level', width: 130, align: 'right', render: v => Number(v) > 0 ? <span className={styles.mono}>{Number(v).toLocaleString()}</span> : <span className={styles.nil}>—</span> },
   { key: 'warehouse',     label: 'Warehouse',     width: 180 },
   { key: 'status',        label: 'Status',        width: 100,
-    render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    render: (_, row) => { const s = getStatus(stockStatus(row)); return <Badge variant={s.variant}>{s.label}</Badge>; } },
 ];
 
 const SO_SUMMARY_COLS = [
@@ -96,6 +96,68 @@ const TAX_COLS = [
   { key: 'status',        label: 'Status',      width: 100,
     render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
 ];
+
+// Split a set of bills into Cash Sale vs Credit Sale totals (amount + bill count).
+// Bills default to 'credit' when untagged (historical data).
+function splitBills(invoices) {
+  const acc = {
+    cash:   { count: 0, amount: 0 },
+    credit: { count: 0, amount: 0 },
+    total:  { count: 0, amount: 0 },
+  };
+  for (const inv of invoices) {
+    const bucket = String(inv.sale_type).toLowerCase() === 'cash' ? 'cash' : 'credit';
+    const amt = Number(inv.grand_total) || 0;
+    acc[bucket].count += 1;
+    acc[bucket].amount += amt;
+    acc.total.count += 1;
+    acc.total.amount += amt;
+  }
+  return acc;
+}
+
+// Build the daily + monthly Cash/Credit breakdown, anchored to the most recent
+// bill date in the data (so demo data shows numbers, and in production the latest
+// bill is today). Returns the anchor date plus per-day and per-month splits.
+function buildSalesBreakdown(invoices) {
+  const dates = invoices.map(i => i.date).filter(Boolean).sort();
+  const anchor = dates.length ? dates[dates.length - 1] : null;
+  if (!anchor) {
+    const empty = splitBills([]);
+    return { anchorDate: null, day: empty, month: empty };
+  }
+  const dayKey   = anchor.slice(0, 10);
+  const monthKey = anchor.slice(0, 7);
+  return {
+    anchorDate: anchor,
+    day:   splitBills(invoices.filter(i => i.date && i.date.slice(0, 10) === dayKey)),
+    month: splitBills(invoices.filter(i => i.date && i.date.slice(0, 7) === monthKey)),
+  };
+}
+
+function SalesSplitCard({ title, subtitle, data }) {
+  return (
+    <Card className={styles.chartCard} padding={false}>
+      <div className={styles.chartInner}>
+        <CardHeader title={title} subtitle={subtitle} />
+        <div className={styles.stockSummary} style={{ marginTop: 'var(--sp-4)' }}>
+          <div className={styles.stockStat}>
+            <span className={`${styles.stockStatVal} ${styles.stockOk}`}>{formatCurrency(data.cash.amount)}</span>
+            <span className={styles.stockStatLbl}>Cash Sale · {data.cash.count} bills</span>
+          </div>
+          <div className={styles.stockStat}>
+            <span className={`${styles.stockStatVal} ${styles.stockWarn}`}>{formatCurrency(data.credit.amount)}</span>
+            <span className={styles.stockStatLbl}>Credit Sale · {data.credit.count} bills</span>
+          </div>
+          <div className={styles.stockStat}>
+            <span className={styles.stockStatVal}>{formatCurrency(data.total.amount)}</span>
+            <span className={styles.stockStatLbl}>Total · {data.total.count} bills</span>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 function buildChartData(invoices, range) {
   if (!invoices.length) return [];
@@ -228,9 +290,15 @@ export default function Dashboard() {
 
   const activeEmployees = empRows.length;
   const totalRevenue    = dbSalesInvoices.reduce((s, i) => s + (Number(i.grand_total) || 0), 0);
-  const lowStockCount   = dbStockItems.filter(i => i.status === 'low' || i.status === 'critical').length;
+  const lowStockCount   = dbStockItems.filter(i => stockStatus(i) !== 'normal').length;
 
   const chartData = useMemo(() => buildChartData(dbSalesInvoices, chartRange), [dbSalesInvoices, chartRange]);
+  const salesBreakdown = useMemo(() => buildSalesBreakdown(dbSalesInvoices), [dbSalesInvoices]);
+  const breakdownDate  = salesBreakdown.anchorDate ? new Date(salesBreakdown.anchorDate) : null;
+  const dayLabel       = breakdownDate ? formatDate(salesBreakdown.anchorDate) : '—';
+  const monthLabel     = breakdownDate
+    ? breakdownDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    : '—';
 
   const liveKpis = [
     { id: 'revenue',   label: 'Total Revenue',   value: formatCurrency(totalRevenue),          rawValue: totalRevenue,    change: 0, changeType: 'neutral', accentVar: '--green',  bgVar: '--green-muted'  },
@@ -250,7 +318,7 @@ export default function Dashboard() {
   ];
 
   const filteredOrders = (orderFilter === 'all' ? dbOrders : dbOrders.filter(o => o.status === orderFilter)).slice(0, 50);
-  const filteredStock  = stockTab === 'all' ? dbStockItems : dbStockItems.filter(i => i.status === stockTab);
+  const filteredStock  = stockTab === 'all' ? dbStockItems : dbStockItems.filter(i => stockStatus(i) === stockTab);
 
   const now     = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -316,6 +384,19 @@ export default function Dashboard() {
             {liveKpis.map(stat => (
               <StatCard key={stat.id} stat={stat} icon={KPI_ICONS[stat.id]} />
             ))}
+          </div>
+
+          <div className={styles.chartsRow} style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <SalesSplitCard
+              title="Daily Sales"
+              subtitle={`All bills on ${dayLabel} — Cash vs Credit`}
+              data={salesBreakdown.day}
+            />
+            <SalesSplitCard
+              title="Monthly Sales"
+              subtitle={`All bills in ${monthLabel} — Cash vs Credit`}
+              data={salesBreakdown.month}
+            />
           </div>
 
           <div className={styles.chartsRow}>
@@ -506,15 +587,15 @@ export default function Dashboard() {
               <span className={styles.stockStatLbl}>Total Items</span>
             </div>
             <div className={styles.stockStat}>
-              <span className={`${styles.stockStatVal} ${styles.stockOk}`}>{dbStockItems.filter(i => i.status === 'normal').length}</span>
+              <span className={`${styles.stockStatVal} ${styles.stockOk}`}>{dbStockItems.filter(i => stockStatus(i) === 'normal').length}</span>
               <span className={styles.stockStatLbl}>Normal Stock</span>
             </div>
             <div className={styles.stockStat}>
-              <span className={`${styles.stockStatVal} ${styles.stockWarn}`}>{dbStockItems.filter(i => i.status === 'low').length}</span>
+              <span className={`${styles.stockStatVal} ${styles.stockWarn}`}>{dbStockItems.filter(i => stockStatus(i) === 'low').length}</span>
               <span className={styles.stockStatLbl}>Low Stock</span>
             </div>
             <div className={styles.stockStat}>
-              <span className={`${styles.stockStatVal} ${styles.stockLow}`}>{dbStockItems.filter(i => i.status === 'critical').length}</span>
+              <span className={`${styles.stockStatVal} ${styles.stockLow}`}>{dbStockItems.filter(i => stockStatus(i) === 'critical').length}</span>
               <span className={styles.stockStatLbl}>Critical</span>
             </div>
           </div>
@@ -527,9 +608,9 @@ export default function Dashboard() {
               searchPlaceholder="Search items..."
               filterTabs={[
                 { value: 'all',      label: 'All',       count: dbStockItems.length },
-                { value: 'normal',   label: 'Normal',    count: dbStockItems.filter(i => i.status === 'normal').length },
-                { value: 'low',      label: 'Low Stock', count: dbStockItems.filter(i => i.status === 'low').length },
-                { value: 'critical', label: 'Critical',  count: dbStockItems.filter(i => i.status === 'critical').length },
+                { value: 'normal',   label: 'Normal',    count: dbStockItems.filter(i => stockStatus(i) === 'normal').length },
+                { value: 'low',      label: 'Low Stock', count: dbStockItems.filter(i => stockStatus(i) === 'low').length },
+                { value: 'critical', label: 'Critical',  count: dbStockItems.filter(i => stockStatus(i) === 'critical').length },
               ]}
               activeTab={stockTab}
               onTabChange={setStockTab}

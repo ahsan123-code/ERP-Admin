@@ -13,13 +13,15 @@ import PayslipModal from './PayslipModal';
 import PayrollManageModal from './PayrollManageModal';
 import SalarySheetModal from './SalarySheetModal';
 import GeneratePayrollModal from './GeneratePayrollModal';
+import DisbursePayrollModal from './DisbursePayrollModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import DataTable from '../../components/shared/DataTable';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { useDb } from '../../hooks/useDb';
-import { hrDb } from '../../lib/db';
+import { hrDb, financeDb } from '../../lib/db';
+import { useCompany } from '../../context/CompanyContext';
 import { formatDate, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import styles from './HR.module.css';
@@ -143,12 +145,17 @@ export default function HR() {
   const [manageRec,    setManageRec]    = useState(null);
   const [sheetOpen,    setSheetOpen]    = useState(false);
   const [genOpen,      setGenOpen]      = useState(false);
+  const [disburseOpen, setDisburseOpen] = useState(false);
+
+  const { companyId } = useCompany();
 
   const { data: employees,     loading: loadEmp,     refetch: refetchEmp }     = useDb(() => hrDb.getEmployees());
   const { data: attendance,    loading: loadAtt }   = useDb(() => hrDb.getAttendance());
   const { data: leaveRequests, loading: loadLeave, refetch: refetchLeave } = useDb(() => hrDb.getLeaveRequests());
   const { data: payrollRecords,loading: loadPay,     refetch: refetchPay }     = useDb(() => hrDb.getPayrollRecords());
   const { data: loans,         loading: loadLoans,   refetch: refetchLoans }   = useDb(() => hrDb.getLoans());
+  const { data: chartOfAccounts } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
+  const { data: bankAccounts }    = useDb(() => financeDb.getBankAccounts(companyId),    [companyId]);
 
   // Distinct payroll periods present in the data (newest first), for the period selector.
   const MONTH_ORDER = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -166,6 +173,7 @@ export default function HR() {
   const [selMonth, selYearStr] = activePeriod.split(/ (?=\d{4}$)/);
   const selYear = Number(selYearStr);
   const sheetRecords = (payrollRecords || []).filter(r => r.month === selMonth && r.year === selYear);
+  const pendingSheet = sheetRecords.filter(r => r.status !== 'paid');
 
   const handleSave = async (emp) => {
     await hrDb.addEmployee(emp);
@@ -302,6 +310,9 @@ export default function HR() {
                 <Button variant="secondary" size="sm" icon={<FileSpreadsheet size={14} />} onClick={() => setSheetOpen(true)} disabled={sheetRecords.length === 0}>
                   Export Sheet
                 </Button>
+                <Button size="sm" icon={<Banknote size={14} />} onClick={() => setDisburseOpen(true)} disabled={pendingSheet.length === 0}>
+                  Disburse ({pendingSheet.length})
+                </Button>
               </div>
             }
           />
@@ -335,6 +346,17 @@ export default function HR() {
         loans={loans}
         onClose={() => setGenOpen(false)}
         onGenerated={(m, y) => { refetchPay(); setPeriod(`${m} ${y}`); }}
+      />
+      <DisbursePayrollModal
+        open={disburseOpen}
+        month={selMonth}
+        year={selYear}
+        records={sheetRecords}
+        chartOfAccounts={chartOfAccounts}
+        bankAccounts={bankAccounts}
+        companyId={companyId}
+        onClose={() => setDisburseOpen(false)}
+        onDone={refetchPay}
       />
     </div>
   );

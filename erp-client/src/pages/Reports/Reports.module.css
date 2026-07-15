@@ -107,3 +107,26 @@
 .reconBankName { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .reconBankBal  { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--green); }
 .reconBankBranch { font-size: 11px; color: var(--text-tertiary); }
+
+/* Row delete button (Account Ledger history) */
+.rowDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s);
+}
+.rowDeleteBtn:hover:not(:disabled) {
+  background: var(--red, #ef4444);
+  border-color: var(--red, #ef4444);
+  color: #fff;
+}
+.rowDeleteBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.rowDeleteSpinner { font-size: 0.85rem; color: var(--red, #ef4444); }
