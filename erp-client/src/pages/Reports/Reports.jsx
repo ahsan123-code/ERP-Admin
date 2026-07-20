@@ -67,7 +67,14 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const printRef = useRef();
   const toast = useToast();
   const { data: rawAccounts } = useDb(() => financeDb.getVoucherAccounts());
-  const accountList = useMemo(() => [...new Set((rawAccounts || []).map(r => r.account_name).filter(Boolean))].sort(), [rawAccounts]);
+  // Merge the full chart of accounts (so every account is selectable — even one you just
+  // posted your first entry to, which wouldn't yet appear in the voucher-account view) with
+  // historical voucher party-names (legacy accounts that may not exist in the chart anymore).
+  const accountList = useMemo(() => {
+    const fromChart    = (chartOfAccounts || []).map(a => a.account_name).filter(Boolean);
+    const fromVouchers = (rawAccounts     || []).map(r => r.account_name).filter(Boolean);
+    return [...new Set([...fromChart, ...fromVouchers])].sort((a, b) => a.localeCompare(b));
+  }, [rawAccounts, chartOfAccounts]);
 
   // Default to ALL dates (historical data spans many years) — the user can narrow if needed.
   const [account,  setAccount] = useState('');

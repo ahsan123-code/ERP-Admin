@@ -157,6 +157,55 @@ export const financeDb = {
   deleteVoucher: (id) =>
     supabase.from('vouchers').delete().eq('id', id),
 
+  // Loads every leg of a voucher group (e.g. "VCH-123456") for editing. Reads from
+  // voucher_lines (which carry the real account_code, unlike the display name on the
+  // vouchers row) and grabs the shared date/reference/type from the vouchers header.
+  getVoucherGroup: async (groupId, companyId = 1) => {
+    const [{ data: lines }, { data: header }] = await Promise.all([
+      supabase.from('voucher_lines')
+        .select('account_code, account_title, debit, credit, narration')
+        .like('voucher_id', `${groupId}-%`)
+        .order('voucher_id', { ascending: true }),
+      supabase.from('vouchers')
+        .select('date, reference, voucher_type')
+        .like('voucher_id', `${groupId}-%`)
+        .limit(1).maybeSingle(),
+    ]);
+    return { lines: lines || [], header: header || null };
+  },
+
+  // Edits a Journal voucher group in place: reverses the old legs' balance impact,
+  // removes the old rows, then re-posts the new legs under the SAME group id so the
+  // voucher number stays stable. Caller must pass a balanced set of lines.
+  // lines: [{ account, debit, credit, narration }]
+  updateJournalVoucher: async ({ groupId, date, companyId = 1, lines, reference }) => {
+    // 1. Reverse every existing leg's balance impact (real account_code from voucher_lines).
+    const { data: oldLines } = await supabase
+      .from('voucher_lines').select('account_code, debit, credit')
+      .like('voucher_id', `${groupId}-%`);
+    await Promise.all((oldLines || []).map(async (l) => {
+      const { data: acct } = await supabase
+        .from('chart_of_accounts').select('*')
+        .eq('account_code', l.account_code).eq('company_id', companyId).maybeSingle();
+      if (acct) await financeDb.applyVoucherToBalances(acct, -(l.debit || 0), -(l.credit || 0));
+    }));
+    // 2. Remove the old rows.
+    await Promise.all([
+      supabase.from('voucher_lines').delete().like('voucher_id', `${groupId}-%`),
+      supabase.from('vouchers').delete().like('voucher_id', `${groupId}-%`),
+    ]);
+    // 3. Re-post the edited legs under the same group id.
+    await financeDb.postJournalEntry({
+      voucherId: groupId, voucherType: 'Journal', date, companyId,
+      legs: lines.map(l => ({
+        account: l.account, debit: l.debit, credit: l.credit, narration: l.narration,
+      })),
+      narration: lines[0]?.narration || 'Journal entry',
+      reference: reference || groupId,
+    });
+    return { groupId };
+  },
+
   // Deletes a whole multi-leg voucher (PV/RV/Contra) in one shot, given its group id
   // (e.g. "RV-123456" — the part before the "-1"/"-2" leg suffix). Reverses every leg's
   // balance by reading the legs back from voucher_lines (which carry the real account_code,

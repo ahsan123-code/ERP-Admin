@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BadgeCheck, AlertCircle, RefreshCw, ReceiptText, Plus,
-  CloudUpload, Wifi, WifiOff, Printer, RotateCcw, FileText, Trash2,
+  CloudUpload, Wifi, WifiOff, Printer, RotateCcw, FileText, Trash2, Download,
 } from 'lucide-react';
+import { downloadSalesInvoicePdf } from '../../utils/salesInvoicePdf';
 import NewInvoiceModal from './NewInvoiceModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
@@ -76,8 +77,29 @@ const RETRY_COLS = [
   },
 ];
 
-function printSalesInvoice(inv) {
-  const win = window.open('', '_blank', 'width=900,height=720');
+function printSalesInvoice(inv, lineItems = [], preOpened = null) {
+  const win = preOpened || window.open('', '_blank', 'width=900,height=720');
+  if (!win) return;
+  const itemRows = lineItems.map((it, i) => {
+    const amount = it.total_price ?? (it.quantity * it.unit_price);
+    return `<tr>
+      <td class="right">${i + 1}</td>
+      <td>${it.item_name || ''}</td>
+      <td class="right">${it.quantity != null ? Number(it.quantity).toLocaleString('en-PK') : ''}</td>
+      <td>${it.unit || ''}</td>
+      <td class="right mono">${formatCurrency(it.unit_price)}</td>
+      <td class="right mono"><strong>${formatCurrency(amount)}</strong></td>
+    </tr>`;
+  }).join('');
+  const itemsSection = lineItems.length > 0
+    ? `<table class="items">
+        <thead><tr>
+          <th class="right">#</th><th>Item Description</th><th class="right">Qty</th>
+          <th>Unit</th><th class="right">Unit Price</th><th class="right">Amount</th>
+        </tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>`
+    : `<div class="no-items"><em>Itemised line items not available for this invoice.</em></div>`;
   const charges = [
     inv.freight > 0 ? `<div class="charge-row"><span>Freight</span><span>${formatCurrency(inv.freight)}</span></div>` : '',
     inv.loading_unloading > 0 ? `<div class="charge-row"><span>Loading / Unloading</span><span>${formatCurrency(inv.loading_unloading)}</span></div>` : '',
@@ -107,6 +129,13 @@ function printSalesInvoice(inv) {
     .total-row.grand { font-size:14px; font-weight:700; border-top:2px solid #000; border-bottom:none; padding-top:8px; margin-top:4px; }
     .charge-row { display:flex; justify-content:space-between; padding:3px 0; font-size:11px; color:#555; border-bottom:1px solid #f0f0f0; }
     .mono { font-family:monospace; }
+    table.items { width:100%; border-collapse:collapse; margin-bottom:14px; font-size:11px; }
+    table.items thead th { background:#1a1a1a; color:#fff; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; padding:6px 8px; text-align:left; }
+    table.items thead th.right { text-align:right; }
+    table.items tbody td { padding:5px 8px; border-bottom:1px solid #eee; }
+    table.items tbody td.right { text-align:right; }
+    table.items tbody tr:nth-child(even) { background:#fafafa; }
+    .no-items { padding:12px 14px; background:#fff8f0; border:1px solid #f0c080; border-radius:4px; margin-bottom:14px; font-size:11px; color:#cc6600; text-align:center; }
     .footer { margin-top:20px; border-top:1px solid #ddd; padding-top:14px; font-size:10px; color:#666; line-height:1.7; }
     .status-badge { display:inline-block; padding:2px 10px; border-radius:3px; font-size:10px; font-weight:700; text-transform:uppercase; background:#e8f5e9; color:#1b5e20; border:1px solid #a5d6a7; }
   </style></head><body><div class="wrap">
@@ -142,6 +171,7 @@ function printSalesInvoice(inv) {
         <div class="field-row"><span class="field-lbl">Extra Charges:</span><span class="field-val mono">${formatCurrency(inv.total_charges || 0)}</span></div>
       </div>
     </div>
+    ${itemsSection}
     ${charges ? `<div style="margin-bottom:14px;padding:10px 14px;background:#f8f8f8;border:1px solid #eee;border-radius:4px;"><div class="section-title">Additional Charges</div>${charges}</div>` : ''}
     <div style="display:flex;justify-content:flex-end;">
       <div class="totals-box">
@@ -175,6 +205,7 @@ export default function Invoicing() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [deletingSalesId, setDeletingSalesId] = useState(null);
   const [deletingFbrId, setDeletingFbrId] = useState(null);
+  const [busyDocId, setBusyDocId] = useState(null);
   const toast = useToast();
 
   const { data: salesInvoices } =
@@ -200,6 +231,41 @@ export default function Invoicing() {
       toast.error(err.message, 'Delete Failed');
     } finally {
       setDeletingSalesId(null);
+    }
+  };
+
+  // Fetches the invoice's itemised lines (from the linked sales order) so both the
+  // printable bill and the downloadable PDF show the complete item list.
+  const fetchInvoiceItems = async (row) => {
+    if (!row.so_ref) return [];
+    const { data, error } = await salesDb.getSoLineItems([row.so_ref]);
+    if (error) throw new Error(error.message);
+    return data || [];
+  };
+
+  const handlePrintInvoice = async (row) => {
+    // Open the print window synchronously (inside the click) to avoid pop-up blocking,
+    // show a placeholder, then fill it once the line items load.
+    const win = window.open('', '_blank', 'width=900,height=720');
+    if (win) win.document.write('<p style="font-family:Arial;padding:24px;color:#555">Preparing invoice…</p>');
+    try {
+      const items = await fetchInvoiceItems(row);
+      printSalesInvoice(row, items, win);
+    } catch (err) {
+      if (win) win.close();
+      toast.error(err.message, 'Print Failed');
+    }
+  };
+
+  const handleDownloadPdf = async (row) => {
+    setBusyDocId(row.id);
+    try {
+      const items = await fetchInvoiceItems(row);
+      downloadSalesInvoicePdf(row, items);
+    } catch (err) {
+      toast.error(err.message, 'Download Failed');
+    } finally {
+      setBusyDocId(null);
     }
   };
 
@@ -296,16 +362,27 @@ export default function Invoicing() {
       render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
     },
     {
-      key: '_print', label: '', width: 100,
+      key: '_print', label: '', width: 210,
       render: (_, row) => (
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<Printer size={14} strokeWidth={1.75} />}
-          onClick={() => printSalesInvoice(row)}
-        >
-          Print
-        </Button>
+        <div className={styles.docActions}>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Printer size={14} strokeWidth={1.75} />}
+            onClick={() => handlePrintInvoice(row)}
+          >
+            Print
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Download size={14} strokeWidth={1.75} />}
+            onClick={() => handleDownloadPdf(row)}
+            disabled={busyDocId === row.id}
+          >
+            {busyDocId === row.id ? 'PDF…' : 'PDF'}
+          </Button>
+        </div>
       ),
     },
     {

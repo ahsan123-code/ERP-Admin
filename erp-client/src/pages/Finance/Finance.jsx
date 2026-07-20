@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { TrendingUp, Scale, Plus, Landmark, FileCheck, CreditCard, BarChart2, BookOpen, Banknote, ArrowRightLeft, Coins, CalendarDays, Trash2, Check, Ban } from 'lucide-react';
+import { TrendingUp, Scale, Plus, Landmark, FileCheck, CreditCard, BarChart2, BookOpen, Banknote, ArrowRightLeft, Coins, CalendarDays, Trash2, Check, Ban, Pencil } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import NewVoucherModal from './NewVoucherModal';
@@ -115,6 +115,7 @@ export default function Finance() {
   const { companyId } = useCompany();
   const [chequeTab, setChequeTab] = useState('all');
   const [vchOpen, setVchOpen] = useState(false);
+  const [editVch, setEditVch] = useState(null);
   const [chqOpen, setChqOpen] = useState(false);
   const [crOpen, setCrOpen] = useState(false);
   const [ibtOpen, setIbtOpen] = useState(false);
@@ -268,6 +269,16 @@ export default function Finance() {
     }
   };
 
+  // Opens the voucher modal in edit mode. Multi-leg vouchers share a group id
+  // ("VCH-123456" from any leg's "VCH-123456-1"); pass the group so the whole entry loads.
+  const handleEditVoucher = (row) => {
+    const groupId = /-\d+$/.test(row.voucher_id || '')
+      ? row.voucher_id.replace(/-\d+$/, '')
+      : row.voucher_id;
+    setEditVch({ groupId });
+    setVchOpen(true);
+  };
+
   const VCH_COLS = [
     { key: 'voucher_id', label: 'Voucher No.', width: 110, render: v => <span className={styles.code}>{v}</span> },
     { key: 'voucher_type', label: 'Type', width: 90 },
@@ -283,18 +294,30 @@ export default function Finance() {
     },
     { key: 'narration', label: 'Narration', width: 160, render: v => <span className={styles.narration}>{v}</span> },
     {
-      key: '_actions', label: '', width: 48, sortable: false,
+      key: '_actions', label: '', width: 80, sortable: false,
       render: (_, row) => (
-        <button
-          className={styles.rowDeleteBtn}
-          disabled={deletingId === row.id}
-          onClick={(e) => { e.stopPropagation(); handleDeleteVoucher(row); }}
-          title={`Delete voucher "${row.voucher_id}"`}
-        >
-          {deletingId === row.id
-            ? <span className={styles.rowDeleteSpinner}>…</span>
-            : <Trash2 size={13} strokeWidth={2} />}
-        </button>
+        <div className={styles.rowActions}>
+          {row.voucher_type === 'Journal' && (
+            <button
+              className={styles.rowEditBtn}
+              disabled={deletingId === row.id}
+              onClick={(e) => { e.stopPropagation(); handleEditVoucher(row); }}
+              title={`Edit voucher "${row.voucher_id}"`}
+            >
+              <Pencil size={13} strokeWidth={2} />
+            </button>
+          )}
+          <button
+            className={styles.rowDeleteBtn}
+            disabled={deletingId === row.id}
+            onClick={(e) => { e.stopPropagation(); handleDeleteVoucher(row); }}
+            title={`Delete voucher "${row.voucher_id}"`}
+          >
+            {deletingId === row.id
+              ? <span className={styles.rowDeleteSpinner}>…</span>
+              : <Trash2 size={13} strokeWidth={2} />}
+          </button>
+        </div>
       ),
     },
   ];
@@ -481,10 +504,10 @@ export default function Finance() {
               <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Payment'); setPrvMode('cash'); setPrvOpen(true); }}>New Payment</Button>
               <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Receipt'); setPrvMode('bank'); setPrvOpen(true); }}>Bank Receipt (BRV)</Button>
               <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Payment'); setPrvMode('bank'); setPrvOpen(true); }}>Bank Payment (BPV)</Button>
-              <Button icon={<Plus size={15} />} onClick={() => setVchOpen(true)}>New Voucher</Button>
+              <Button icon={<Plus size={15} />} onClick={() => { setEditVch(null); setVchOpen(true); }}>New Voucher</Button>
             </div>
           ) : (
-            <Button icon={<Plus size={15} />} onClick={() => setVchOpen(true)}>New Voucher</Button>
+            <Button icon={<Plus size={15} />} onClick={() => { setEditVch(null); setVchOpen(true); }}>New Voucher</Button>
           )
         }
       />
@@ -684,7 +707,12 @@ export default function Finance() {
         </Card>
       )}
 
-      <NewVoucherModal open={vchOpen} onClose={() => setVchOpen(false)} onSave={handleSave} />
+      <NewVoucherModal
+        open={vchOpen}
+        editVoucher={editVch}
+        onClose={() => { setVchOpen(false); setEditVch(null); }}
+        onSave={handleSave}
+      />
       <NewAccountModal
         open={acctOpen}
         onClose={() => setAcctOpen(false)}

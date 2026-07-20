@@ -136,6 +136,39 @@
   color: var(--red, #ef4444);
 }
 
+/* ── Row edit button (Vouchers table) ────────────────────────────────────── */
+.rowEditBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+:global(tr:hover) .rowEditBtn {
+  color: var(--blue, #3b82f6);
+  border-color: var(--blue-dim, #2563eb);
+  background: var(--blue-muted, #eff6ff);
+}
+
+.rowEditBtn:hover:not(:disabled) {
+  background: var(--blue, #3b82f6) !important;
+  border-color: var(--blue, #3b82f6) !important;
+  color: #fff !important;
+}
+
+.rowEditBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Row actions (Cheque tracking — clear / bounce) ──────────────────────── */
 .rowActions {
   display: flex;

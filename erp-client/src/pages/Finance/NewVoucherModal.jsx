@@ -15,10 +15,12 @@ const genVoucherId = () => 'VCH-' + String(Date.now()).slice(-6);
 
 const emptyLine = () => ({ account_id: '', narration: '', debit: '', credit: '' });
 
-export default function NewVoucherModal({ open, onClose, onSave }) {
+export default function NewVoucherModal({ open, onClose, onSave, editVoucher }) {
   const toast = useToast();
   const { companyId } = useCompany();
+  const isEdit = !!editVoucher;   // editVoucher = { groupId }
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [voucherId, setVoucherId] = useState(genVoucherId());
   const [date, setDate] = useState(today);
   const [reference, setReference] = useState('');
@@ -27,13 +29,39 @@ export default function NewVoucherModal({ open, onClose, onSave }) {
   const { data: chartOfAccounts } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
 
   useEffect(() => {
-    if (open) {
-      setVoucherId(genVoucherId());
-      setDate(today);
-      setReference('');
-      setLines([emptyLine(), emptyLine()]);
+    if (!open) return;
+    if (isEdit) {
+      // Load the group's existing legs once the chart of accounts is available (needed
+      // to map each leg's account_code back to the account_id the selector expects).
+      if (!chartOfAccounts?.length) return;
+      let cancelled = false;
+      setLoading(true);
+      (async () => {
+        const { lines: legs, header } = await financeDb.getVoucherGroup(editVoucher.groupId, companyId);
+        if (cancelled) return;
+        setVoucherId(editVoucher.groupId);
+        setDate(header?.date || today);
+        setReference(header?.reference && header.reference !== editVoucher.groupId ? header.reference : '');
+        const mapped = (legs.length ? legs : [null, null]).map((l) => {
+          const acct = l ? chartOfAccounts.find(a => a.account_code === l.account_code) : null;
+          return {
+            account_id: acct?.account_id || '',
+            narration: l?.narration || '',
+            debit: l?.debit ? String(l.debit) : '',
+            credit: l?.credit ? String(l.credit) : '',
+          };
+        });
+        setLines(mapped.length >= 2 ? mapped : [...mapped, emptyLine()]);
+        setLoading(false);
+      })();
+      return () => { cancelled = true; };
     }
-  }, [open]);
+    // Create mode — fresh blank voucher.
+    setVoucherId(genVoucherId());
+    setDate(today);
+    setReference('');
+    setLines([emptyLine(), emptyLine()]);
+  }, [open, isEdit, editVoucher, chartOfAccounts, companyId]);
 
   const acctOptions = (chartOfAccounts || []).map(a => ({
     value: a.account_id,
@@ -89,11 +117,17 @@ export default function NewVoucherModal({ open, onClose, onSave }) {
       });
       if (resolved.some(r => !r.account)) throw new Error('One of the selected accounts could not be found.');
 
-      await financeDb.addJournalVoucher({
-        date, companyId, lines: resolved, reference: reference.trim() || null,
-      });
-
-      toast.success(`Journal voucher posted (${formatCurrency(totalDebit)}).`, 'Voucher Created');
+      if (isEdit) {
+        await financeDb.updateJournalVoucher({
+          groupId: editVoucher.groupId, date, companyId, lines: resolved, reference: reference.trim() || null,
+        });
+        toast.success(`Voucher ${editVoucher.groupId} updated (${formatCurrency(totalDebit)}).`, 'Voucher Updated');
+      } else {
+        await financeDb.addJournalVoucher({
+          date, companyId, lines: resolved, reference: reference.trim() || null,
+        });
+        toast.success(`Journal voucher posted (${formatCurrency(totalDebit)}).`, 'Voucher Created');
+      }
       onSave();
       onClose();
     } catch (err) {
@@ -107,14 +141,18 @@ export default function NewVoucherModal({ open, onClose, onSave }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="New Journal Voucher"
+      title={isEdit ? 'Edit Journal Voucher' : 'New Journal Voucher'}
       subtitle="Manual double-entry — add lines until Debit equals Credit"
       size="lg"
       footer={
         <div className="factions">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={saving || !balanced}>
-            {saving ? 'Posting…' : balanced ? `Post Voucher — ${formatCurrency(totalDebit)}` : 'Not balanced'}
+          <Button variant="primary" onClick={handleSubmit} disabled={saving || loading || !balanced}>
+            {saving
+              ? (isEdit ? 'Saving…' : 'Posting…')
+              : balanced
+                ? (isEdit ? `Save Changes — ${formatCurrency(totalDebit)}` : `Post Voucher — ${formatCurrency(totalDebit)}`)
+                : 'Not balanced'}
           </Button>
         </div>
       }
