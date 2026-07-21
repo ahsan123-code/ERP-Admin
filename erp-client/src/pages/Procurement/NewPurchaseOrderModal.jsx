@@ -118,8 +118,11 @@ export default function NewPurchaseOrderModal({ open, onClose, onSave }) {
   const vendorOptions = (vendors || []).map(v => ({
     value: v.id, label: v.name, hint: v.category,
   }));
+  // Name as the label, code as the hint: the label column ellipsises, so a long code
+  // prefix would eat the width and cut the name off. The hint still shows the code and
+  // is searchable, so picking by code keeps working.
   const productOptions = (catalogue || []).map(c => ({
-    value: c.id, label: `${c.code} — ${c.name}`, hint: c.unit,
+    value: c.id, label: c.name, hint: c.code,
   }));
   const prOptions = (requisitions || []).map(r => ({
     value: r.pr_id, label: `${r.pr_id} — ${r.department}`, hint: r.priority,

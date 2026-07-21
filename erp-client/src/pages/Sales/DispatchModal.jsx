@@ -91,13 +91,30 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
       });
       if (invErr) throw new Error(invErr.message);
 
+      // Post the invoice to the ledger (AR debit / sales + charges credit). The invoice
+      // row is already saved by this point, so a posting failure must not discard it —
+      // report it instead, since an unposted invoice needs to be corrected by hand.
+      let postingError = null;
+      try {
+        await salesDb.postSalesInvoiceVoucher({ invoice, companyId });
+      } catch (postErr) {
+        postingError = postErr;
+      }
+
       const { data: updatedWorkOrder, error: woErr } = await salesDb.updateWorkOrderStatus(workOrder.id, 'completed');
       if (woErr) throw new Error(woErr.message);
 
       const { data: updatedOrder, error: ordErr } = await salesDb.updateSalesOrderStatus(order.id, 'dispatched');
       if (ordErr) throw new Error(ordErr.message);
 
-      toast.success(`Order "${order.so_id}" dispatched — delivery, gate pass and invoice created.`, 'Dispatched');
+      if (postingError) {
+        toast.error(
+          `Order "${order.so_id}" dispatched and invoiced, but the ledger entry failed: ${postingError.message}. The customer's balance will not reflect this invoice until it is posted.`,
+          'Invoice Not Posted to Ledger',
+        );
+      } else {
+        toast.success(`Order "${order.so_id}" dispatched — delivery, gate pass and invoice created and posted.`, 'Dispatched');
+      }
       onSave(deliveryNote, gatePass, invoice, updatedWorkOrder, updatedOrder);
       onClose();
     } catch (err) {

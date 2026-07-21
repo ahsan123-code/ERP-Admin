@@ -309,28 +309,50 @@ export const financeDb = {
   },
 
   // Posts a Payment (PV) or Receipt (RV) voucher as a balanced double entry.
-  //   Receipt (money IN):  pocket DEBIT, party CREDIT  (party shown by name)
-  //   Payment (money OUT): party DEBIT,  pocket CREDIT
-  // The party leg posts to a control account (AR for receipts, AP for payments) but is
+  //   Receipt (money IN):  pocket DEBIT, parties CREDIT  (each party shown by name)
+  //   Payment (money OUT): parties DEBIT, pocket CREDIT
+  // One voucher can settle several parties at once (a customer paying against three
+  // invoices, one cash withdrawal paying five vendors): each party gets its own leg, and
+  // the single cash/bank leg carries their total so the entry still balances.
+  // Each party leg posts to a control account (AR for customers, AP for vendors) but is
   // *displayed* under the party's name so per-party reports match by account_name.
-  addPaymentReceipt: async ({ type, date, pocketAccount, partyControlAccount, partyName, amount, narration, companyId }) => {
+  // parties: [{ controlAccount, name, amount, narration? }, ...]
+  addPaymentReceipt: async ({ type, date, pocketAccount, parties, narration, companyId }) => {
     const isReceipt = type === 'Receipt';
     const voucherId = (isReceipt ? 'RV-' : 'PV-') + String(Date.now()).slice(-6);
-    const legs = isReceipt
-      ? [
-        { account: pocketAccount, debit: amount, credit: 0 },
-        { account: partyControlAccount, debit: 0, credit: amount, displayName: partyName },
-      ]
-      : [
-        { account: partyControlAccount, debit: amount, credit: 0, displayName: partyName },
-        { account: pocketAccount, debit: 0, credit: amount },
-      ];
+    const total = parties.reduce((s, p) => s + p.amount, 0);
+
+    const partyLegs = parties.map(p => ({
+      account: p.controlAccount,
+      debit:  isReceipt ? 0 : p.amount,
+      credit: isReceipt ? p.amount : 0,
+      displayName: p.name,
+      narration: p.narration || null,
+    }));
+    const pocketLeg = {
+      account: pocketAccount,
+      debit:  isReceipt ? total : 0,
+      credit: isReceipt ? 0 : total,
+    };
+
+    // Cash side first on a receipt, last on a payment — keeps the ledger reading
+    // debit-before-credit either way.
+    const legs = isReceipt ? [pocketLeg, ...partyLegs] : [...partyLegs, pocketLeg];
+
+    const verb = isReceipt ? 'Received from' : 'Paid to';
+    const summary = parties.length === 1
+      ? `${verb} ${parties[0].name}`
+      : `${verb} ${parties.length} parties`;
+
     await financeDb.postJournalEntry({
       voucherId, voucherType: type, date, companyId, legs,
-      narration: narration || `${isReceipt ? 'Received from' : 'Paid to'} ${partyName}`,
-      reference: partyName,
+      narration: narration || summary,
+      // A single-party voucher keeps the party name as its reference (existing
+      // behaviour); a multi-party one has no single party to name, so the legs group
+      // under the voucher id instead.
+      reference: parties.length === 1 ? parties[0].name : voucherId,
     });
-    return { voucherId };
+    return { voucherId, total };
   },
 
   // Posts a multi-leg double-entry journal: writes each leg to `vouchers` (so it shows
@@ -738,8 +760,79 @@ export const salesDb = {
     return { data: all, error: null };
   },
 
+  // Sold-item detail for a new order. `company_id` must be set explicitly on every row:
+  // the column defaults to 1 in the DB, so an omitted branch silently files the line
+  // under Shop #41 and it disappears from the branch that actually raised the order.
+  addSoLineItems: (items) =>
+    supabase.from('so_line_items').insert(items).select(),
+
   addSalesInvoice: (inv) =>
     supabase.from('sales_invoices').insert([inv]).select().single(),
+
+  // Posts a sales invoice to the ledger as a balanced double entry:
+  //   Accounts Receivable  DEBIT   grand_total   (shown under the customer's name)
+  //   Goods Sales          CREDIT  subtotal
+  //   <charge> (Income)    CREDIT  each non-zero charge
+  //
+  // Without this a dispatched invoice only ever touched the sales tables, so nothing
+  // reached `vouchers`/`voucher_lines` and no account balance moved — the invoice looked
+  // "posted" while the ledger and the customer's balance stayed empty.
+  //
+  // The account codes below are the real ones already in the chart of accounts. Any that
+  // a branch is missing get created on demand by ensureLedgerAccount, which is what makes
+  // this work in a branch whose chart was never fully imported.
+  postSalesInvoiceVoucher: async ({ invoice, companyId }) => {
+    const grandTotal = parseFloat(invoice.grand_total) || 0;
+    const subtotal   = parseFloat(invoice.subtotal) || 0;
+    if (grandTotal <= 0) return { voucherId: null };
+
+    const CHARGE_ACCOUNTS = [
+      { field: 'freight',           code: '10-02-002-000001', name: 'Freight Charges (Income)' },
+      { field: 'loading_unloading', code: '10-02-002-000002', name: 'Loading Unloading Charges (Income)' },
+      { field: 'packing',           code: '10-02-002-000003', name: 'Packing Charges' },
+      { field: 'toll_tax',          code: '10-02-002-000004', name: 'Toll Tax Charges (Income)' },
+      { field: 'slitting',          code: '10-02-002-000006', name: 'Slitting Charges (Income)' },
+    ];
+
+    const creditParts = [
+      { code: '10-01-001-000001', name: 'Goods Sales', parent: '10-01-001', amount: subtotal },
+      ...CHARGE_ACCOUNTS
+        .map(c => ({ ...c, parent: '10-02-002', amount: parseFloat(invoice[c.field]) || 0 }))
+        .filter(c => c.amount > 0),
+    ];
+
+    // Anything in grand_total that the named parts don't account for (an ad-hoc charge,
+    // a rounding difference) goes to Other Charges so the entry always balances rather
+    // than silently posting lopsided.
+    const namedTotal = creditParts.reduce((s, p) => s + p.amount, 0);
+    const remainder  = grandTotal - namedTotal;
+    if (Math.abs(remainder) > 0.005) {
+      creditParts.push({ code: '10-02-002-000005', name: 'Other Charges (Income)', parent: '10-02-002', amount: remainder });
+    }
+
+    const [arAccount, ...creditAccounts] = await Promise.all([
+      financeDb.ensureLedgerAccount({ code: '11-03-001-000001', name: 'Accounts Receivable', type: 'Asset', parent: '11-03-001', companyId }),
+      ...creditParts.map(p => financeDb.ensureLedgerAccount({ code: p.code, name: p.name, type: 'Income', parent: p.parent, companyId })),
+    ]);
+    if (!arAccount || creditAccounts.some(a => !a)) {
+      throw new Error('Could not resolve the ledger accounts for this invoice.');
+    }
+
+    const voucherId = invoice.sale_inv_id;
+    await financeDb.postJournalEntry({
+      voucherId,
+      voucherType: 'Sales',
+      date: invoice.date,
+      companyId,
+      legs: [
+        { account: arAccount, debit: grandTotal, credit: 0, displayName: invoice.customer_name },
+        ...creditAccounts.map((account, i) => ({ account, debit: 0, credit: creditParts[i].amount })),
+      ],
+      narration: `Sales invoice ${voucherId} — ${invoice.customer_name}`,
+      reference: voucherId,
+    });
+    return { voucherId };
+  },
 
   getSalesReturns: (companyId = 1) =>
     supabase.from('sales_returns').select('*').eq('company_id', companyId).order('return_date', { ascending: false }),

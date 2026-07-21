@@ -97,8 +97,8 @@ export default function NewPurchaseRequisitionModal({ open, onClose, onSave }) {
 
   const productOptions = (catalogue || []).map(c => ({
     value: c.id,
-    label: `${c.code} — ${c.name}`,
-    hint: c.unit,
+    label: c.name,
+    hint: c.code,
   }));
 
   const pdnOptions = (pdns || []).map(p => ({

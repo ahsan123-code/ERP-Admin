@@ -32,6 +32,7 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const selectedCustomer = customers.find(c => c.customer_id === form.customer_id);
+  const selectedProduct  = productCatalogue.find(p => String(p.id) === String(form.productId));
 
   const totalValue = form.qty && form.ratePerKg
     ? (parseFloat(form.qty) * parseFloat(form.ratePerKg)).toLocaleString('en-PK', { maximumFractionDigits: 0 })
@@ -45,20 +46,42 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
     }
     setSaving(true);
     try {
+      const soId  = 'SO-' + String(Date.now()).slice(-4).padStart(4, '0');
+      const qty   = parseFloat(form.qty);
+      const rate  = parseFloat(form.ratePerKg);
+      const total = qty * rate;
+
       const { data, error } = await salesDb.addSalesOrder({
-        so_id:         'SO-' + String(Date.now()).slice(-4).padStart(4, '0'),
+        so_id:         soId,
         customer_id:   form.customer_id,
         customer_name: selectedCustomer?.name ?? '—',
         order_date:    form.orderDate,
         delivery_date: form.deliveryDate,
         item_count:    1,
-        total_amount:  parseFloat(form.qty) * parseFloat(form.ratePerKg),
+        total_amount:  total,
         status:        'pending',
         company_id:    companyId,
       });
       if (error) throw new Error(error.message);
 
-      toast.success(`Sales order for ${selectedCustomer?.name} created.`, 'Order Created');
+      // Persist what was actually sold. Without this the product/qty/rate above are
+      // discarded and the order shows no item detail in the customer ledger — the order
+      // header alone can't say what was sold. Failing here must not lose the saved
+      // order, so it warns instead of throwing.
+      const { error: lineError } = await salesDb.addSoLineItems([{
+        so_id:       soId,
+        item_name:   selectedProduct ? `${selectedProduct.code} — ${selectedProduct.name}` : '—',
+        quantity:    qty,
+        unit:        selectedProduct?.unit || 'Kilo Grams',
+        unit_price:  rate,
+        total_price: total,
+        company_id:  companyId,
+      }]);
+      if (lineError) {
+        toast.error(`Order ${soId} saved, but its item detail could not be stored: ${lineError.message}`, 'Item Detail Not Saved');
+      } else {
+        toast.success(`Sales order for ${selectedCustomer?.name} created.`, 'Order Created');
+      }
       onSave(data);
       setForm({ customer_id: '', orderDate: today, deliveryDate: '', productId: '', qty: '', ratePerKg: '', remarks: '' });
       onClose();

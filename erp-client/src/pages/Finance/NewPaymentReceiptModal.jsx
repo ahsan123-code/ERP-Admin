@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
@@ -24,7 +25,11 @@ const CASH_POCKETS = [
 const AR = { code: '11-03-001-000001', name: 'Accounts Receivable', type: 'Asset', parent: '11-03-001' };
 const AP = { code: '14-01-001-000001', name: 'Accounts Payable', type: 'Liability', parent: '14-01-001' };
 
-const EMPTY = { date: today, pocket: '', party: '', amount: '', narration: '' };
+// One row of the voucher: which party, how much, and why. The cash/bank side lives on
+// the voucher header, not the line — a voucher moves money through one pocket only.
+const emptyLine = () => ({ party: '', amount: '', narration: '' });
+
+const EMPTY = { date: today, pocket: '', narration: '' };
 
 // mode: 'cash' = cash/wallet only (PV/RV), 'bank' = bank accounts only (BPV/BRV)
 export default function NewPaymentReceiptModal({ open, onClose, onSave, type = 'Receipt', mode = 'cash', bankAccounts = [], chartOfAccounts = [] }) {
@@ -34,12 +39,23 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
   const { data: vendors } = useDb(() => procurementDb.getVendors());
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(EMPTY);
+  const [lines, setLines] = useState([emptyLine()]);
 
   const isReceipt = type === 'Receipt';
 
-  useEffect(() => { if (open) setForm(EMPTY); }, [open, type]);
+  useEffect(() => {
+    if (!open) return;
+    setForm(EMPTY);
+    setLines([emptyLine()]);
+  }, [open, type]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const setLine = (i, key, value) =>
+    setLines(prev => prev.map((l, idx) => idx === i ? { ...l, [key]: value } : l));
+
+  const addLine = () => setLines(prev => [...prev, emptyLine()]);
+  const removeLine = (i) => setLines(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev);
 
   // Pocket dropdown — cash/wallet for PV/RV, bank accounts for BPV/BRV
   const pocketOptions = mode === 'bank'
@@ -53,13 +69,28 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
   ];
 
   const selectedPocket = pocketOptions.find(o => o.value === form.pocket);
-  const selectedParty = partyOptions.find(o => o.value === form.party);
-  const amountNum = parseFloat(form.amount) || 0;
+
+  // Lines the user has actually filled in — a half-typed row at the bottom is ignored
+  // rather than treated as an error.
+  const filledLines = lines
+    .map(l => ({ ...l, amountNum: parseFloat(l.amount) || 0 }))
+    .filter(l => l.party && l.amountNum > 0);
+  const total = filledLines.reduce((s, l) => s + l.amountNum, 0);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.pocket || !form.party || amountNum <= 0) {
-      toast.error('Pick an account, a party, and an amount.');
+    if (!form.pocket) {
+      toast.error(isReceipt ? 'Pick the account the money came into.' : 'Pick the account the money was paid from.');
+      return;
+    }
+    if (!filledLines.length) {
+      toast.error('Add at least one line with a party and an amount.');
+      return;
+    }
+    // A row with an amount but no party (or vice-versa) is a mistake, not an empty row.
+    const halfFilled = lines.some(l => (!!l.party) !== ((parseFloat(l.amount) || 0) > 0));
+    if (halfFilled) {
+      toast.error('Every line needs both a party and an amount.');
       return;
     }
     setSaving(true);
@@ -76,27 +107,42 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
         pocketAccount = financeDb.bankCodeToAccount(chartOfAccounts, bankId) || await financeDb.ensureBankLedgerAccount(bank, companyId);
       }
 
-      // Resolve the party control account (AR for customers, AP for vendors)
-      const isVendor = form.party.startsWith('vend:');
-      const ctl = isVendor ? AP : AR;
-      const partyControlAccount = await financeDb.ensureLedgerAccount({ ...ctl, companyId });
-
-      if (!pocketAccount || !partyControlAccount) {
+      if (!pocketAccount) {
         throw new Error('Could not resolve a ledger account for this entry.');
       }
+
+      // Resolve the control accounts once (AR for customers, AP for vendors) rather than
+      // per line — a voucher with ten customer lines still only needs AR looked up once.
+      const needsAR = filledLines.some(l => l.party.startsWith('cust:'));
+      const needsAP = filledLines.some(l => l.party.startsWith('vend:'));
+      const [arAccount, apAccount] = await Promise.all([
+        needsAR ? financeDb.ensureLedgerAccount({ ...AR, companyId }) : null,
+        needsAP ? financeDb.ensureLedgerAccount({ ...AP, companyId }) : null,
+      ]);
+      if ((needsAR && !arAccount) || (needsAP && !apAccount)) {
+        throw new Error('Could not resolve the receivable/payable control account.');
+      }
+
+      const parties = filledLines.map(l => ({
+        controlAccount: l.party.startsWith('vend:') ? apAccount : arAccount,
+        name: partyOptions.find(o => o.value === l.party).label,
+        amount: l.amountNum,
+        narration: l.narration.trim() || null,
+      }));
 
       const { voucherId } = await financeDb.addPaymentReceipt({
         type,
         date: form.date,
         pocketAccount,
-        partyControlAccount,
-        partyName: selectedParty.label,
-        amount: amountNum,
+        parties,
         narration: form.narration.trim(),
         companyId,
       });
 
-      toast.success(`${isReceipt ? 'Receipt' : 'Payment'} voucher ${voucherId} posted.`, isReceipt ? 'Receipt Recorded' : 'Payment Recorded');
+      toast.success(
+        `${isReceipt ? 'Receipt' : 'Payment'} voucher ${voucherId} posted — ${formatCurrency(total)} across ${parties.length} ${parties.length === 1 ? 'line' : 'lines'}.`,
+        isReceipt ? 'Receipt Recorded' : 'Payment Recorded',
+      );
       onSave();
       onClose();
     } catch (err) {
@@ -106,17 +152,22 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
     }
   };
 
-  // Live double-entry preview legs
-  const preview = selectedPocket && selectedParty && amountNum > 0
-    ? (isReceipt
-      ? [
-        { name: selectedPocket.label, dr: amountNum, cr: 0 },
-        { name: selectedParty.label, dr: 0, cr: amountNum },
-      ]
-      : [
-        { name: selectedParty.label, dr: amountNum, cr: 0 },
-        { name: selectedPocket.label, dr: 0, cr: amountNum },
-      ])
+  // Live double-entry preview: one leg per filled line, plus the single cash/bank leg
+  // carrying their total.
+  const preview = selectedPocket && filledLines.length
+    ? (() => {
+      const partyLegs = filledLines.map(l => ({
+        name: partyOptions.find(o => o.value === l.party)?.label || '—',
+        dr: isReceipt ? 0 : l.amountNum,
+        cr: isReceipt ? l.amountNum : 0,
+      }));
+      const pocketLeg = {
+        name: selectedPocket.label,
+        dr: isReceipt ? total : 0,
+        cr: isReceipt ? 0 : total,
+      };
+      return isReceipt ? [pocketLeg, ...partyLegs] : [...partyLegs, pocketLeg];
+    })()
     : null;
 
   return (
@@ -133,12 +184,16 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
           ? (isReceipt ? 'Record money received into a bank account' : 'Record money paid out of a bank account')
           : (isReceipt ? 'Record money received into a cash/bank account' : 'Record money paid out of a cash/bank account')
       }
-      size="md"
+      size="lg"
       footer={
         <div className="factions">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? 'Posting…' : isReceipt ? 'Post Receipt' : 'Post Payment'}
+          <Button variant="primary" onClick={handleSubmit} disabled={saving || !filledLines.length}>
+            {saving
+              ? 'Posting…'
+              : filledLines.length
+                ? `${isReceipt ? 'Post Receipt' : 'Post Payment'} — ${formatCurrency(total)}`
+                : (isReceipt ? 'Post Receipt' : 'Post Payment')}
           </Button>
         </div>
       }
@@ -162,17 +217,60 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
           </SelectField>
         </div>
         <div className="ff">
-          <SearchableSelect
-            label={isReceipt ? 'Receive From (Party) *' : 'Pay To (Party) *'}
-            placeholder="Search customer or vendor…"
-            emptyText="No parties found"
-            value={form.party}
-            onChange={(val) => setForm(f => ({ ...f, party: val }))}
-            options={partyOptions}
-          />
+          <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
+            {isReceipt ? 'Received From' : 'Paid To'} — add a line per party
+          </label>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: 8, padding: '0 2px 6px', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            <span>Party</span><span>Narration</span>
+            <span style={{ textAlign: 'right' }}>Amount</span>
+            <span />
+          </div>
+
+          {lines.map((l, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <SearchableSelect
+                placeholder="Search customer or vendor…"
+                emptyText="No parties found"
+                value={l.party}
+                onChange={(val) => setLine(i, 'party', val)}
+                options={partyOptions}
+              />
+              <Input placeholder="Invoice / reason" value={l.narration} onChange={e => setLine(i, 'narration', e.target.value)} />
+              <Input type="number" min="0" step="0.01" placeholder="0.00" value={l.amount} onChange={e => setLine(i, 'amount', e.target.value)} />
+              <button
+                type="button"
+                onClick={() => removeLine(i)}
+                disabled={lines.length <= 1}
+                title={lines.length <= 1 ? 'A voucher needs at least one line' : 'Remove line'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 30, height: 30, borderRadius: 6, cursor: lines.length <= 1 ? 'not-allowed' : 'pointer',
+                  border: '1px solid var(--border-subtle)', background: 'transparent',
+                  color: lines.length <= 1 ? 'var(--text-tertiary)' : 'var(--red, #ef4444)',
+                  opacity: lines.length <= 1 ? 0.4 : 1,
+                }}
+              >
+                <Trash2 size={13} strokeWidth={2} />
+              </button>
+            </div>
+          ))}
+
+          <Button type="button" variant="secondary" size="sm" icon={<Plus size={14} />} onClick={addLine} style={{ marginTop: 2 }}>
+            Add Line
+          </Button>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-subtle)', fontSize: 13, fontWeight: 700 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>{isReceipt ? 'Total Received' : 'Total Paid'}</span>
+            <span />
+            <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatCurrency(total)}</span>
+            <span />
+          </div>
         </div>
-        <Input label="Amount (PKR) *" type="number" min="0.01" step="0.01" value={form.amount} onChange={set('amount')} placeholder="0.00" required />
-        <Input label="Narration" value={form.narration} onChange={set('narration')} placeholder="Reason / reference" />
+
+        <div className="ff">
+          <Input label="Narration" value={form.narration} onChange={set('narration')} placeholder="Applies to the whole voucher — lines can have their own" />
+        </div>
 
         {preview && (
           <div className="ff" style={{ marginTop: 4 }}>
@@ -191,9 +289,9 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
                 </div>
               ))}
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', padding: '8px 12px', fontSize: 13, fontWeight: 700, background: 'var(--bg-tertiary)' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Totals (balanced ✓)</span>
-                <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatCurrency(amountNum)}</span>
-                <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatCurrency(amountNum)}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Totals (balanced)</span>
+                <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatCurrency(total)}</span>
+                <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatCurrency(total)}</span>
               </div>
             </div>
           </div>

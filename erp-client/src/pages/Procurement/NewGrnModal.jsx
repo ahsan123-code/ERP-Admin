@@ -146,7 +146,7 @@ export default function NewGrnModal({ open, onClose, onSave }) {
     value: g.gp_id, label: `${g.gp_id} — ${g.vehicle_no || 'No vehicle'}`, hint: g.driver_name,
   }));
   const productOptions = (catalogue || []).map(c => ({
-    value: c.id, label: `${c.code} — ${c.name}`, hint: c.unit,
+    value: c.id, label: c.name, hint: c.code,
   }));
   const warehouseOptions = (warehouses || []).map(w => ({ value: w.name || w.id, label: w.name }));
 
