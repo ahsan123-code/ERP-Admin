@@ -309,7 +309,23 @@ export default function Invoicing() {
     setSubmitting(p => ({ ...p, [invoice.invoice_id]: true }));
     setSubmitResults(p => ({ ...p, [invoice.invoice_id]: null }));
     try {
-      const result = await submitInvoice(invoice, [], { invoiceType: 1, paymentMode: 1 });
+      // Send what was actually invoiced. Passing an empty array makes the server
+      // fall back to one synthetic "Steel Products" line, which is wrong for any
+      // multi-item invoice and gets the whole bill a single PCT code.
+      // totalPrice must be tax-inclusive — the payload builder backs the sale
+      // value out of it using the line's own rate.
+      const { data: items } = await invoicingDb.getInvoiceItems(invoice.invoice_id);
+      const lineItems = (items || []).map(it => ({
+        itemCode:   it.item_code,
+        itemName:   it.item_name,
+        category:   it.category || 'Steel',
+        quantity:   parseFloat(it.quantity) || 0,
+        totalPrice: parseFloat(it.total_price) || 0,
+        taxRate:    parseFloat(it.tax_rate) || 0,
+        discount:   0,
+      }));
+
+      const result = await submitInvoice(invoice, lineItems, { invoiceType: 1, paymentMode: 1 });
       setSubmitResults(p => ({ ...p, [invoice.invoice_id]: result }));
       if (result.success) {
         setFbrInvoiceList(prev => prev.map(inv =>

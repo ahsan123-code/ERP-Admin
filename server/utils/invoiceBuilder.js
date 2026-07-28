@@ -16,22 +16,26 @@ function buildInvoicePayload(invoice, lineItems, options = {}) {
     refUSIN = '',
   } = options;
 
-  const taxRate = DEFAULT_TAX_RATE;
-
   const items = lineItems.map(line => {
-    const saleValue   = parseFloat((line.totalPrice / (1 + taxRate / 100)).toFixed(2));
-    const taxCharged  = parseFloat((line.totalPrice - saleValue).toFixed(2));
-    const totalAmount = parseFloat(line.totalPrice.toFixed(2));
-    const pctCode     = getPctCode(line.itemName, line.category || '');
+    // Per-line rate, because a zero-rated or exempt invoice must not have 18%
+    // backed out of its totals. Falls back to the default for callers that don't
+    // supply one (legacy invoices, the synthetic single-line fallback).
+    const taxRate     = line.taxRate ?? DEFAULT_TAX_RATE;
+    const totalPrice  = parseFloat(line.totalPrice) || 0;
+    const saleValue   = parseFloat((totalPrice / (1 + taxRate / 100)).toFixed(2));
+    const taxCharged  = parseFloat((totalPrice - saleValue).toFixed(2));
+    const totalAmount = parseFloat(totalPrice.toFixed(2));
+    const itemName    = line.itemName || '';
+    const pctCode     = getPctCode(itemName, line.category || '');
 
     return {
-      ItemCode:    line.itemCode || line.itemName.substring(0, 20),
-      ItemName:    line.itemName,
+      ItemCode:    line.itemCode || itemName.substring(0, 20),
+      ItemName:    itemName,
       PCTCode:     pctCode,
-      Quantity:    parseFloat(line.quantity),
+      Quantity:    parseFloat(line.quantity) || 0,
       TaxRate:     taxRate,
       SaleValue:   saleValue,
-      Discount:    parseFloat((line.discount || 0).toFixed(2)),
+      Discount:    parseFloat((parseFloat(line.discount) || 0).toFixed(2)),
       FurtherTax:  0.00,
       TaxCharged:  taxCharged,
       TotalAmount: totalAmount,

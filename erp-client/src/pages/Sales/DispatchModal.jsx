@@ -5,7 +5,10 @@ import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { salesDb } from '../../lib/db';
+import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
+import { formatCurrency } from '../../utils/format';
+import styles from '../Procurement/NewPDNModal.module.css';
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -32,6 +35,15 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
   }, [open, workOrder]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  // The order's items, so the invoice this dispatch generates can state what was
+  // sold instead of a bare subtotal. A multi-item order used to lose every line
+  // at this point, because nothing was carried from the order onto the invoice.
+  const soRef = workOrder?.so_ref;
+  const { data: orderLines } = useDb(
+    () => salesDb.getSoLineItems(soRef ? [soRef] : []),
+    [soRef],
+  );
 
   const subtotal = order?.total_amount ?? 0;
   const charges = ['freight', 'loading_unloading', 'packing', 'toll_tax', 'slitting']
@@ -90,6 +102,32 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
         company_id:         companyId,
       });
       if (invErr) throw new Error(invErr.message);
+
+      // Copy the order's items onto the invoice. Snapshotting rather than joining
+      // back to so_line_items keeps the invoice truthful if the order is edited
+      // afterwards — an issued invoice must not change retroactively.
+      if (orderLines.length > 0) {
+        const { error: itemErr } = await salesDb.addSalesInvoiceItems(
+          orderLines.map((l, i) => ({
+            sale_inv_id: invoice.sale_inv_id,
+            line_no:     l.line_no ?? i + 1,
+            item_name:   l.item_name,
+            unit:        l.unit  || null,
+            gauge:       l.gauge || null,
+            size:        l.size  || null,
+            quantity:    parseFloat(l.quantity) || 0,
+            unit_price:  parseFloat(l.unit_price) || 0,
+            total_price: parseFloat(l.total_price) || (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_price) || 0),
+            company_id:  companyId,
+          }))
+        );
+        if (itemErr) {
+          toast.error(
+            `Invoice ${invoice.sale_inv_id} was created, but its item detail could not be saved: ${itemErr.message}`,
+            'Item Detail Not Saved',
+          );
+        }
+      }
 
       // Post the invoice to the ledger (AR debit / sales + charges credit). The invoice
       // row is already saved by this point, so a posting failure must not discard it —
@@ -158,6 +196,29 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
         <Input label="Packing (PKR)"           type="number" min="0" value={form.packing}           onChange={set('packing')} />
         <Input label="Toll Tax (PKR)"          type="number" min="0" value={form.toll_tax}          onChange={set('toll_tax')} />
         <Input label="Slitting (PKR)"          type="number" min="0" value={form.slitting}          onChange={set('slitting')} />
+
+        <div className="ff">
+          <span className={styles.itemsLabel}>
+            Items Being Invoiced
+            <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8 }}>
+              from order {soRef} — edit the order to change these
+            </span>
+          </span>
+          <div className={styles.lineList} style={{ marginTop: 0 }}>
+            {orderLines.length === 0
+              ? <p className={styles.emptyLines}>This order has no stored item detail — the invoice will carry totals only.</p>
+              : orderLines.map((l, i) => (
+                <div key={i} className={styles.lineRow}>
+                  <span className={styles.lineName}>{l.item_name}</span>
+                  <span className={styles.lineQty}>{l.quantity} {l.unit}</span>
+                  <span className={styles.lineQty}>@ {formatCurrency(l.unit_price)}</span>
+                  <span className={styles.lineQty} style={{ color: 'var(--green)' }}>
+                    {formatCurrency(l.total_price || (l.quantity || 0) * (l.unit_price || 0))}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
 
         <div className="ff" style={{ display: 'flex', gap: 24, fontSize: 13, background: 'var(--bg-tertiary)', padding: '10px 14px', borderRadius: 'var(--radius-md)' }}>
           <span>Subtotal: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>PKR {subtotal.toLocaleString('en-PK')}</strong></span>

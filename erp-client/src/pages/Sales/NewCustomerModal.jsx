@@ -22,10 +22,13 @@ const PAYMENT_TERMS = [
   'Cash', 'Net 7', 'Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90',
 ];
 
+const today = new Date().toISOString().split('T')[0];
+
 const EMPTY = {
   name: '', contact: '', ntn: '', cnic: '',
   region: '', address: '', credit_limit: '',
   customer_type: '', payment_terms: 'Cash',
+  opening_balance: '', opening_balance_date: today,
 };
 
 export default function NewCustomerModal({ open, onClose, onSave }) {
@@ -36,6 +39,8 @@ export default function NewCustomerModal({ open, onClose, onSave }) {
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
+  const openingBalance = parseFloat(form.opening_balance) || 0;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) { toast.error('Customer name is required.'); return; }
@@ -44,6 +49,7 @@ export default function NewCustomerModal({ open, onClose, onSave }) {
 
     setSaving(true);
     const customerId = 'CUST-' + String(Date.now()).slice(-6);
+    const openingBalance = parseFloat(form.opening_balance) || 0;
     const payload = {
       customer_id:         customerId,
       name:                form.name.trim(),
@@ -53,17 +59,50 @@ export default function NewCustomerModal({ open, onClose, onSave }) {
       region:              form.region,
       address:             form.address.trim() || null,
       credit_limit:        form.credit_limit ? parseFloat(form.credit_limit) : 0,
-      outstanding_balance: 0,
+      opening_balance:     openingBalance,
+      opening_balance_date: openingBalance !== 0 ? form.opening_balance_date : null,
+      // Seeded from the opening balance so the customer list shows what they owe
+      // from day one. Once invoices exist the balance report derives the figure
+      // from ledger activity instead, so this is not double-counted.
+      outstanding_balance: openingBalance,
       status:              'active',
       company_id:          companyId,
     };
 
     const { data, error } = await salesDb.addCustomer(payload);
+
+    if (error) {
+      setSaving(false);
+      toast.error(error.message || 'Failed to save customer.');
+      return;
+    }
+
+    // Post the brought-forward balance to the ledger. The customer row is already
+    // saved, so a posting failure must not discard it — warn instead, because an
+    // unposted opening balance has to be corrected by hand.
+    let postingError = null;
+    if (openingBalance !== 0) {
+      try {
+        await salesDb.postCustomerOpeningBalance({
+          customerName: form.name.trim(),
+          amount:       openingBalance,
+          date:         form.opening_balance_date,
+          companyId,
+        });
+      } catch (err) {
+        postingError = err;
+      }
+    }
     setSaving(false);
 
-    if (error) { toast.error(error.message || 'Failed to save customer.'); return; }
-
-    toast.success(`${form.name} added to customer list.`, 'Customer Added');
+    if (postingError) {
+      toast.error(
+        `${form.name} was added, but the opening balance could not be posted to the ledger: ${postingError.message}`,
+        'Opening Balance Not Posted',
+      );
+    } else {
+      toast.success(`${form.name} added to customer list.`, 'Customer Added');
+    }
     onSave(data ?? payload);
     setForm(EMPTY);
     onClose();
@@ -154,12 +193,46 @@ export default function NewCustomerModal({ open, onClose, onSave }) {
           placeholder="0  —  leave blank for cash only"
         />
 
+        {/* Opening balance — for customers carried over from the old system */}
+        <Input
+          label="Opening Balance (PKR)"
+          type="number"
+          step="0.01"
+          value={form.opening_balance}
+          onChange={set('opening_balance')}
+          placeholder="0  —  amount already owed"
+        />
+
+        {openingBalance !== 0 && (
+          <Input
+            label="Balance As Of *"
+            type="date"
+            value={form.opening_balance_date}
+            onChange={set('opening_balance_date')}
+            required
+          />
+        )}
+
         {/* Info note — full width */}
         <div className="ff" style={{
           fontSize: 11.5, color: 'var(--text-muted)', background: 'var(--bg-tertiary)',
           padding: '9px 13px', borderRadius: 'var(--radius-md)', lineHeight: 1.6,
         }}>
           NTN is required for FBR sales tax invoices. Credit limit of 0 means cash-only customer.
+          {openingBalance > 0 && (
+            <>
+              <br />
+              Opening balance of <strong style={{ color: 'var(--blue)' }}>PKR {openingBalance.toLocaleString('en-PK')}</strong> will
+              be posted to the ledger as a debit to Accounts Receivable — this customer starts out owing you that amount.
+            </>
+          )}
+          {openingBalance < 0 && (
+            <>
+              <br />
+              A negative opening balance means the customer is <strong style={{ color: 'var(--green)' }}>in credit</strong> by
+              PKR {Math.abs(openingBalance).toLocaleString('en-PK')} — you owe them, e.g. an advance already paid.
+            </>
+          )}
         </div>
 
       </form>

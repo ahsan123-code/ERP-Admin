@@ -352,27 +352,51 @@ function IncomeStatement({ chartOfAccounts }) {
 }
 
 /* ── Customer Sales Ledger ──────────────────────────────────────────── */
-function CustomerLedger({ salesInvoices }) {
-  const customerNames = useMemo(
-    () => [...new Set(salesInvoices.map(i => i.customer_name).filter(Boolean))],
-    [salesInvoices]
-  );
+function CustomerLedger({ salesInvoices, customers = [] }) {
+  // Every registered customer, not only those who already have an invoice. A newly
+  // added customer — especially one carried over with an opening balance — has no
+  // invoices yet, and building this list from invoices alone made them unselectable
+  // so their balance was impossible to view.
+  const customerNames = useMemo(() => {
+    const names = new Set(salesInvoices.map(i => i.customer_name).filter(Boolean));
+    (customers || []).forEach(c => { if (c.name) names.add(c.name); });
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [salesInvoices, customers]);
+
   const [customer, setCustomer] = useState('');
   const [fromDate, setFrom] = useState('');
   const [toDate,   setTo]   = useState('');
 
-  // Default to the first customer once invoice data has loaded.
+  // Default to the first customer once data has loaded.
   useEffect(() => {
     setCustomer(c => c || customerNames[0] || '');
   }, [customerNames]);
 
-  const invs = useMemo(() => salesInvoices.filter(i => {
-    if (i.customer_name !== customer) return false;
-    const d = (i.date || '').slice(0, 10);
+  const inRange = (dateStr) => {
+    const d = (dateStr || '').slice(0, 10);
     if (fromDate && d < fromDate) return false;
     if (toDate   && d > toDate)   return false;
     return true;
+  };
+
+  const invs = useMemo(() => salesInvoices.filter(i => {
+    if (i.customer_name !== customer) return false;
+    return inRange(i.date);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [salesInvoices, customer, fromDate, toDate]);
+
+  // Brought-forward balance, shown as the first row so the ledger opens from the
+  // customer's real starting position rather than from zero.
+  const openingRow = useMemo(() => {
+    const c = (customers || []).find(x => x.name === customer);
+    const amount = parseFloat(c?.opening_balance) || 0;
+    if (amount === 0) return null;
+    if (c.opening_balance_date && !inRange(c.opening_balance_date)) return null;
+    return { amount, date: c.opening_balance_date };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customers, customer, fromDate, toDate]);
+
+  const openingAmount = openingRow?.amount || 0;
 
   // Pull the sold-item detail (item name + size + rate) for this customer's orders.
   const soRefs = useMemo(() => invs.map(i => i.so_ref).filter(Boolean), [invs]);
@@ -388,14 +412,30 @@ function CustomerLedger({ salesInvoices }) {
     return map;
   }, [lineItems]);
 
-  const grandTotal = invs.reduce((s, i) => s + (i.grand_total || 0), 0);
+  const grandTotal = openingAmount + invs.reduce((s, i) => s + (i.grand_total || 0), 0);
 
   const handlePrint = () => {
     if (!customer) return;
-    const rows = invs.map(inv => {
+    const openingHtml = openingRow
+      ? `<tr>
+          <td>${openingRow.date ? formatDate(openingRow.date) : '—'}</td>
+          <td><strong>Opening Balance</strong></td>
+          <td>Brought forward</td>
+          <td>—</td>
+          <td class="right">—</td>
+          <td class="right">—</td>
+          <td class="right">—</td>
+          <td class="right">${formatCurrency(openingRow.amount)}</td>
+          <td>—</td>
+        </tr>`
+      : '';
+    const rows = openingHtml + invs.map(inv => {
       const items = itemsByRef[inv.so_ref] || [];
       const itemText = items.length
         ? items.map(li => `${li.item_name || '—'}${li.quantity > 0 ? ` · ${li.quantity} ${li.unit || ''}` : ''}`).join('<br>')
+        : '—';
+      const specText = items.length
+        ? items.map(li => [li.size, li.gauge].filter(Boolean).join(' · ') || '—').join('<br>')
         : '—';
       const rateText = items.length
         ? items.map(li => li.unit_price > 0 ? formatCurrency(li.unit_price) : '—').join('<br>')
@@ -404,6 +444,7 @@ function CustomerLedger({ salesInvoices }) {
         <td>${formatDate(inv.date)}</td>
         <td>${inv.sale_inv_id || '—'}</td>
         <td>${itemText}</td>
+        <td>${specText}</td>
         <td class="right">${rateText}</td>
         <td class="right">${formatCurrency(inv.subtotal)}</td>
         <td class="right">${formatCurrency(inv.total_charges || 0)}</td>
@@ -426,9 +467,9 @@ function CustomerLedger({ salesInvoices }) {
       <div class="ttl">Customer Sales Ledger</div>
       <div class="meta">Customer: <strong>${customer}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}</div>
       <table>
-        <thead><tr><th>Date</th><th>Invoice No.</th><th>Item / Size</th><th class="right">Rate</th><th class="right">Subtotal</th><th class="right">Charges</th><th class="right">Grand Total</th><th>Status</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="8" style="text-align:center;padding:20px;color:#666">No invoices for selected period</td></tr>'}</tbody>
-        <tfoot><tr><td colspan="6" class="right">Total</td><td class="right">${formatCurrency(grandTotal)}</td><td></td></tr></tfoot>
+        <thead><tr><th>Date</th><th>Invoice No.</th><th>Item</th><th>Size / Gauge</th><th class="right">Rate</th><th class="right">Subtotal</th><th class="right">Charges</th><th class="right">Grand Total</th><th>Status</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:#666">No invoices for selected period</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="7" class="right">Total</td><td class="right">${formatCurrency(grandTotal)}</td><td></td></tr></tfoot>
       </table>
       <p class="footer">Printed: ${new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</p>
       </body></html>`);
@@ -463,10 +504,24 @@ function CustomerLedger({ salesInvoices }) {
       </div>
       <div className={styles.reportTable}>
         <table className={styles.tbl}>
-          <thead><tr><th>Date</th><th>Invoice No.</th><th>Item / Size</th><th className={styles.right}>Rate</th><th className={styles.right}>Subtotal</th><th className={styles.right}>Charges</th><th className={styles.right}>Grand Total</th><th>Status</th><th className={styles.right}>AG-DAYS</th></tr></thead>
+          <thead><tr><th>Date</th><th>Invoice No.</th><th>Item</th><th>Size / Gauge</th><th className={styles.right}>Rate</th><th className={styles.right}>Subtotal</th><th className={styles.right}>Charges</th><th className={styles.right}>Grand Total</th><th>Status</th><th className={styles.right}>AG-DAYS</th></tr></thead>
           <tbody>
-            {invs.length === 0
-              ? <tr><td colSpan={9} style={{ textAlign:'center', padding:'20px', color:'#666' }}>No invoices found</td></tr>
+            {openingRow && (
+              <tr>
+                <td className={styles.code}>{openingRow.date ? formatDate(openingRow.date) : '—'}</td>
+                <td><strong>Opening Balance</strong></td>
+                <td><span style={{ color: 'var(--text-tertiary)' }}>Brought forward</span></td>
+                <td><span className={styles.nil}>—</span></td>
+                <td className={styles.right}><span className={styles.nil}>—</span></td>
+                <td className={styles.right}><span className={styles.nil}>—</span></td>
+                <td className={styles.right}><span className={styles.nil}>—</span></td>
+                <td className={styles.right}><span className={`${styles.mono} ${styles.total}`}>{formatCurrency(openingRow.amount)}</span></td>
+                <td><Badge variant="neutral">Opening</Badge></td>
+                <td className={styles.right}><span className={styles.nil}>—</span></td>
+              </tr>
+            )}
+            {invs.length === 0 && !openingRow
+              ? <tr><td colSpan={10} style={{ textAlign:'center', padding:'20px', color:'#666' }}>No invoices found</td></tr>
               : invs.map(inv => {
                 const days = agDays(inv.date);
                 const dayVariant = days > 60 ? 'error' : days > 30 ? 'warning' : 'neutral';
@@ -488,6 +543,18 @@ function CustomerLedger({ salesInvoices }) {
                           </div>
                         ))}
                     </td>
+                    <td>
+                      {/* Gauge and size as their own column. Older rows kept both
+                          baked into item_name, so they read as "—" here rather
+                          than being parsed back out of free text. */}
+                      {items.length === 0
+                        ? <span className={styles.nil}>—</span>
+                        : items.map((li, idx) => (
+                          <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+                            {[li.size, li.gauge].filter(Boolean).join(' · ') || <span className={styles.nil}>—</span>}
+                          </div>
+                        ))}
+                    </td>
                     <td className={styles.right}>
                       {items.length === 0
                         ? <span className={styles.nil}>—</span>
@@ -505,10 +572,10 @@ function CustomerLedger({ salesInvoices }) {
                   </tr>
                 );
               })}
-            {invs.length > 0 && (
+            {(invs.length > 0 || openingRow) && (
               <tr className={styles.totalRow}>
-                <td colSpan={6}><strong>Total</strong></td>
-                <td className={styles.right}><strong className={styles.mono}>{formatCurrency(invs.reduce((s, i) => s + (i.grand_total||0), 0))}</strong></td>
+                <td colSpan={7}><strong>{openingRow ? 'Total (incl. opening)' : 'Total'}</strong></td>
+                <td className={styles.right}><strong className={styles.mono}>{formatCurrency(grandTotal)}</strong></td>
                 <td colSpan={2}></td>
               </tr>
             )}
@@ -744,9 +811,18 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
       const lastPay = custPay[0];
       const totalPaid = custPay.reduce((s, v) => s + (parseFloat(v.credit) || 0), 0);
 
-      // Derived balance: total invoiced minus total paid
-      const derivedBalance = totalInvoiced - totalPaid;
-      // Fall back to outstanding_balance if no invoice data exists
+      // Brought-forward balance for a customer carried over from the old system.
+      const opening = parseFloat(c.opening_balance) || 0;
+
+      // Derived balance: what they were brought in owing, plus everything invoiced
+      // since, less everything paid. The opening figure has to be *added* here —
+      // treating it as a fallback would make it vanish the moment the customer's
+      // first invoice was raised.
+      const derivedBalance = opening + totalInvoiced - totalPaid;
+
+      // With no invoices there is nothing to derive from, so fall back to the
+      // stored outstanding_balance. This is what keeps legacy imported customers
+      // (opening_balance 0, outstanding_balance populated) reporting correctly.
       const balance = totalInvoiced > 0 ? derivedBalance : (parseFloat(c.outstanding_balance) || 0);
 
       return {
@@ -754,6 +830,7 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
         name:                 c.name,
         contact:              c.contact,
         balance,
+        opening_balance:      opening,
         total_invoiced:       totalInvoiced,
         total_paid:           totalPaid,
         last_payment_date:    lastPay?.date        || null,
@@ -1214,22 +1291,57 @@ function VendorLedger({ vendors }) {
     return out;
   }, [rawVouchers]);
 
+  // What each bill on this ledger was actually for. Purchase vouchers are posted
+  // with the bill id as their voucher_id, so that is what joins them back to
+  // purchase_invoice_items. Payments and other voucher types have no items and
+  // simply read as "—".
+  const billIds = useMemo(
+    () => entries.filter(e => e.voucher_type === 'Purchase').map(e => e.reference || e.voucher_id),
+    [entries]
+  );
+  const billIdsKey = billIds.join(',');
+  const { data: billItems } = useDb(
+    () => procurementDb.getPurchaseInvoiceItemsBulk(billIds),
+    [billIdsKey]
+  );
+  const itemsByBill = useMemo(() => {
+    const map = {};
+    (billItems || []).forEach(li => { (map[li.bill_id] ||= []).push(li); });
+    return map;
+  }, [billItems]);
+
+  const lineSpec = (li) => [li.size, li.gauge].filter(Boolean).join(' · ');
+  const itemsFor = (e) => (e.voucher_type === 'Purchase'
+    ? itemsByBill[e.reference || e.voucher_id] || []
+    : []);
+
   const totalDr  = entries.reduce((s, e) => s + (parseFloat(e.debit)  || 0), 0);
   const totalCr  = entries.reduce((s, e) => s + (parseFloat(e.credit) || 0), 0);
   const closeBal = entries[entries.length - 1]?.balance ?? 0;
 
   const handlePrint = () => {
     if (!vendor) return;
-    const rows = entries.map(e => `
+    const rows = entries.map(e => {
+      const items = itemsFor(e);
+      const itemText = items.length
+        ? items.map(li => `${li.item_name || '—'}${li.quantity > 0 ? ` · ${li.quantity} ${li.unit || ''}` : ''}`).join('<br>')
+        : '—';
+      const specText = items.length
+        ? items.map(li => lineSpec(li) || '—').join('<br>')
+        : '—';
+      return `
       <tr>
         <td>${formatDate((e.date || '').slice(0, 10))}</td>
         <td>${e.voucher_id || '—'}</td>
         <td>${e.voucher_type || '—'}</td>
         <td>${e.narration || '—'}</td>
+        <td>${itemText}</td>
+        <td>${specText}</td>
         <td class="right">${e.debit  > 0 ? formatCurrency(e.debit)  : '—'}</td>
         <td class="right">${e.credit > 0 ? formatCurrency(e.credit) : '—'}</td>
         <td class="right">${formatCurrency(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
     const win = window.open('', '_blank', 'width=900,height=720');
     win.document.write(`<!DOCTYPE html><html><head><title>Vendor Ledger — ${vendor}</title>
       <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;padding:24px;color:#000}
@@ -1245,9 +1357,9 @@ function VendorLedger({ vendors }) {
       <div class="ttl">Vendor Ledger</div>
       <div class="meta">Vendor: <strong>${vendor}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}</div>
       <table>
-        <thead><tr><th>Date</th><th>Voucher</th><th>Type</th><th>Narration</th><th class="right">Debit</th><th class="right">Credit</th><th class="right">Balance</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="7" style="text-align:center;padding:20px;color:#666">No entries for selected period</td></tr>'}</tbody>
-        <tfoot><tr><td colspan="4" class="right">Totals</td>
+        <thead><tr><th>Date</th><th>Voucher</th><th>Type</th><th>Narration</th><th>Item</th><th>Size / Gauge</th><th class="right">Debit</th><th class="right">Credit</th><th class="right">Balance</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:#666">No entries for selected period</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="6" class="right">Totals</td>
           <td class="right">${formatCurrency(totalDr)}</td>
           <td class="right">${formatCurrency(totalCr)}</td>
           <td class="right">${formatCurrency(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}</td>
@@ -1295,6 +1407,7 @@ function VendorLedger({ vendors }) {
             <thead>
               <tr>
                 <th>Date</th><th>Voucher</th><th>Type</th><th>Narration</th>
+                <th>Item</th><th>Size / Gauge</th>
                 <th className={styles.right}>Debit</th>
                 <th className={styles.right}>Credit</th>
                 <th className={styles.right}>Balance</th>
@@ -1302,13 +1415,36 @@ function VendorLedger({ vendors }) {
             </thead>
             <tbody>
               {entries.length === 0
-                ? <tr><td colSpan={7} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
-                : entries.map((e, i) => (
+                ? <tr><td colSpan={9} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
+                : entries.map((e, i) => {
+                  const items = itemsFor(e);
+                  return (
                   <tr key={e.id ?? i}>
                     <td className={styles.date}>{formatDate((e.date || '').slice(0, 10))}</td>
                     <td className={styles.code}>{e.voucher_id || '—'}</td>
                     <td className={styles.type}>{e.voucher_type || '—'}</td>
                     <td>{e.narration || '—'}</td>
+                    <td>
+                      {items.length === 0
+                        ? <span className={styles.nil}>—</span>
+                        : items.map((li, idx) => (
+                          <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                            {li.item_name || '—'}
+                            {li.quantity > 0 && (
+                              <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
+                            )}
+                          </div>
+                        ))}
+                    </td>
+                    <td>
+                      {items.length === 0
+                        ? <span className={styles.nil}>—</span>
+                        : items.map((li, idx) => (
+                          <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+                            {lineSpec(li) || <span className={styles.nil}>—</span>}
+                          </div>
+                        ))}
+                    </td>
                     <td className={styles.right}>
                       {parseFloat(e.debit) > 0 ? <span className={styles.mono}>{formatCurrency(e.debit)}</span> : <span className={styles.nil}>—</span>}
                     </td>
@@ -1322,7 +1458,8 @@ function VendorLedger({ vendors }) {
                       </span>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
             </tbody>
           </table>
           {entries.length > 0 && (
@@ -1354,7 +1491,7 @@ export default function Reports() {
   const { data: paymentReconciliation }= useDb(() => financeDb.getPaymentReconciliation());
   const { data: receiptVouchers }      = useDb(() => financeDb.getReceiptVouchers(companyId), [companyId]);
   const { data: allVouchers }          = useDb(() => financeDb.getVouchers(companyId), [companyId]);
-  const { data: vendors }              = useDb(() => procurementDb.getVendors());
+  const { data: vendors }              = useDb(() => procurementDb.getVendors(companyId), [companyId]);
   const { data: vendorBalances }       = useDb(() => procurementDb.getVendorBalances(companyId), [companyId]);
   const { customers }                  = useCustomers();
   const { data: salesOrders }          = useDb(() => salesDb.getSalesOrders(companyId),   [companyId]);
@@ -1412,7 +1549,7 @@ export default function Reports() {
       {pageTab === 'customer-ledger' && (
         <Card padding={false}>
           <CardHeader title="Customer Sales Ledger" subtitle="Customer-wise invoice history with AG-DAYS aging" />
-          <div className={styles.cardBody}><CustomerLedger salesInvoices={salesInvoices} /></div>
+          <div className={styles.cardBody}><CustomerLedger salesInvoices={salesInvoices} customers={customers} /></div>
         </Card>
       )}
       {pageTab === 'vendor-ledger' && (

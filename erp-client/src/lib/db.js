@@ -647,14 +647,19 @@ export const inventoryDb = {
 // ── SALES ─────────────────────────────────────────────────────────────────
 
 export const salesDb = {
-  getCustomers: () =>
+  // Scoped to the selected branch, like every other list in the app. Without the
+  // filter both shops saw one merged pool of customers, so switching branch
+  // changed the orders and invoices on screen but not the customers they were for.
+  getCustomers: (companyId = 1) =>
     supabase.from('customers')
-      .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance')
+      .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance, opening_balance, opening_balance_date')
+      .eq('company_id', companyId)
       .order('id', { ascending: false }),
 
-  searchCustomers: (query) =>
+  searchCustomers: (query, companyId = 1) =>
     supabase.from('customers')
       .select('id, customer_id, name, cnic, ntn, region, status, contact, credit_limit, outstanding_balance')
+      .eq('company_id', companyId)
       .ilike('name', `%${query}%`)
       .order('name')
       .limit(10),
@@ -682,6 +687,59 @@ export const salesDb = {
 
   addCustomer: (c) =>
     supabase.from('customers').insert([c]).select().single(),
+
+  // Posts a customer's brought-forward balance as a real double entry:
+  //   Accounts Receivable   DEBIT   amount   (shown under the customer's name)
+  //   Opening Balance Equity CREDIT  amount
+  //
+  // Storing the figure on the customer row alone would leave it invisible to the
+  // ledger, the trial balance and the income statement, and it would be silently
+  // dropped the moment the customer's first invoice was raised. Posting it makes
+  // it behave like every other balance in the system.
+  //
+  // A negative amount means the customer is in credit (paid in advance), so the
+  // legs swap.
+  postCustomerOpeningBalance: async ({ customerName, amount, date, companyId }) => {
+    const value = parseFloat(amount) || 0;
+    if (value === 0) return { voucherId: null };
+
+    const [arAccount, equityAccount] = await Promise.all([
+      financeDb.ensureLedgerAccount({
+        code: '11-03-001-000001', name: 'Accounts Receivable',
+        type: 'Asset', parent: '11-03-001', companyId,
+      }),
+      // Four-segment code so it can't collide with the three-segment codes the
+      // New Account screen generates under the same 13-01 equity group.
+      financeDb.ensureLedgerAccount({
+        code: '13-01-001-000001', name: 'Opening Balance Equity',
+        type: 'Equity', parent: '13-01-001', companyId,
+      }),
+    ]);
+    if (!arAccount || !equityAccount) {
+      throw new Error('Could not resolve the ledger accounts for the opening balance.');
+    }
+
+    const magnitude = Math.abs(value);
+    const voucherId = 'OB-' + String(Date.now()).slice(-6);
+    await financeDb.postJournalEntry({
+      voucherId,
+      voucherType: 'Opening',
+      date,
+      companyId,
+      legs: value > 0
+        ? [
+          { account: arAccount,     debit: magnitude, credit: 0, displayName: customerName },
+          { account: equityAccount, debit: 0, credit: magnitude },
+        ]
+        : [
+          { account: equityAccount, debit: magnitude, credit: 0 },
+          { account: arAccount,     debit: 0, credit: magnitude, displayName: customerName },
+        ],
+      narration: `Opening balance — ${customerName}`,
+      reference: customerName,
+    });
+    return { voucherId };
+  },
 
   deleteCustomer: (id) =>
     supabase.from('customers').delete().eq('id', id),
@@ -752,7 +810,7 @@ export const salesDb = {
     const all = [];
     for (let i = 0; i < refs.length; i += CHUNK) {
       const { data, error } = await supabase.from('so_line_items')
-        .select('so_id, item_name, unit, quantity, unit_price')
+        .select('so_id, line_no, item_name, unit, gauge, size, quantity, unit_price, total_price')
         .in('so_id', refs.slice(i, i + CHUNK));
       if (error) return { data: null, error };
       if (data) all.push(...data);
@@ -768,6 +826,17 @@ export const salesDb = {
 
   addSalesInvoice: (inv) =>
     supabase.from('sales_invoices').insert([inv]).select().single(),
+
+  // What a dispatched invoice actually billed. Copied from the order's
+  // so_line_items at dispatch so the invoice keeps the sold detail even if the
+  // order is later edited, and so a multi-item order no longer collapses into a
+  // bare subtotal on the invoice.
+  addSalesInvoiceItems: (items) =>
+    supabase.from('sales_invoice_items').insert(items).select(),
+
+  getSalesInvoiceItems: (saleInvId) =>
+    supabase.from('sales_invoice_items')
+      .select('*').eq('sale_inv_id', saleInvId).order('line_no'),
 
   // Posts a sales invoice to the ledger as a balanced double entry:
   //   Accounts Receivable  DEBIT   grand_total   (shown under the customer's name)
@@ -844,8 +913,8 @@ export const salesDb = {
 // ── PROCUREMENT ───────────────────────────────────────────────────────────
 
 export const procurementDb = {
-  getVendors: () =>
-    supabase.from('vendors').select('*').order('name'),
+  getVendors: (companyId = 1) =>
+    supabase.from('vendors').select('*').eq('company_id', companyId).order('name'),
 
   // Vendor purchases / payments / outstanding payable, derived from the ledger
   // (voucher_lines). See server/migrate-vendor-balances.js.
@@ -956,6 +1025,10 @@ export const procurementDb = {
   addPoLineItems: (items) =>
     supabase.from('po_line_items').insert(items).select(),
 
+  getPoLineItems: (poId) =>
+    supabase.from('po_line_items')
+      .select('*').eq('po_id', poId).order('line_no'),
+
   getGatePassesInward: (companyId = 1) =>
     supabase.from('gate_passes_inward').select('*').eq('company_id', companyId).order('gate_date', { ascending: false }),
 
@@ -971,11 +1044,101 @@ export const procurementDb = {
   addGrnLineItems: (items) =>
     supabase.from('grn_line_items').insert(items).select(),
 
+  getGrnLineItems: (grnId) =>
+    supabase.from('grn_line_items')
+      .select('*').eq('grn_id', grnId).order('line_no'),
+
   getPurchaseInvoices: (companyId = 1) =>
     supabase.from('purchase_invoices').select('*').eq('company_id', companyId).order('bill_date', { ascending: false }),
 
   addPurchaseInvoice: (pinv) =>
     supabase.from('purchase_invoices').insert([pinv]).select().single(),
+
+  addPurchaseInvoiceItems: (items) =>
+    supabase.from('purchase_invoice_items').insert(items).select(),
+
+  // Posts a vendor bill to the ledger as a balanced double entry — the mirror of
+  // postSalesInvoiceVoucher on the sales side:
+  //   Purchases         DEBIT   items_total
+  //   Sales Tax (ST)    DEBIT   tax_amount     (input tax, only when charged)
+  //   Accounts Payable  CREDIT  grand_total    (shown under the vendor's name)
+  //
+  // Without this a recorded bill only ever touched `purchase_invoices`, so nothing
+  // reached `vouchers`/`voucher_lines`. The vendor ledger showed payments going out
+  // with no record of the purchases they were paying for, and every vendor balance
+  // drifted further negative with each payment.
+  //
+  // The account codes below are the real ones already in the chart of accounts.
+  postPurchaseInvoiceVoucher: async ({ invoice, companyId }) => {
+    const grandTotal = parseFloat(invoice.grand_total) || 0;
+    const itemsTotal = parseFloat(invoice.items_total) || 0;
+    const taxAmount  = parseFloat(invoice.tax_amount)  || 0;
+    if (grandTotal <= 0) return { voucherId: null };
+
+    const debitParts = [
+      { code: '12-01-001-000000', name: 'Purchases',     parent: '12-01-001', amount: itemsTotal },
+      { code: '12-06-003-000001', name: 'Sales Tax (ST)', parent: '12-06-003', amount: taxAmount },
+    ].filter(p => p.amount > 0);
+
+    // Anything in grand_total the named parts don't account for (an ad-hoc charge,
+    // a rounding difference) goes to Charges On Purchase so the entry always
+    // balances rather than silently posting lopsided.
+    const namedTotal = debitParts.reduce((s, p) => s + p.amount, 0);
+    const remainder  = grandTotal - namedTotal;
+    if (Math.abs(remainder) > 0.005) {
+      debitParts.push({ code: '12-01-030-000000', name: 'Charges On Purchase', parent: '12-01-030', amount: remainder });
+    }
+
+    // 14-01-001-000000 "Trade Creditors" is the control account that heads the 206
+    // per-vendor accounts under 14-01-001-*, so it is the AP analogue of
+    // 11-03-001-000001 on the receivable side. Do NOT use 14-01-001-000001 — that
+    // is a real supplier (BASHIR PIPE INDUSTRY), and posting every vendor's bills
+    // there would corrupt that one supplier's balance.
+    const [apAccount, ...debitAccounts] = await Promise.all([
+      financeDb.ensureLedgerAccount({ code: '14-01-001-000000', name: 'Trade Creditors', type: 'Liability', parent: '14-01-001', companyId }),
+      ...debitParts.map(p => financeDb.ensureLedgerAccount({ code: p.code, name: p.name, type: 'Expense', parent: p.parent, companyId })),
+    ]);
+    if (!apAccount || debitAccounts.some(a => !a)) {
+      throw new Error('Could not resolve the ledger accounts for this bill.');
+    }
+
+    const voucherId = invoice.bill_id;
+    await financeDb.postJournalEntry({
+      voucherId,
+      voucherType: 'Purchase',
+      date: invoice.bill_date,
+      companyId,
+      legs: [
+        ...debitAccounts.map((account, i) => ({ account, debit: debitParts[i].amount, credit: 0 })),
+        { account: apAccount, debit: 0, credit: grandTotal, displayName: invoice.vendor_name },
+      ],
+      narration: `Purchase invoice ${voucherId} — ${invoice.vendor_name}`,
+      reference: voucherId,
+    });
+    return { voucherId };
+  },
+
+  getPurchaseInvoiceItems: (billId) =>
+    supabase.from('purchase_invoice_items')
+      .select('*').eq('bill_id', billId).order('line_no'),
+
+  // Billed items for a set of bills, so the vendor ledger can show what each
+  // Purchase voucher was actually for. Chunked to stay within Supabase's URL
+  // length limit when a vendor has many bills.
+  getPurchaseInvoiceItemsBulk: async (billIds = []) => {
+    const ids = [...new Set((billIds || []).filter(Boolean))];
+    if (ids.length === 0) return { data: [], error: null };
+    const CHUNK = 150;
+    const all = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const { data, error } = await supabase.from('purchase_invoice_items')
+        .select('bill_id, line_no, item_name, unit, gauge, size, quantity, unit_price, total_price')
+        .in('bill_id', ids.slice(i, i + CHUNK));
+      if (error) return { data: null, error };
+      if (data) all.push(...data);
+    }
+    return { data: all, error: null };
+  },
 
   getPurchaseReturns: () =>
     supabase.from('purchase_returns').select('*').order('return_date', { ascending: false }),
@@ -1014,6 +1177,16 @@ export const invoicingDb = {
 
   addInvoice: (inv) =>
     supabase.from('invoices').insert([inv]).select().single(),
+
+  // Itemised detail for an FBR invoice. These rows are what gets sent to AJK-IRD
+  // as the Items array — without them the server falls back to a single synthetic
+  // "Steel Products" line, which is not what was actually sold.
+  addInvoiceItems: (items) =>
+    supabase.from('invoice_items').insert(items).select(),
+
+  getInvoiceItems: (invoiceId) =>
+    supabase.from('invoice_items')
+      .select('*').eq('invoice_id', invoiceId).order('line_no'),
 
   updateInvoiceFbrStatus: (invoiceId, status, submittedAt, fiscalInvoiceNumber = null) =>
     supabase.from('invoices').update({

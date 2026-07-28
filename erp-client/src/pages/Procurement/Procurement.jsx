@@ -73,7 +73,7 @@ export default function Procurement() {
   const [poTab, setPoTab] = useState('all');
 
   // Data fetches
-  const { data: vendors, refetch: refetchVendors } = useDb(() => procurementDb.getVendors());
+  const { data: vendors, refetch: refetchVendors } = useDb(() => procurementDb.getVendors(companyId), [companyId]);
   const { data: dbPOs }            = useDb(() => procurementDb.getPurchaseOrders(companyId),       [companyId]);
   const { data: dbGrns }           = useDb(() => procurementDb.getGrns(companyId),                [companyId]);
   const { data: dbPdns }           = useDb(() => procurementDb.getPdns(companyId),                [companyId]);

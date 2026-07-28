@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, X, User } from 'lucide-react';
 import { salesDb } from '../../lib/db';
+import { useCompany } from '../../context/CompanyContext';
 import styles from './CustomerSearch.module.css';
 
 export default function CustomerSearch({ onSelect }) {
+  const { companyId } = useCompany();
   const [query,   setQuery]   = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -17,13 +19,13 @@ export default function CustomerSearch({ onSelect }) {
     setLoading(true);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
-      const { data } = await salesDb.searchCustomers(q);
+      const { data } = await salesDb.searchCustomers(q, companyId);
       setResults(data ?? []);
       setOpen(true);
       setLoading(false);
     }, 300);
     return () => clearTimeout(timerRef.current);
-  }, [query]);
+  }, [query, companyId]);
 
   useEffect(() => {
     const handler = (e) => {

@@ -16,7 +16,7 @@ import styles from './NewPDNModal.module.css';
 const today = () => new Date().toISOString().split('T')[0];
 const genPoId = () => 'PO-' + String(Date.now()).slice(-6);
 
-const EMPTY_DRAFT = { product_id: '', product_code: '', product_name: '', qty: '', unit: '', unit_price: '' };
+const EMPTY_DRAFT = { product_id: '', product_code: '', product_name: '', qty: '', unit: '', gauge: '', size: '', unit_price: '' };
 
 export default function NewPurchaseOrderModal({ open, onClose, onSave }) {
   const toast = useToast();
@@ -31,7 +31,7 @@ export default function NewPurchaseOrderModal({ open, onClose, onSave }) {
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [lineItems, setLineItems] = useState([]);
 
-  const { data: vendors }    = useDb(() => procurementDb.getVendors());
+  const { data: vendors }    = useDb(() => procurementDb.getVendors(companyId), [companyId]);
   const { data: pdns }       = useDb(() => procurementDb.getPdns(companyId), [companyId]);
   const { data: requisitions }= useDb(() => procurementDb.getPurchaseRequisitions(companyId), [companyId]);
 
@@ -55,7 +55,10 @@ export default function NewPurchaseOrderModal({ open, onClose, onSave }) {
   const handleProductSelect = (id) => {
     const p = (catalogue || []).find(c => c.id === id || c.id === Number(id));
     if (!p) { setDraft(d => ({ ...d, product_id: id })); return; }
-    setDraft(d => ({ ...d, product_id: id, product_code: p.code, product_name: p.name, unit: p.unit || '' }));
+    setDraft(d => ({
+      ...d, product_id: id, product_code: p.code, product_name: p.name,
+      unit: p.unit || '', gauge: p.gauge || '', size: p.default_size || '',
+    }));
   };
 
   const addItem = () => {
@@ -90,18 +93,29 @@ export default function NewPurchaseOrderModal({ open, onClose, onSave }) {
       });
       if (error) throw new Error(error.message);
 
-      try {
-        await procurementDb.addPoLineItems(
-          lineItems.map((it, i) => ({
-            po_id: poId, line_no: i + 1,
-            product_code: it.product_code, product_name: it.product_name,
-            qty: it.qty, unit: it.unit, unit_price: it.unit_price, total_price: it.total_price,
-            company_id: companyId,
-          }))
+      // Column names must match po_line_items exactly (item_code/item_name/quantity).
+      // An earlier version wrote product_code/product_name/qty, which the table does
+      // not have, so every line item was rejected and thrown away — and because
+      // supabase-js *returns* errors rather than throwing them, the try/catch that
+      // wrapped this never fired and the failure was invisible.
+      const { error: lineError } = await procurementDb.addPoLineItems(
+        lineItems.map((it, i) => ({
+          po_id: poId, line_no: i + 1,
+          item_code: it.product_code, item_name: it.product_name,
+          quantity: it.qty, unit: it.unit,
+          gauge: it.gauge || null, size: it.size || null,
+          unit_price: it.unit_price, total_price: it.total_price,
+          company_id: companyId,
+        }))
+      );
+      if (lineError) {
+        toast.error(
+          `PO ${poId} was issued, but its line items could not be saved: ${lineError.message}`,
+          'Line Items Not Saved',
         );
-      } catch (_) { /* po_line_items may not exist — non-fatal */ }
-
-      toast.success(`Purchase Order ${poId} issued for ${form.vendor_name}.`, 'PO Created');
+      } else {
+        toast.success(`Purchase Order ${poId} issued for ${form.vendor_name}.`, 'PO Created');
+      }
       onSave({
         ...(data || {}), po_id: poId, vendor_name: form.vendor_name,
         po_date: form.po_date, delivery_due_date: form.delivery_due_date,

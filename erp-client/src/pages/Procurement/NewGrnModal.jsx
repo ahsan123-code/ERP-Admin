@@ -16,7 +16,7 @@ import styles from './NewPDNModal.module.css';
 const today = () => new Date().toISOString().split('T')[0];
 const genGrnId = () => 'GRN-' + String(Date.now()).slice(-6);
 
-const EMPTY_DRAFT = { product_id: '', product_code: '', product_name: '', ordered_qty: '', received_qty: '', unit: '', unit_price: '' };
+const EMPTY_DRAFT = { product_id: '', product_code: '', product_name: '', ordered_qty: '', received_qty: '', unit: '', gauge: '', size: '', unit_price: '' };
 
 export default function NewGrnModal({ open, onClose, onSave }) {
   const toast = useToast();
@@ -64,7 +64,10 @@ export default function NewGrnModal({ open, onClose, onSave }) {
   const handleProductSelect = (id) => {
     const p = (catalogue || []).find(c => c.id === id || c.id === Number(id));
     if (!p) { setDraft(d => ({ ...d, product_id: id })); return; }
-    setDraft(d => ({ ...d, product_id: id, product_code: p.code, product_name: p.name, unit: p.unit || '' }));
+    setDraft(d => ({
+      ...d, product_id: id, product_code: p.code, product_name: p.name,
+      unit: p.unit || '', gauge: p.gauge || '', size: p.default_size || '',
+    }));
   };
 
   const addItem = () => {
@@ -101,17 +104,28 @@ export default function NewGrnModal({ open, onClose, onSave }) {
       });
       if (error) throw new Error(error.message);
 
-      try {
-        await procurementDb.addGrnLineItems(
-          lineItems.map((it, i) => ({
-            grn_id: grnId, line_no: i + 1,
-            product_code: it.product_code, product_name: it.product_name,
-            ordered_qty: it.ordered_qty, received_qty: it.received_qty,
-            unit: it.unit, unit_price: it.unit_price, total_value: it.total_value,
-            company_id: companyId,
-          }))
+      // Must match grn_line_items' real columns. `quantity` is the *received*
+      // figure — ordered_qty is kept alongside it so a short delivery stays
+      // visible. The previous product_code/received_qty/total_value names did not
+      // exist on the table, and supabase-js returns errors instead of throwing,
+      // so the surrounding try/catch silently discarded every line.
+      const { error: lineError } = await procurementDb.addGrnLineItems(
+        lineItems.map((it, i) => ({
+          grn_id: grnId, line_no: i + 1,
+          item_code: it.product_code, item_name: it.product_name,
+          ordered_qty: it.ordered_qty, quantity: it.received_qty,
+          unit: it.unit, gauge: it.gauge || null, size: it.size || null,
+          warehouse: form.warehouse || null,
+          unit_price: it.unit_price, total_price: it.total_value,
+          company_id: companyId,
+        }))
+      );
+      if (lineError) {
+        toast.error(
+          `GRN ${grnId} was posted, but its line items could not be saved: ${lineError.message}`,
+          'Line Items Not Saved',
         );
-      } catch (_) { /* grn_line_items may not exist — non-fatal */ }
+      }
 
       // Add the received goods into stock, in the selected warehouse.
       const { error: stockErr } = await inventoryDb.receiveIntoStock(lineItems, form.warehouse, companyId);

@@ -23,7 +23,13 @@ const CASH_POCKETS = [
 ];
 
 const AR = { code: '11-03-001-000001', name: 'Accounts Receivable', type: 'Asset', parent: '11-03-001' };
-const AP = { code: '14-01-001-000001', name: 'Accounts Payable', type: 'Liability', parent: '14-01-001' };
+// The payable control account is 14-01-001-000000 "Trade Creditors", which heads
+// the 206 per-vendor accounts under 14-01-001-*. This previously pointed at
+// 14-01-001-000001 under the name "Accounts Payable", but that code is a real
+// supplier (BASHIR PIPE INDUSTRY) — every vendor payment would have posted to that
+// one supplier's balance. No payment had been made through this screen yet, so
+// nothing needed repairing, but the next one would have landed there.
+const AP = { code: '14-01-001-000000', name: 'Trade Creditors', type: 'Liability', parent: '14-01-001' };
 
 // One row of the voucher: which party, how much, and why. The cash/bank side lives on
 // the voucher header, not the line — a voucher moves money through one pocket only.
@@ -36,7 +42,7 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
   const toast = useToast();
   const { companyId } = useCompany();
   const { customers } = useCustomers();
-  const { data: vendors } = useDb(() => procurementDb.getVendors());
+  const { data: vendors } = useDb(() => procurementDb.getVendors(companyId), [companyId]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [lines, setLines] = useState([emptyLine()]);
