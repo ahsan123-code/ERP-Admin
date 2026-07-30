@@ -160,7 +160,7 @@ export default function NewGrnModal({ open, onClose, onSave }) {
     value: g.gp_id, label: `${g.gp_id} — ${g.vehicle_no || 'No vehicle'}`, hint: g.driver_name,
   }));
   const productOptions = (catalogue || []).map(c => ({
-    value: c.id, label: c.name, hint: c.code,
+    value: c.id, label: c.name, search: c.code,
   }));
   const warehouseOptions = (warehouses || []).map(w => ({ value: w.name || w.id, label: w.name }));
 
@@ -258,7 +258,6 @@ export default function NewGrnModal({ open, onClose, onSave }) {
             ? <p className={styles.emptyLines}>No items added yet.</p>
             : lineItems.map((it, i) => (
               <div key={i} className={styles.lineRow}>
-                <span className={styles.lineCode}>{it.product_code}</span>
                 <span className={styles.lineName}>{it.product_name}</span>
                 <span className={styles.lineQty}>{it.received_qty}/{it.ordered_qty} {it.unit}</span>
                 {it.total_value > 0 && <span className={styles.lineQty} style={{ color: 'var(--green)' }}>{formatCurrency(it.total_value)}</span>}

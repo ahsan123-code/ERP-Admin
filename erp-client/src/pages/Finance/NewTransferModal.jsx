@@ -98,7 +98,7 @@ export default function NewTransferModal({ open, onClose, onSave, bankAccounts, 
           <SelectField label="From Account *" value={form.from_account_id} onChange={set('from_account_id')} required>
             <option value="">— Select source bank account —</option>
             {bankAccounts.map(b => (
-              <option key={b.account_id} value={b.account_id}>{b.account_id} — {b.bank_name} ({b.account_no})</option>
+              <option key={b.account_id} value={b.account_id}>{b.bank_name} ({b.account_no})</option>
             ))}
           </SelectField>
         </div>
@@ -106,7 +106,7 @@ export default function NewTransferModal({ open, onClose, onSave, bankAccounts, 
           <SelectField label="To Account *" value={form.to_account_id} onChange={set('to_account_id')} required>
             <option value="">— Select destination bank account —</option>
             {bankAccounts.map(b => (
-              <option key={b.account_id} value={b.account_id}>{b.account_id} — {b.bank_name} ({b.account_no})</option>
+              <option key={b.account_id} value={b.account_id}>{b.bank_name} ({b.account_no})</option>
             ))}
           </SelectField>
         </div>

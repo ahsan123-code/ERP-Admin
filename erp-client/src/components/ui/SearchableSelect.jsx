@@ -3,9 +3,12 @@ import { Search, ChevronDown, Check } from 'lucide-react';
 import styles from './SearchableSelect.module.css';
 
 /**
- * A searchable dropdown ("combobox"). Type to filter `options` by label/hint,
- * click an option to select it. Falls back to a plain "no options" message
- * when the list is empty.
+ * A searchable dropdown ("combobox"). Type to filter `options`, click an option to
+ * select it. Falls back to a plain "no options" message when the list is empty.
+ *
+ * An option may carry `hint` (shown beside the label and searchable) and/or `search`
+ * (searchable but never rendered). Product pickers use `search` for the item code:
+ * the code stays typeable for staff who know it, without appearing in the list.
  */
 export default function SearchableSelect({
   label, required, error,
@@ -32,7 +35,7 @@ export default function SearchableSelect({
   }, [open]);
 
   const filtered = query.trim()
-    ? options.filter(o => `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+    ? options.filter(o => `${o.label} ${o.hint ?? ''} ${o.search ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()))
     : options;
 
   const handleSelect = (opt) => {

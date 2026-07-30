@@ -8,6 +8,23 @@ export const formatNumber = (value) => {
   return Number(value).toLocaleString('en-PK');
 };
 
+// Item codes are not shown anywhere in the app — only the product name is. A short-lived
+// version of NewOrderModal stored sold lines as "CODE — Name" (so_line_items has no
+// item_code column), so a handful of existing rows carry the merged form; this strips it
+// wherever a stored item name is displayed. Rows saved with a bare name pass through
+// untouched.
+//
+// The leading segment is dropped only when it looks like a code (no whitespace), so a
+// product whose name genuinely contains an em dash — e.g. 'GI Sheet, 48" — Heavy' —
+// keeps both halves.
+export const itemLabel = (name) => {
+  const s = String(name ?? '').trim();
+  if (!s) return '—';
+  const at = s.indexOf(' — ');
+  if (at > 0 && !/\s/.test(s.slice(0, at))) return s.slice(at + 3).trim() || s;
+  return s;
+};
+
 export const formatDate = (dateStr) => {
   if (!dateStr) return '—';
   try {

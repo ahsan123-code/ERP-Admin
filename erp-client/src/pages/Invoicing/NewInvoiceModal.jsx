@@ -150,7 +150,7 @@ export default function NewInvoiceModal({ open, onClose, onSave, prefillCustomer
   };
 
   const productOptions = (productCatalogue || []).map(p => ({
-    value: String(p.id), label: p.name, hint: p.code,
+    value: String(p.id), label: p.name, search: p.code,
   }));
 
   return (
@@ -233,7 +233,6 @@ export default function NewInvoiceModal({ open, onClose, onSave, prefillCustomer
             ? <p className={styles.emptyLines}>No items added yet — pick a product, set quantity and rate, then click Add.</p>
             : lineItems.map((it, i) => (
               <div key={i} className={styles.lineRow}>
-                <span className={styles.lineCode}>{it.code}</span>
                 <span className={styles.lineName}>{it.name}</span>
                 <span className={styles.lineQty}>{it.qty} {it.unit}</span>
                 <span className={styles.lineQty}>@ {formatCurrency(it.rate)}</span>

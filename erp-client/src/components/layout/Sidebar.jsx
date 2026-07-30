@@ -4,7 +4,7 @@ import {
   Receipt, Wallet, UserCheck, ChevronRight,
   BarChart3, TrendingUp,
   PanelLeftClose, PanelLeftOpen,
-  Scale,
+  Scale, Coins,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { currentUser } from '../../data/shell';
@@ -98,6 +98,9 @@ const NAV = [
           { path: '/finance/petty-cash',    label: 'Petty Cash' },
           { path: '/finance/daily-cash',    label: 'Daily Cash' },
         ],
+      },
+      {
+        path: '/expense-accounts', label: 'Expense Accounts', icon: Coins,
       },
       {
         path: '/reports', label: 'Reports', icon: BarChart3,

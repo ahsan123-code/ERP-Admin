@@ -98,7 +98,7 @@ export default function NewPurchaseRequisitionModal({ open, onClose, onSave }) {
   const productOptions = (catalogue || []).map(c => ({
     value: c.id,
     label: c.name,
-    hint: c.code,
+    search: c.code,
   }));
 
   const pdnOptions = (pdns || []).map(p => ({
@@ -180,7 +180,6 @@ export default function NewPurchaseRequisitionModal({ open, onClose, onSave }) {
             ? <p className={styles.emptyLines}>No items added yet. Add at least one product.</p>
             : lineItems.map((it, i) => (
               <div key={i} className={styles.lineRow}>
-                <span className={styles.lineCode}>{it.product_code}</span>
                 <span className={styles.lineName}>{it.product_name}</span>
                 <span className={styles.lineQty}>{it.qty} {it.unit}</span>
                 <button

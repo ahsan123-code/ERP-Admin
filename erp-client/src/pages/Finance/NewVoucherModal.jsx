@@ -63,10 +63,14 @@ export default function NewVoucherModal({ open, onClose, onSave, editVoucher }) 
     setLines([emptyLine(), emptyLine()]);
   }, [open, isEdit, editVoucher, chartOfAccounts, companyId]);
 
+  // Name only. The account code stays searchable (`search` is matched but never
+  // rendered) so anyone who knows a code can still type it; account_type remains as
+  // the hint because it disambiguates same-named accounts, unlike the code.
   const acctOptions = (chartOfAccounts || []).map(a => ({
     value: a.account_id,
-    label: `${a.account_code} — ${a.account_name}`,
+    label: a.account_name,
     hint: a.account_type,
+    search: a.account_code,
   }));
 
   const setLine = (i, key, value) =>

@@ -157,7 +157,7 @@ export default function NewPDNModal({ open, onClose, onSave }) {
                     : '— Select item —'}
               </option>
               {availableItems.map(p => (
-                <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+                <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </SelectField>
             <Input type="number" min="1" placeholder="Qty" value={draft.qty} onChange={setDraftField('qty')} />
@@ -178,7 +178,6 @@ export default function NewPDNModal({ open, onClose, onSave }) {
             )}
             {lineItems.map(li => (
               <div key={li.itemId} className={styles.lineRow}>
-                <span className={styles.lineCode}>{li.code}</span>
                 <span className={styles.lineName}>{li.name}</span>
                 <span className={styles.lineQty}>{li.qty} {li.unit}</span>
                 <button

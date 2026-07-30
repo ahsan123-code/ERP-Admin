@@ -95,13 +95,14 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
       // header alone can't say what was sold. Failing here must not lose the saved
       // order, so it warns instead of throwing.
       //
-      // item_name keeps the "CODE — Name" shape the customer ledger report and the
-      // legacy imported rows both rely on.
+      // item_name is the plain product name. It briefly carried a "CODE — Name" prefix
+      // (so_line_items has no item_code column), but the code is no longer shown
+      // anywhere in the app, and the merged form leaked into the customer ledger.
       const { error: lineError } = await salesDb.addSoLineItems(
         lineItems.map((it, i) => ({
           so_id:       soId,
           line_no:     i + 1,
-          item_name:   it.code ? `${it.code} — ${it.name}` : it.name,
+          item_name:   it.name,
           quantity:    it.qty,
           unit:        it.unit || 'Kilo Grams',
           gauge:       it.gauge || null,
@@ -132,7 +133,7 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
   // prefix would eat the width and cut the name off. The hint stays searchable, so
   // picking by code keeps working.
   const productOptions = productCatalogue.map(p => ({
-    value: String(p.id), label: p.name, hint: p.code,
+    value: String(p.id), label: p.name, search: p.code,
   }));
 
   return (
@@ -216,7 +217,6 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
             ? <p className={styles.emptyLines}>No items added yet — pick a product, set quantity and rate, then click Add.</p>
             : lineItems.map((it, i) => (
               <div key={i} className={styles.lineRow}>
-                <span className={styles.lineCode}>{it.code}</span>
                 <span className={styles.lineName}>
                   {it.name}
                   {(it.gauge || it.size) && (

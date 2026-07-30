@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Printer, X, BadgeCheck } from 'lucide-react';
+import { FileDown, Eye, X, BadgeCheck } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { downloadWordDoc, esc, layoutTable, labelValueTable, companyHeader } from '../../utils/wordExport';
+import { useWordPreview } from '../../hooks/useWordPreview';
 import styles from './InvoicePrintModal.module.css';
 
 const COMPANY = {
@@ -17,7 +19,8 @@ const TAX_RATE = 18;
 
 export default function InvoicePrintModal({ invoice: raw, onClose }) {
   const [qrDataUrl, setQrDataUrl] = useState('');
-  const printRef = useRef();
+  const { showPreview, previewNode } = useWordPreview();
+
 
   const invoice = raw ? {
     invoiceId:            raw.invoice_id           ?? raw.invoiceId           ?? '',
@@ -65,9 +68,8 @@ export default function InvoicePrintModal({ invoice: raw, onClose }) {
     ? TAX_RATE
     : (displaySubtotal > 0 ? Math.round((displayTax / displaySubtotal) * 100) : TAX_RATE);
 
-  const handlePrint = () => {
+  const buildDoc = () => {
     if (!invoice) return;
-    const win = window.open('', '_blank', 'width=950,height=750');
 
     const lineItemRows = lineItems.map((item, i) => {
       const saleVal = item.totalPrice / (1 + TAX_RATE / 100);
@@ -76,187 +78,152 @@ export default function InvoicePrintModal({ invoice: raw, onClose }) {
       return `
         <tr>
           <td>${i + 1}</td>
-          <td>${item.itemName || ''}</td>
-          <td style="font-family:monospace">${item.pctCode || '72085190'}</td>
-          <td class="right">${item.quantity}</td>
-          <td>${item.unit || ''}</td>
-          <td class="right">${formatCurrency(unitPr)}</td>
-          <td class="right">${formatCurrency(saleVal)}</td>
-          <td class="right">${formatCurrency(taxAmt)}</td>
-          <td class="right"><strong>${formatCurrency(item.totalPrice)}</strong></td>
+          <td>${esc(item.itemName)}</td>
+          <td class="w-mono">${esc(item.pctCode || '72085190')}</td>
+          <td class="w-right">${esc(item.quantity)}</td>
+          <td>${esc(item.unit)}</td>
+          <td class="w-right w-mono">${formatCurrency(unitPr)}</td>
+          <td class="w-right w-mono">${formatCurrency(saleVal)}</td>
+          <td class="w-right w-mono">${formatCurrency(taxAmt)}</td>
+          <td class="w-right w-mono"><strong>${formatCurrency(item.totalPrice)}</strong></td>
         </tr>`;
     }).join('');
 
     const itemsSection = lineItems.length > 0
-      ? `<table>
+      ? `<table class="items">
           <thead>
             <tr>
-              <th>#</th><th>Item Description</th><th>PCT Code</th>
-              <th class="right">Qty</th><th>Unit</th><th class="right">Unit Price</th>
-              <th class="right">Sale Value</th><th class="right">GST ${displayRate}%</th><th class="right">Total</th>
+              <th width="26">#</th><th>Item Description</th><th width="70">PCT Code</th>
+              <th class="w-right" width="50">Qty</th><th width="45">Unit</th>
+              <th class="w-right" width="80">Unit Price</th>
+              <th class="w-right" width="85">Sale Value</th>
+              <th class="w-right" width="80">GST ${displayRate}%</th>
+              <th class="w-right" width="90">Total</th>
             </tr>
           </thead>
           <tbody>${lineItemRows}</tbody>
         </table>`
-      : `<div style="background:#fff8f0;border:1px solid #f0c080;border-radius:4px;padding:12px 16px;margin-bottom:16px;font-size:11px;color:#cc6600;text-align:center;">
+      : `<div style="background:#fff8f0;border:1px solid #f0c080;padding:12px 16px;margin-bottom:14px;
+                     font-size:10px;color:#c60;text-align:center">
           <em>Itemised line items not available for this invoice.</em><br/>
-          <span style="color:#444;font-family:monospace">
+          <span style="color:#444;font-family:'Courier New',monospace">
             Subtotal: ${formatCurrency(displaySubtotal)} &nbsp;|&nbsp;
             Tax: ${formatCurrency(displayTax)} &nbsp;|&nbsp;
             Total: ${formatCurrency(displayGrandTotal)}
           </span>
         </div>`;
 
-    const fiscalSection = isSubmitted
-      ? `<div class="fiscal-box" style="background:#f0f7f0;border-color:#1a6b1a;">
-          <div>
-            <div class="fiscal-label" style="color:#1a6b1a;">&#10003; AJK-IRD Fiscal Invoice Number</div>
-            <div class="fiscal-number">${fiscalNo}</div>
-          </div>
-          <div style="font-size:10px;color:#1a6b1a;">Verify at: iris.ajkird.gov.pk</div>
-        </div>`
-      : `<div class="fiscal-box" style="background:#fff8f0;border-color:#e0a040;">
-          <div>
-            <div class="fiscal-label" style="color:#cc6600;">Fiscal Number</div>
-            <div class="fiscal-number" style="color:#cc6600;">${fiscalNo}</div>
-          </div>
-          <div style="font-size:10px;color:#cc6600;font-style:italic;">Submit to AJK-IRD to generate fiscal number</div>
-        </div>`;
+    const fiscalSection = `
+      <table width="100%" style="border:1.5px solid ${isSubmitted ? '#1a6b1a' : '#e0a040'};
+             background:${isSubmitted ? '#f0f7f0' : '#fff8f0'};margin-bottom:14px">
+        <tr>
+          <td style="padding:8px 14px">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;
+                        color:${isSubmitted ? '#1a6b1a' : '#c60'};margin-bottom:3px">
+              ${isSubmitted ? '&#10003; AJK-IRD Fiscal Invoice Number' : 'Fiscal Number'}
+            </div>
+            <div style="font-size:14px;font-weight:700;font-family:'Courier New',monospace;
+                        color:${isSubmitted ? '#000' : '#c60'}">${esc(fiscalNo)}</div>
+          </td>
+          <td align="right" style="padding:8px 14px;font-size:9px;
+                     color:${isSubmitted ? '#1a6b1a' : '#c60'}">
+            ${isSubmitted ? 'Verify at: iris.ajkird.gov.pk' : '<em>Submit to AJK-IRD to generate fiscal number</em>'}
+          </td>
+        </tr>
+      </table>`;
 
-    const qrSection = qrDataUrl
-      ? `<img src="${qrDataUrl}" alt="QR" width="110" height="110" style="display:block;margin:0 auto 4px;" />`
-      : '';
+    const headerRight = `
+      <div style="text-align:right">
+        <div style="font-size:20px;font-weight:900;color:#1a6b1a;letter-spacing:2px">FBR</div>
+        <div style="display:inline-block;margin-top:4px;font-size:9px;font-weight:700;color:#1a6b1a;
+                    border:1.5px solid #1a6b1a;padding:3px 8px">AJK-IRD Certified POS</div>
+      </div>`;
 
-    win.document.write(`<!DOCTYPE html>
-<html>
-<head>
-  <title>Invoice ${invoice.invoiceId}</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:Arial,sans-serif; font-size:12px; color:#000; background:#fff; }
-    .wrap { max-width:850px; margin:0 auto; padding:30px; }
-    .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:16px; margin-bottom:16px; }
-    .co-name { font-size:22px; font-weight:700; letter-spacing:-0.5px; }
-    .co-meta { font-size:11px; color:#444; margin-top:4px; line-height:1.6; }
-    .fbr-badge { text-align:right; }
-    .fbr-logo { font-size:22px; font-weight:900; color:#1a6b1a; letter-spacing:2px; }
-    .fbr-cert { font-size:10px; font-weight:700; color:#1a6b1a; border:1.5px solid #1a6b1a; padding:3px 8px; border-radius:3px; display:inline-block; margin-top:4px; }
-    .inv-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .inv-title h2 { font-size:18px; font-weight:700; text-transform:uppercase; letter-spacing:1px; }
-    .inv-meta { font-size:11px; text-align:right; line-height:1.7; }
-    .inv-meta .lbl { color:#666; }
-    .fiscal-box { border:1.5px solid; border-radius:4px; padding:8px 14px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; }
-    .fiscal-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; }
-    .fiscal-number { font-size:15px; font-weight:700; font-family:monospace; color:#000; }
-    .section-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:16px; }
-    .section-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#666; border-bottom:1px solid #ddd; padding-bottom:4px; margin-bottom:8px; }
-    .field-row { display:flex; gap:6px; margin-bottom:4px; font-size:11px; }
-    .field-lbl { color:#666; min-width:65px; }
-    .field-val { font-weight:600; }
-    table { width:100%; border-collapse:collapse; margin-bottom:16px; font-size:11px; }
-    thead th { background:#1a1a1a; color:#fff; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; padding:7px 8px; text-align:left; }
-    thead th.right { text-align:right; }
-    tbody td { padding:6px 8px; border-bottom:1px solid #eee; }
-    tbody td.right { text-align:right; font-family:monospace; }
-    tbody tr:nth-child(even) { background:#fafafa; }
-    .totals { display:flex; justify-content:flex-end; margin-bottom:20px; }
-    .totals-box { min-width:260px; }
-    .total-row { display:flex; justify-content:space-between; padding:4px 0; font-size:12px; border-bottom:1px solid #eee; }
-    .total-row.grand { font-size:14px; font-weight:700; border-top:2px solid #000; border-bottom:none; padding-top:8px; margin-top:4px; }
-    .total-lbl { color:#444; }
-    .total-val { font-family:monospace; font-weight:600; }
-    .footer { display:flex; justify-content:space-between; align-items:flex-end; border-top:1px solid #ddd; padding-top:16px; }
-    .footer-note { font-size:10px; color:#666; line-height:1.7; }
-    .verify-text { font-size:9px; color:#1a6b1a; font-weight:600; margin-top:4px; }
-    .no-fiscal { font-size:9px; color:#cc6600; font-style:italic; margin-top:4px; }
-    .qr-label { font-size:9px; color:#666; text-align:center; margin-top:4px; }
-  </style>
-</head>
-<body>
-<div class="wrap">
+    const titleRow = layoutTable([
+      `<div style="font-size:17px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Sales Invoice</div>`,
+      `<div style="text-align:right;font-size:10px;line-height:1.7">
+         <div><span class="w-muted">Invoice No: </span><strong>${esc(invoice.invoiceId)}</strong></div>
+         <div><span class="w-muted">Date: </span>${formatDate(invoice.invoiceDate)}</div>
+         <div><span class="w-muted">Type: </span>${esc(invoice.invoiceType)}</div>
+       </div>`,
+    ]);
 
-  <div class="header">
-    <div>
-      <div class="co-name">${COMPANY.name}</div>
-      <div class="co-meta">
-        ${COMPANY.address}<br/>
-        NTN: ${COMPANY.ntn} &nbsp;|&nbsp; STRN: ${COMPANY.strn}<br/>
-        Tel: ${COMPANY.phone}
-      </div>
-    </div>
-    <div class="fbr-badge">
-      <div class="fbr-logo">FBR</div>
-      <div class="fbr-cert">AJK-IRD Certified POS</div>
-    </div>
-  </div>
+    const billTo = `
+      <div>
+        <div class="sec-ttl">Bill To</div>
+        ${labelValueTable([
+          ['Customer:', esc(invoice.customerName || '—')],
+          ['NTN:', esc(invoice.ntn || '—')],
+          ['CNIC:', esc(invoice.cnic || '—')],
+          ['Contact:', esc(invoice.contact || '—')],
+        ], { labelWidth: 65 })}
+      </div>`;
 
-  <div class="inv-title">
-    <h2>Sales Invoice</h2>
-    <div class="inv-meta">
-      <div><span class="lbl">Invoice No: </span><strong>${invoice.invoiceId}</strong></div>
-      <div><span class="lbl">Date: </span>${formatDate(invoice.invoiceDate)}</div>
-      <div><span class="lbl">Type: </span>${invoice.invoiceType}</div>
-    </div>
-  </div>
+    const invDetails = `
+      <div>
+        <div class="sec-ttl">Invoice Details</div>
+        ${labelValueTable([
+          ['SO Ref:', esc(invoice.soRef || '—')],
+          ['Tax Rate:', `${displayRate}% GST`],
+          ['FBR Status:', esc(invoice.fbrStatus?.toUpperCase() || '—')],
+        ], { labelWidth: 75 })}
+      </div>`;
 
-  ${fiscalSection}
+    const totalsBlock = `
+      <table class="totals" width="270" align="right">
+        <tr><td style="color:#444">Subtotal (excl. tax)</td>
+            <td class="w-right w-mono">${formatCurrency(displaySubtotal)}</td></tr>
+        <tr><td style="color:#444">GST @ ${displayRate}%</td>
+            <td class="w-right w-mono">${formatCurrency(displayTax)}</td></tr>
+        <tr><td class="grand">Grand Total</td>
+            <td class="grand w-right w-mono">${formatCurrency(displayGrandTotal)}</td></tr>
+      </table>
+      <div style="clear:both"></div>`;
 
-  <div class="section-grid">
-    <div>
-      <div class="section-title">Bill To</div>
-      <div class="field-row"><span class="field-lbl">Customer:</span><span class="field-val">${invoice.customerName || '—'}</span></div>
-      <div class="field-row"><span class="field-lbl">NTN:</span><span class="field-val">${invoice.ntn || '—'}</span></div>
-      <div class="field-row"><span class="field-lbl">CNIC:</span><span class="field-val">${invoice.cnic || '—'}</span></div>
-      <div class="field-row"><span class="field-lbl">Contact:</span><span class="field-val">${invoice.contact || '—'}</span></div>
-    </div>
-    <div>
-      <div class="section-title">Invoice Details</div>
-      <div class="field-row"><span class="field-lbl">SO Ref:</span><span class="field-val">${invoice.soRef || '—'}</span></div>
-      <div class="field-row"><span class="field-lbl">Tax Rate:</span><span class="field-val">${displayRate}% GST</span></div>
-      <div class="field-row"><span class="field-lbl">FBR Status:</span><span class="field-val">${invoice.fbrStatus?.toUpperCase() || '—'}</span></div>
-    </div>
-  </div>
+    const footerBlock = layoutTable([
+      `<div style="font-size:9px;color:#666;line-height:1.7">
+         <div>This is a computer generated document and does not require any sign and stamp.</div>
+         <div>NTN: ${COMPANY.ntn} &nbsp;|&nbsp; STRN: ${COMPANY.strn}</div>
+         ${isSubmitted
+           ? `<div style="font-size:8px;color:#1a6b1a;font-weight:600;margin-top:4px">Scan QR code to verify this invoice on iris.ajkird.gov.pk</div>`
+           : `<div style="font-size:8px;color:#c60;font-style:italic;margin-top:4px">Fiscal number pending — not yet submitted to AJK-IRD</div>`}
+       </div>`,
+      `<div style="text-align:center">
+         ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" width="105" height="105" />` : ''}
+         <div style="font-size:8px;color:#666;margin-top:3px">${isSubmitted ? 'Scan to Verify' : 'Invoice QR'}</div>
+       </div>`,
+    ], { valign: 'bottom' });
 
-  ${itemsSection}
-
-  <div class="totals">
-    <div class="totals-box">
-      <div class="total-row">
-        <span class="total-lbl">Subtotal (excl. tax)</span>
-        <span class="total-val">${formatCurrency(displaySubtotal)}</span>
-      </div>
-      <div class="total-row">
-        <span class="total-lbl">GST @ ${displayRate}%</span>
-        <span class="total-val">${formatCurrency(displayTax)}</span>
-      </div>
-      <div class="total-row grand">
-        <span class="total-lbl">Grand Total</span>
-        <span class="total-val">${formatCurrency(displayGrandTotal)}</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="footer">
-    <div class="footer-note">
-      <div>This is a computer generated document and does not require any sign and stamp.</div>
-      <div>NTN: ${COMPANY.ntn} &nbsp;|&nbsp; STRN: ${COMPANY.strn}</div>
-      ${isSubmitted
-        ? `<div class="verify-text">Scan QR code to verify this invoice on iris.ajkird.gov.pk</div>`
-        : `<div class="no-fiscal">Fiscal number pending — not yet submitted to AJK-IRD</div>`}
-    </div>
-    <div>
-      ${qrSection}
-      <div class="qr-label">${isSubmitted ? 'Scan to Verify' : 'Invoice QR'}</div>
-    </div>
-  </div>
-
-</div>
-</body>
-</html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 500);
+    return {
+      filename: `Invoice ${invoice.invoiceId || ''}`.trim(),
+      title: `Invoice ${invoice.invoiceId || ''}`.trim(),
+      css: `
+        .sec-ttl { font-size:9px; font-weight:700; text-transform:uppercase; color:#666;
+                   border-bottom:1px solid #ddd; padding-bottom:4px; margin-bottom:6px; }
+        .items { width:100%; font-size:10px; margin-bottom:14px; }
+        .items th { background:#1a1a1a; color:#fff; font-size:9px; text-transform:uppercase;
+                    padding:6px 7px; text-align:left; border:1px solid #1a1a1a; }
+        .items td { padding:5px 7px; border:1px solid #ddd; }
+        .totals td { padding:4px 0; font-size:11px; border-bottom:1px solid #eee; }
+        .totals td.grand { font-size:13px; font-weight:700; border-top:2px solid #000;
+                           border-bottom:none; padding-top:7px; }
+      `,
+      body: `
+        ${companyHeader(COMPANY, { rightHtml: headerRight })}
+        ${titleRow}
+        <div style="height:12px"></div>
+        ${fiscalSection}
+        ${layoutTable([billTo, invDetails], { widths: ['50%', '50%'] })}
+        <div style="height:12px"></div>
+        ${itemsSection}
+        ${totalsBlock}
+        <div style="height:14px"></div>
+        <div style="border-top:1px solid #ddd;padding-top:12px">${footerBlock}</div>`,
+    };
   };
+
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
 
   if (!invoice) return null;
 
@@ -267,8 +234,11 @@ export default function InvoicePrintModal({ invoice: raw, onClose }) {
         <div className={styles.toolbar}>
           <span className={styles.toolbarTitle}>Invoice Preview — {invoice.invoiceId}</span>
           <div className={styles.toolbarActions}>
-            <Button variant="primary" size="sm" icon={<Printer size={14} strokeWidth={1.75} />} onClick={handlePrint}>
-              Print / Save PDF
+            <Button variant="secondary" size="sm" icon={<Eye size={14} strokeWidth={1.75} />} onClick={handlePreview}>
+              Preview
+            </Button>
+            <Button variant="primary" size="sm" icon={<FileDown size={14} strokeWidth={1.75} />} onClick={handleDownload}>
+              Download Word
             </Button>
             <Button variant="ghost" size="sm" icon={<X size={14} strokeWidth={2} />} onClick={onClose}>
               Close
@@ -277,7 +247,7 @@ export default function InvoicePrintModal({ invoice: raw, onClose }) {
         </div>
 
         <div className={styles.printArea}>
-          <div ref={printRef} className={styles.invoiceWrap}>
+          <div className={styles.invoiceWrap}>
 
             <div className={styles.header}>
               <div>
@@ -412,6 +382,7 @@ export default function InvoicePrintModal({ invoice: raw, onClose }) {
           </div>
         </div>
       </div>
+      {previewNode}
     </div>
   );
 }

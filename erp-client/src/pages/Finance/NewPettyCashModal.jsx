@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
@@ -24,6 +25,7 @@ export default function NewPettyCashModal({ open, onClose, onSave, bankAccounts,
   useEffect(() => { if (!open) setForm(EMPTY); }, [open]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const setVal = (k) => (v) => setForm(f => ({ ...f, [k]: v }));
 
   const expenseAccounts = chartOfAccounts.filter(a => a.account_code?.slice(0, 2) === '12');
 
@@ -96,18 +98,25 @@ export default function NewPettyCashModal({ open, onClose, onSave, bankAccounts,
         </div>
 
         <div className="ff">
-          <SelectField label="Expense Account *" value={form.expense_account_id} onChange={set('expense_account_id')} required>
-            <option value="">— Select expense account —</option>
-            {expenseAccounts.map(a => (
-              <option key={a.account_id} value={a.account_id}>{a.account_code} — {a.account_name}</option>
-            ))}
-          </SelectField>
+          <SearchableSelect
+            label="Expense Account *"
+            required
+            placeholder={`Search expense account (${expenseAccounts.length})…`}
+            emptyText="No matching accounts"
+            value={form.expense_account_id}
+            onChange={setVal('expense_account_id')}
+            options={expenseAccounts.map(a => ({
+              value: a.account_id,
+              label: a.account_name,
+              search: a.account_code,
+            }))}
+          />
         </div>
 
         <SelectField label="Paid From *" value={form.source_account_id} onChange={set('source_account_id')} required>
           <option value="CASH">Cash In Hand</option>
           {bankAccounts.map(b => (
-            <option key={b.account_id} value={b.account_id}>{b.account_id} — {b.bank_name} ({b.account_no})</option>
+            <option key={b.account_id} value={b.account_id}>{b.bank_name} ({b.account_no})</option>
           ))}
         </SelectField>
         <Input label="Amount (PKR) *" type="number" min="0.01" step="0.01" value={form.amount} onChange={set('amount')} placeholder="0.00" required />

@@ -72,7 +72,7 @@ export default function NewWorkOrderModal({ open, onClose, onSave }) {
           <SelectField label="Product *" value={form.productId} onChange={set('productId')} required>
             <option value="">— Select product —</option>
             {productCatalogue.map(p => (
-              <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </SelectField>
         </div>

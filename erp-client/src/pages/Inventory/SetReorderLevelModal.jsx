@@ -52,7 +52,7 @@ export default function SetReorderLevelModal({ open, item, onClose, onSaved }) {
       open={open}
       onClose={onClose}
       title="Set Reorder Limit"
-      subtitle={item ? `${item.item_code} — ${item.item_name}` : ''}
+      subtitle={item ? item.item_name : ''}
       size="sm"
       footer={
         <div className="factions">

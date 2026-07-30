@@ -1,7 +1,9 @@
-import { useRef } from 'react';
-import { Printer, X } from 'lucide-react';
+
+import { FileDown, Eye, X } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import { formatCurrency } from '../../utils/format';
+import { downloadWordDoc, esc, labelValueTable, companyHeader, documentFooter } from '../../utils/wordExport';
+import { useWordPreview } from '../../hooks/useWordPreview';
 import styles from './PayslipModal.module.css';
 
 const COMPANY = {
@@ -13,7 +15,9 @@ const COMPANY = {
 const num = (v) => Number(v) || 0;
 
 export default function PayslipModal({ record, onClose }) {
-  const printRef = useRef();
+
+
+  const { showPreview, previewNode } = useWordPreview();
 
   if (!record) return null;
 
@@ -63,46 +67,70 @@ export default function PayslipModal({ record, onClose }) {
     dedVal:    deductions[i] ? formatCurrency(deductions[i][1]) : '',
   }));
 
-  const handlePrint = () => {
-    const content = printRef.current.innerHTML;
-    const win = window.open('', '_blank', 'width=700,height=600');
-    if (!win) return;
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Payslip — ${r.employeeName} ${r.month} ${r.year}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; font-size: 12px; color: #000; padding: 30px; }
-            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 16px; }
-            .co-name { font-size: 20px; font-weight: 700; }
-            .co-meta { font-size: 11px; color: #444; margin-top: 4px; }
-            .title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; text-align: center; }
-            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; font-size: 11px; }
-            .field { display: flex; gap: 6px; }
-            .field-label { color: #666; min-width: 90px; }
-            .field-val { font-weight: 600; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-            thead th { background: #1a1a1a; color: #fff; padding: 6px 10px; font-size: 11px; text-align: left; }
-            thead th.right { text-align: right; }
-            tbody td { padding: 6px 10px; font-size: 11px; border-bottom: 1px solid #eee; }
-            tbody td.right { text-align: right; font-family: monospace; }
-            tfoot td { padding: 6px 10px; font-size: 11px; font-weight: 700; border-top: 2px solid #000; }
-            tfoot td.right { text-align: right; font-family: monospace; }
-            .net-pay { display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; padding: 10px 14px; border-radius: 4px; margin-top: 8px; }
-            .net-label { font-weight: 700; font-size: 14px; }
-            .net-value { font-weight: 700; font-size: 16px; font-family: monospace; }
-            .footer { text-align: center; font-size: 10px; color: #666; margin-top: 24px; border-top: 1px solid #ddd; padding-top: 10px; }
-          </style>
-        </head>
-        <body>${content}</body>
-      </html>
-    `);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 400);
+  // The on-screen slip uses flexbox/grid, which Word cannot render, so the document
+  // is rebuilt here from the same `r`/`bodyRows` data using tables instead.
+  const buildDoc = () => {
+    const infoLeft = labelValueTable([
+      ['Employee:', esc(r.employeeName)],
+      ['Emp. ID:', esc(r.employeeId)],
+      ['Status:', esc(r.status?.toUpperCase() || '—')],
+    ]);
+    const infoRight = labelValueTable([
+      ['Month:', `${esc(r.month)} ${esc(r.year)}`],
+      ['Section:', esc(r.section || '—')],
+    ]);
+
+    const rows = bodyRows.map(br => `
+      <tr>
+        <td>${esc(br.earnLabel)}</td>
+        <td class="w-right w-mono">${br.earnVal}</td>
+        <td>${esc(br.dedLabel)}</td>
+        <td class="w-right w-mono">${br.dedVal}</td>
+      </tr>`).join('');
+
+    return {
+      filename: `Payslip ${r.employeeName} ${r.month} ${r.year}`,
+      title: `Payslip — ${r.employeeName} ${r.month} ${r.year}`,
+      css: `
+        .slip { width: 100%; font-size: 11px; margin-bottom: 14px; }
+        .slip th { background: #1a1a1a; color: #fff; padding: 6px 10px; font-size: 10px;
+                   text-align: left; border: 1px solid #1a1a1a; }
+        .slip td { padding: 6px 10px; font-size: 11px; border: 1px solid #ddd; }
+        .slip tfoot td { font-weight: 700; border-top: 2px solid #000; background: #f5f5f5; }
+      `,
+      body: `
+        ${companyHeader(COMPANY, { title: `Salary Slip — ${r.month} ${r.year}` })}
+        <table width="100%" style="margin-bottom:14px">
+          <tr><td valign="top" width="50%">${infoLeft}</td><td valign="top" width="50%">${infoRight}</td></tr>
+        </table>
+        <table class="slip">
+          <thead>
+            <tr>
+              <th>Earnings</th><th class="w-right" width="110">Amount</th>
+              <th>Deductions</th><th class="w-right" width="110">Amount</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr>
+              <td>Total Earnings</td><td class="w-right w-mono">${formatCurrency(totalEarnings)}</td>
+              <td>Total Deductions</td><td class="w-right w-mono">${formatCurrency(r.totalDeductions)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        <table width="100%" style="background:#f5f5f5;border:1px solid #ddd">
+          <tr>
+            <td style="padding:10px 14px;font-weight:700;font-size:13px">Net Pay</td>
+            <td align="right" style="padding:10px 14px;font-weight:700;font-size:15px;
+                       font-family:'Courier New',monospace">${formatCurrency(r.netSalary)}</td>
+          </tr>
+        </table>
+        ${documentFooter('This is a computer-generated payslip and does not require a signature.', COMPANY)}`,
+    };
   };
+
+  const handlePreview  = () => showPreview(buildDoc());
+  const handleDownload = () => downloadWordDoc(buildDoc());
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -110,8 +138,11 @@ export default function PayslipModal({ record, onClose }) {
         <div className={styles.toolbar}>
           <span className={styles.toolbarTitle}>Payslip — {r.employeeName}</span>
           <div className={styles.toolbarActions}>
-            <Button variant="primary" size="sm" icon={<Printer size={14} strokeWidth={1.75} />} onClick={handlePrint}>
-              Print
+            <Button variant="secondary" size="sm" icon={<Eye size={14} strokeWidth={1.75} />} onClick={handlePreview}>
+              Preview
+            </Button>
+            <Button variant="primary" size="sm" icon={<FileDown size={14} strokeWidth={1.75} />} onClick={handleDownload}>
+              Download Word
             </Button>
             <Button variant="ghost" size="sm" icon={<X size={14} strokeWidth={2} />} onClick={onClose}>
               Close
@@ -120,7 +151,7 @@ export default function PayslipModal({ record, onClose }) {
         </div>
 
         <div className={styles.body}>
-          <div ref={printRef} className={styles.payslip}>
+          <div className={styles.payslip}>
             <div className="header">
               <div className="co-name">{COMPANY.name}</div>
               <div className="co-meta">{COMPANY.address} &nbsp;|&nbsp; NTN: {COMPANY.ntn}</div>
@@ -176,6 +207,7 @@ export default function PayslipModal({ record, onClose }) {
           </div>
         </div>
       </div>
+      {previewNode}
     </div>
   );
 }

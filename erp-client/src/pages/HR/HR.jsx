@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, Printer, Pencil, FileSpreadsheet, Trash2 } from 'lucide-react';
+import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, FileDown, Pencil, FileSpreadsheet, Trash2 } from 'lucide-react';
 import AddEmployeeModal from './AddEmployeeModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import EditEmployeeModal from './EditEmployeeModal';
@@ -103,8 +103,8 @@ const buildPayCols = (onPrint, onManage) => [
         <button className={styles.printBtn} onClick={() => onManage(row)} title="Edit Payroll">
           <Pencil size={13} strokeWidth={1.75} />
         </button>
-        <button className={styles.printBtn} onClick={() => onPrint(row)} title="Print Payslip">
-          <Printer size={14} strokeWidth={1.75} />
+        <button className={styles.printBtn} onClick={() => onPrint(row)} title="Payslip">
+          <FileDown size={14} strokeWidth={1.75} />
         </button>
       </div>
     ) },

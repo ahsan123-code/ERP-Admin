@@ -1,17 +1,20 @@
-import { useRef } from 'react';
-import { Printer, X, Download } from 'lucide-react';
+
+import { FileDown, Eye, X, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { formatCurrency } from '../../utils/format';
+import { downloadWordDoc, esc, companyHeader, documentFooter } from '../../utils/wordExport';
+import { useWordPreview } from '../../hooks/useWordPreview';
 import styles from './SalarySheetModal.module.css';
 
 const COMPANY = { name: 'Allied Steel Center', address: 'Lahore, Punjab, Pakistan' };
 
 // loans and employees now passed as props (fetched from Supabase in HR.jsx)
 export default function SalarySheetModal({ records, employees, loans = [], month, year, onClose }) {
-  const printRef = useRef();
+
   const toast = useToast();
+  const { showPreview, previewNode } = useWordPreview();
 
   const getDesig      = (empId) => employees.find(e => e.employee_id === empId)?.designation ?? '—';
   const getActiveLoan = (empId) => loans.find(l => l.employee_id === empId && l.status === 'active') ?? null;
@@ -127,35 +130,88 @@ export default function SalarySheetModal({ records, employees, loans = [], month
     toast.download(filename);
   };
 
-  /* ─────────────────────────────────────────── Print */
-  const handlePrint = () => {
-    const content = printRef.current.innerHTML;
-    const win = window.open('', '_blank', 'width=1200,height=750');
-    win.document.write(`
-      <!DOCTYPE html><html><head>
-        <title>Salary Sheet — ${month} ${year}</title>
-        <style>
-          * { margin:0; padding:0; box-sizing:border-box; }
-          body { font-family: Arial, sans-serif; font-size: 9.5px; padding: 20px; color:#000; }
-          .co-name { text-align:center; font-size:15px; font-weight:700; }
-          .co-meta  { text-align:center; font-size:9px; color:#555; margin-top:2px; }
-          .sheet-title { text-align:center; font-size:11px; font-weight:700; text-transform:uppercase;
-                         letter-spacing:1px; margin:10px 0 12px; border-bottom:2px solid #000; padding-bottom:5px; }
-          table { width:100%; border-collapse:collapse; }
-          th { background:#1a1a1a; color:#fff; padding:4px 5px; text-align:center; border:1px solid #333; white-space:nowrap; }
-          th.left { text-align:left; }
-          td { padding:3px 5px; border:1px solid #ddd; text-align:right; }
-          td.left { text-align:left; }
-          td.center { text-align:center; }
-          tr.total-row td { font-weight:700; border-top:2px solid #000; background:#f0f0f0; }
-          .sig-row { display:flex; justify-content:space-between; margin-top:30px; }
-          .sig-col { text-align:center; width:150px; border-top:1px solid #000; padding-top:4px; font-size:8px; color:#444; }
-          .footer { text-align:center; margin-top:14px; font-size:8px; color:#999; border-top:1px solid #ddd; padding-top:6px; }
-        </style>
-      </head><body>${content}</body></html>
-    `);
-    win.document.close();
-    setTimeout(() => { win.focus(); win.print(); }, 400);
+  /* ─────────────────────────────────────────── Word */
+  // Rebuilt from `records`/`totals` rather than scraped from the DOM: the on-screen
+  // signature row uses flexbox, which Word would collapse into a single column.
+  const buildDoc = () => {
+    const money = (v) => (v > 0 ? formatCurrency(v) : '—');
+
+    const rows = records.map((r, i) => `
+      <tr>
+        <td class="w-center">${i + 1}</td>
+        <td class="lft">${esc(r.employee_name)}</td>
+        <td class="lft">${esc(r.section || '—')}</td>
+        <td class="lft">${esc(getDesig(r.employee_id))}</td>
+        <td>${formatCurrency(r.gross_salary)}</td>
+        <td>${money(r.unpaid_leave_amount)}</td>
+        <td>${money(r.overtime_amount)}</td>
+        <td>${money(r.late_amount)}</td>
+        <td>${money(r.advance_salary)}</td>
+        <td>${money(r.loan_deduction)}</td>
+        <td>${formatCurrency(r.total_deductions)}</td>
+        <td><strong>${formatCurrency(r.net_salary)}</strong></td>
+        <td></td>
+      </tr>`).join('');
+
+    const totalRow = `
+      <tr class="total-row">
+        <td colspan="4" class="lft">TOTAL</td>
+        <td>${formatCurrency(totals.gross_salary)}</td>
+        <td>—</td>
+        <td>${money(totals.overtime_amount)}</td>
+        <td>${money(totals.late_amount)}</td>
+        <td>${formatCurrency(totals.advance_salary)}</td>
+        <td>${formatCurrency(totals.loan_deduction)}</td>
+        <td>${formatCurrency(totals.total_deductions)}</td>
+        <td>${formatCurrency(totals.net_salary)}</td>
+        <td></td>
+      </tr>`;
+
+    const sigCell = (label) => `
+      <td width="33%" style="padding-top:34px">
+        <div style="border-top:1px solid #000;padding-top:4px;text-align:center;
+                    font-size:8px;color:#444;width:150px">${label}</div>
+      </td>`;
+
+    return {
+      filename: `Salary Sheet ${month} ${year}`,
+      title: `Salary Sheet — ${month} ${year}`,
+      landscape: true,
+      css: `
+        body { font-size: 9px; }
+        .sheet { width: 100%; }
+        .sheet th { background:#1a1a1a; color:#fff; padding:4px 5px; text-align:center;
+                    border:1px solid #333; font-size:8px; }
+        .sheet th.lft { text-align:left; }
+        .sheet td { padding:3px 5px; border:1px solid #ddd; text-align:right; font-size:8.5px; }
+        .sheet td.lft { text-align:left; }
+        .sheet tr.total-row td { font-weight:700; border-top:2px solid #000; background:#f0f0f0; }
+      `,
+      body: `
+        ${companyHeader(COMPANY, { title: `Salary Sheet — ${month} ${year}` })}
+        <table class="sheet">
+          <thead>
+            <tr>
+              <th width="26">Sr.</th><th class="lft" width="120">Name</th>
+              <th class="lft" width="80">Section</th><th class="lft" width="100">Designation</th>
+              <th>Gross Salary</th><th>Leave Ded.</th><th>OT Amt</th><th>Late Ded.</th>
+              <th>Advance</th><th>Loan Ded.</th><th>Total Ded.</th><th>Net Salary</th>
+              <th width="60">Signature</th>
+            </tr>
+          </thead>
+          <tbody>${rows}${totalRow}</tbody>
+        </table>
+        <table width="100%">
+          <tr>${sigCell('Prepared By')}${sigCell('Checked By')}${sigCell('Approved By')}</tr>
+        </table>
+        ${documentFooter(null, COMPANY)}`,
+    };
+  };
+
+  const handlePreview  = () => showPreview(buildDoc());
+  const handleDownload = () => {
+    downloadWordDoc(buildDoc());
+    toast.download(`Salary Sheet ${month} ${year}.doc`);
   };
 
   return (
@@ -165,13 +221,14 @@ export default function SalarySheetModal({ records, employees, loans = [], month
           <span className={styles.toolbarTitle}>Salary Sheet — {month} {year}</span>
           <div className={styles.toolbarActions}>
             <Button variant="primary"   size="sm" icon={<Download size={14} strokeWidth={1.75} />} onClick={handleExportXLSX}>Export .xlsx</Button>
-            <Button variant="secondary" size="sm" icon={<Printer  size={14} strokeWidth={1.75} />} onClick={handlePrint}>Print</Button>
+            <Button variant="secondary" size="sm" icon={<Eye size={14} strokeWidth={1.75} />} onClick={handlePreview}>Preview</Button>
+            <Button variant="secondary" size="sm" icon={<FileDown size={14} strokeWidth={1.75} />} onClick={handleDownload}>Download Word</Button>
             <Button variant="ghost"     size="sm" icon={<X        size={14} strokeWidth={2}    />} onClick={onClose}>Close</Button>
           </div>
         </div>
 
         <div className={styles.body}>
-          <div ref={printRef}>
+          <div>
             <p className="co-name">{COMPANY.name}</p>
             <p className="co-meta">{COMPANY.address}</p>
             <p className="sheet-title">Salary Sheet — {month} {year}</p>
@@ -238,6 +295,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
           </div>
         </div>
       </div>
+      {previewNode}
     </div>
   );
 }

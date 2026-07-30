@@ -220,7 +220,7 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
     value: g.grn_id, label: `${g.grn_id} — ${g.vendor_name || ''}`, hint: g.received_date,
   }));
   const productOptions = (catalogue || []).map(c => ({
-    value: String(c.id), label: c.name, hint: c.code,
+    value: String(c.id), label: c.name, search: c.code,
   }));
 
   return (
@@ -322,7 +322,6 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
             ? <p className={styles.emptyLines}>No items on this bill yet.</p>
             : lineItems.map((it, i) => (
               <div key={i} className={styles.lineRow}>
-                <span className={styles.lineCode}>{it.item_code}</span>
                 <span className={styles.lineName}>
                   {it.item_name}
                   {(it.gauge || it.size) && (

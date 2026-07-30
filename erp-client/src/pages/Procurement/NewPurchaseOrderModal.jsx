@@ -136,7 +136,7 @@ export default function NewPurchaseOrderModal({ open, onClose, onSave }) {
   // prefix would eat the width and cut the name off. The hint still shows the code and
   // is searchable, so picking by code keeps working.
   const productOptions = (catalogue || []).map(c => ({
-    value: c.id, label: c.name, hint: c.code,
+    value: c.id, label: c.name, search: c.code,
   }));
   const prOptions = (requisitions || []).map(r => ({
     value: r.pr_id, label: `${r.pr_id} — ${r.department}`, hint: r.priority,
@@ -248,7 +248,6 @@ export default function NewPurchaseOrderModal({ open, onClose, onSave }) {
             ? <p className={styles.emptyLines}>No items added yet.</p>
             : lineItems.map((it, i) => (
               <div key={i} className={styles.lineRow}>
-                <span className={styles.lineCode}>{it.product_code}</span>
                 <span className={styles.lineName}>{it.product_name}</span>
                 <span className={styles.lineQty}>{it.qty} {it.unit}</span>
                 <span className={styles.lineQty} style={{ color: 'var(--green)' }}>{formatCurrency(it.total_price)}</span>

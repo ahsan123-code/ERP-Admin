@@ -15,6 +15,7 @@ import Procurement from './pages/Procurement/Procurement';
 import Production  from './pages/Production/Production';
 import Sales       from './pages/Sales/Sales';
 import Invoicing   from './pages/Invoicing/Invoicing';
+import ExpenseAccounts from './pages/ExpenseAccounts/ExpenseAccounts';
 import Finance     from './pages/Finance/Finance';
 import HR          from './pages/HR/HR';
 import Reports     from './pages/Reports/Reports';
@@ -55,6 +56,8 @@ function AppRoutes() {
 
               <Route path="invoicing"   element={<PageWrap><Invoicing /></PageWrap>} />
               <Route path="invoicing/*" element={<PageWrap><Invoicing /></PageWrap>} />
+
+              <Route path="expense-accounts" element={<PageWrap><ExpenseAccounts /></PageWrap>} />
 
               <Route path="finance"   element={<PageWrap><Finance /></PageWrap>} />
               <Route path="finance/*" element={<PageWrap><Finance /></PageWrap>} />

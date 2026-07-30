@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Scale, TrendingDown, TrendingUp, BarChart3,
-  Printer, Users, Globe, Package, FileText, BadgeCheck, Truck, Landmark,
+  FileDown, Eye, Users, Globe, Package, FileText, BadgeCheck, Truck, Landmark,
   ClipboardList, CalendarDays, Store, BookUser, Trash2,
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
@@ -15,14 +15,49 @@ import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
 import { useToast } from '../../components/shared/Toast';
 import { useCustomers } from '../../context/CustomerContext';
-import { formatDate, formatCurrency } from '../../utils/format';
+import { formatDate, formatCurrency, itemLabel } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
+import { downloadWordDoc, esc, companyHeader, documentFooter } from '../../utils/wordExport';
+import { useWordPreview } from '../../hooks/useWordPreview';
 import styles from './Reports.module.css';
 
 const TODAY = new Date();
 const agDays = (dateStr) => Math.floor((TODAY - new Date(dateStr)) / 86400000);
 
 const COMPANY = { name: 'Allied Steel Center', address: 'Shop No. 41, Steel Sheet Market, Lahore', ntn: '9207491-5' };
+
+// Shared look for every exported report. Borders are set per-cell rather than via
+// border-collapse shorthands because Word ignores the latter.
+const REPORT_CSS = `
+  .rpt { width: 100%; font-size: 10px; }
+  .rpt th { background:#1a1a1a; color:#fff; padding:6px 9px; font-size:9px;
+            text-align:left; border:1px solid #1a1a1a; }
+  .rpt th.right  { text-align:right; }
+  .rpt th.center { text-align:center; }
+  .rpt td { padding:5px 9px; font-size:10px; border:1px solid #ddd; vertical-align:top; }
+  .rpt td.right  { text-align:right; font-family:'Courier New',monospace; }
+  .rpt td.center { text-align:center; }
+  .rpt tfoot td  { font-weight:700; border-top:2px solid #333; background:#f9f9f9; }
+  .rpt-meta { font-size:10px; color:#444; margin-bottom:10px; }
+`;
+
+// Wraps a report table in the standard letterhead + footer, returning the document
+// spec. Both the Preview and the Download button build from this one function, so
+// what the preview shows is always what the .doc contains.
+// `landscape` is for the wide multi-column reports that would otherwise be cut off.
+function buildReportDoc({ filename, title, meta = '', table, landscape = false, note = null }) {
+  return {
+    filename,
+    title,
+    landscape,
+    css: REPORT_CSS,
+    body: `
+      ${companyHeader(COMPANY, { title })}
+      ${meta ? `<div class="rpt-meta">${meta}</div>` : ''}
+      ${table}
+      ${documentFooter(note, COMPANY)}`,
+  };
+}
 
 const SEG_TO_TAB = {
   '': 'ledger', ledger: 'ledger', trial: 'trial',
@@ -126,37 +161,32 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const openBal  = entries[0]?.balance ?? 0;
   const closeBal = entries[entries.length - 1]?.balance ?? 0;
 
-  const handlePrint = () => {
+  const { showPreview, previewNode } = useWordPreview();
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
+
+  const buildDoc = () => {
     if (!account) return;
-    const rows = entries.map((e, i) => `
+    const rows = entries.map(e => `
       <tr>
         <td>${formatDate((e.date || '').slice(0, 10))}</td>
-        <td>${e.narration || '—'}</td>
+        <td>${esc(e.narration || '—')}</td>
         <td class="right">${e.debit  > 0 ? formatCurrency(e.debit)  : '—'}</td>
         <td class="right">${e.credit > 0 ? formatCurrency(e.credit) : '—'}</td>
         <td class="right">${formatCurrency(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
       </tr>`).join('');
-    const win = window.open('', '_blank', 'width=800,height=700');
-    win.document.write(`<!DOCTYPE html><html><head><title>Ledger — ${account}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;padding:24px;color:#000}
-      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}.co{font-size:18px;font-weight:700}
-      .sub{font-size:11px;color:#555;margin-top:3px}.ttl{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:10px 0}
-      .meta{font-size:11px;color:#444;margin-bottom:12px}table{width:100%;border-collapse:collapse}
-      th{background:#1a1a1a;color:#fff;padding:6px 10px;font-size:10px;text-align:left}th.right{text-align:right}
-      td{padding:5px 10px;font-size:11px;border-bottom:1px solid #eee}td.right{text-align:right;font-family:monospace}
-      .footer{text-align:center;margin-top:20px;font-size:10px;color:#999;border-top:1px solid #ddd;padding-top:10px}
-      </style></head><body>
-      <div class="hdr"><div class="co">${COMPANY.name}</div><div class="sub">${COMPANY.address} | NTN: ${COMPANY.ntn}</div></div>
-      <div class="ttl">Account Ledger</div>
-      <div class="meta">Account: <strong>${account}</strong> &nbsp;|&nbsp; Period: ${formatDate(fromDate)} — ${formatDate(toDate)}</div>
-      <table>
-        <thead><tr><th>Date</th><th>Narration</th><th class="right">Debit</th><th class="right">Credit</th><th class="right">Balance</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5" style="text-align:center;padding:20px;color:#666">No entries for selected period</td></tr>'}</tbody>
-      </table>
-      <p class="footer">Opening: ${formatCurrency(Math.abs(openBal))} | Closing: ${formatCurrency(Math.abs(closeBal))} | Printed: ${new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</p>
-      </body></html>`);
-    win.document.close(); win.focus();
-    setTimeout(() => win.print(), 400);
+
+    return buildReportDoc({
+      filename: `Ledger ${account}`,
+      title: 'Account Ledger',
+      meta: `Account: <strong>${esc(account)}</strong> &nbsp;|&nbsp; Period: ${formatDate(fromDate)} — ${formatDate(toDate)}`,
+      note: `Opening: ${formatCurrency(Math.abs(openBal))}  |  Closing: ${formatCurrency(Math.abs(closeBal))}`,
+      table: `<table class="rpt">
+        <thead><tr><th width="80">Date</th><th>Narration</th><th class="right" width="100">Debit</th>
+          <th class="right" width="100">Credit</th><th class="right" width="120">Balance</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
+      </table>`,
+    });
   };
 
   return (
@@ -180,9 +210,13 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
           <label className={styles.filterLabel}>To</label>
           <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
         </div>
-        <Button variant="primary" icon={<Printer size={14} />} onClick={handlePrint} disabled={!account}>
-          Print Ledger
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!account}>
+          Preview
         </Button>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload} disabled={!account}>
+          Download Word
+        </Button>
+        {previewNode}
       </div>
 
       {!account ? (
@@ -414,7 +448,11 @@ function CustomerLedger({ salesInvoices, customers = [] }) {
 
   const grandTotal = openingAmount + invs.reduce((s, i) => s + (i.grand_total || 0), 0);
 
-  const handlePrint = () => {
+  const { showPreview, previewNode } = useWordPreview();
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
+
+  const buildDoc = () => {
     if (!customer) return;
     const openingHtml = openingRow
       ? `<tr>
@@ -432,7 +470,7 @@ function CustomerLedger({ salesInvoices, customers = [] }) {
     const rows = openingHtml + invs.map(inv => {
       const items = itemsByRef[inv.so_ref] || [];
       const itemText = items.length
-        ? items.map(li => `${li.item_name || '—'}${li.quantity > 0 ? ` · ${li.quantity} ${li.unit || ''}` : ''}`).join('<br>')
+        ? items.map(li => `${esc(itemLabel(li.item_name))}${li.quantity > 0 ? ` · ${esc(li.quantity)} ${esc(li.unit || '')}` : ''}`).join('<br>')
         : '—';
       const specText = items.length
         ? items.map(li => [li.size, li.gauge].filter(Boolean).join(' · ') || '—').join('<br>')
@@ -452,29 +490,21 @@ function CustomerLedger({ salesInvoices, customers = [] }) {
         <td>${getStatus(inv.status).label}</td>
       </tr>`;
     }).join('');
-    const win = window.open('', '_blank', 'width=1000,height=750');
-    win.document.write(`<!DOCTYPE html><html><head><title>Customer Sales Ledger — ${customer}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;padding:24px;color:#000}
-      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}.co{font-size:18px;font-weight:700}
-      .sub{font-size:11px;color:#555;margin-top:3px}.ttl{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:10px 0}
-      .meta{font-size:11px;color:#444;margin-bottom:12px}table{width:100%;border-collapse:collapse}
-      th{background:#1a1a1a;color:#fff;padding:6px 10px;font-size:10px;text-align:left}th.right{text-align:right}
-      td{padding:5px 10px;font-size:11px;border-bottom:1px solid #eee;vertical-align:top}td.right{text-align:right;font-family:monospace}
-      tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
-      .footer{text-align:center;margin-top:20px;font-size:10px;color:#999;border-top:1px solid #ddd;padding-top:10px}
-      </style></head><body>
-      <div class="hdr"><div class="co">${COMPANY.name}</div><div class="sub">${COMPANY.address} | NTN: ${COMPANY.ntn}</div></div>
-      <div class="ttl">Customer Sales Ledger</div>
-      <div class="meta">Customer: <strong>${customer}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}</div>
-      <table>
-        <thead><tr><th>Date</th><th>Invoice No.</th><th>Item</th><th>Size / Gauge</th><th class="right">Rate</th><th class="right">Subtotal</th><th class="right">Charges</th><th class="right">Grand Total</th><th>Status</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:#666">No invoices for selected period</td></tr>'}</tbody>
-        <tfoot><tr><td colspan="7" class="right">Total</td><td class="right">${formatCurrency(grandTotal)}</td><td></td></tr></tfoot>
-      </table>
-      <p class="footer">Printed: ${new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</p>
-      </body></html>`);
-    win.document.close(); win.focus();
-    setTimeout(() => win.print(), 400);
+    return buildReportDoc({
+      filename: `Customer Sales Ledger ${customer}`,
+      title: 'Customer Sales Ledger',
+      landscape: true,
+      meta: `Customer: <strong>${esc(customer)}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}`,
+      table: `<table class="rpt">
+        <thead><tr><th width="70">Date</th><th width="90">Invoice No.</th><th>Item</th>
+          <th width="100">Size / Gauge</th><th class="right" width="80">Rate</th>
+          <th class="right" width="90">Subtotal</th><th class="right" width="80">Charges</th>
+          <th class="right" width="95">Grand Total</th><th width="70">Status</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="9" class="center" style="padding:18px;color:#666">No invoices for selected period</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="7" class="right">Total</td>
+          <td class="right">${formatCurrency(grandTotal)}</td><td></td></tr></tfoot>
+      </table>`,
+    });
   };
 
   return (
@@ -498,9 +528,13 @@ function CustomerLedger({ salesInvoices, customers = [] }) {
           <label className={styles.filterLabel}>To</label>
           <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
         </div>
-        <Button variant="primary" icon={<Printer size={14} />} onClick={handlePrint} disabled={!customer}>
-          Print Ledger
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!customer}>
+          Preview
         </Button>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload} disabled={!customer}>
+          Download Word
+        </Button>
+        {previewNode}
       </div>
       <div className={styles.reportTable}>
         <table className={styles.tbl}>
@@ -536,7 +570,7 @@ function CustomerLedger({ salesInvoices, customers = [] }) {
                         ? <span className={styles.nil}>—</span>
                         : items.map((li, idx) => (
                           <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
-                            {li.item_name || '—'}
+                            {itemLabel(li.item_name)}
                             {li.quantity > 0 && (
                               <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
                             )}
@@ -887,71 +921,52 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
     </tr>
   );
 
-  const handlePrint = () => {
-    const win = window.open('', '_blank', 'width=1150,height=820');
+  const { showPreview, previewNode } = useWordPreview();
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
+
+  const buildDoc = () => {
     const allRows = [...drRows, ...crRows];
     const tableRows = allRows.map((r, i) => `
       <tr>
         <td>${i + 1}</td>
-        <td><strong>${r.name}</strong>${r.contact ? `<br><small style="color:#888">${r.contact}</small>` : ''}</td>
-        <td class="right" style="color:${r.balance >= 0 ? '#1a5276' : '#922b21'};font-weight:700;font-family:monospace">
+        <td><strong>${esc(r.name)}</strong>${r.contact ? `<br><span style="font-size:9px;color:#888">${esc(r.contact)}</span>` : ''}</td>
+        <td class="right" style="color:${r.balance >= 0 ? '#1a5276' : '#922b21'};font-weight:700">
           ${r.balance >= 0 ? formatCurrency(r.balance) + ' Dr' : formatCurrency(Math.abs(r.balance)) + ' Cr'}
         </td>
         <td class="center">${r.last_payment_date ? formatDate(r.last_payment_date) : '—'}</td>
-        <td class="right mono">${r.last_payment_amount > 0 ? formatCurrency(r.last_payment_amount) : '—'}</td>
-        <td class="center mono">${r.last_invoice_id || '—'}</td>
+        <td class="right">${r.last_payment_amount > 0 ? formatCurrency(r.last_payment_amount) : '—'}</td>
+        <td class="center">${esc(r.last_invoice_id || '—')}</td>
         <td class="center">${r.last_invoice_date ? formatDate(r.last_invoice_date) : '—'}</td>
-        <td class="right mono">${r.last_invoice_amount > 0 ? formatCurrency(r.last_invoice_amount) : '—'}</td>
+        <td class="right">${r.last_invoice_amount > 0 ? formatCurrency(r.last_invoice_amount) : '—'}</td>
       </tr>`).join('');
 
-    win.document.write(`<!DOCTYPE html><html><head><title>Customer Current Balance</title>
-    <style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff}
-      .wrap{max-width:1060px;margin:0 auto;padding:24px}
-      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:14px}
-      .co-name{font-size:20px;font-weight:700}
-      .co-meta{font-size:10px;color:#555;margin-top:4px}
-      .rpt-title{font-size:14px;font-weight:700;text-transform:uppercase;margin-top:6px;letter-spacing:1px}
-      table{width:100%;border-collapse:collapse;margin-top:10px}
-      thead th{background:#1a1a1a;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:7px 8px;text-align:left}
-      th.right,td.right{text-align:right} th.center,td.center{text-align:center}
-      tbody td{padding:6px 8px;border-bottom:1px solid #eee;vertical-align:top}
-      tbody tr:nth-child(even){background:#fafafa}
-      .mono{font-family:monospace}
-      .totals{display:flex;justify-content:flex-end;margin-top:14px}
-      .tbox{min-width:300px}
-      .trow{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:12px}
-      .trow.net{font-weight:700;font-size:14px;border-top:2px solid #000;border-bottom:none;padding-top:8px;margin-top:4px}
-      .footer{margin-top:20px;font-size:10px;color:#666;border-top:1px solid #ddd;padding-top:10px}
-      small{font-size:10px;color:#666}
-    </style></head><body><div class="wrap">
-    <div class="hdr">
-      <div class="co-name">${COMPANY.name}</div>
-      <div class="co-meta">${COMPANY.address} | NTN: ${COMPANY.ntn}</div>
-      <div class="rpt-title">Customer Current Balance Report</div>
-      <div class="co-meta">As of ${formatDate(new Date().toISOString())} — ${allRows.length} customers</div>
-    </div>
-    <table>
-      <thead><tr>
-        <th>Sr#</th><th>Customer</th><th class="right">Current Balance</th>
-        <th class="center">Last Pmt Date</th><th class="right">Last Pmt Amt</th>
-        <th class="center">Invoice #</th><th class="center">Invoice Date</th><th class="right">Invoice Amt</th>
-      </tr></thead>
-      <tbody>${tableRows}</tbody>
-    </table>
-    <div class="totals">
-      <div class="tbox">
-        <div class="trow"><span>Total Debit (Receivable)</span><span class="mono" style="color:#1a5276">${formatCurrency(totalDr)}</span></div>
-        <div class="trow"><span>Total Credit (Advance)</span><span class="mono" style="color:#922b21">${formatCurrency(totalCr)}</span></div>
-        <div class="trow net"><span>Net Receivable</span><span class="mono">${formatCurrency(netBalance)}</span></div>
-      </div>
-    </div>
-    <div class="footer">Printed on ${new Date().toLocaleString('en-PK')} — ${COMPANY.name} ERP</div>
-    </div></body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 400);
+    const totalsTable = `
+      <table width="320" align="right" style="margin-top:12px">
+        <tr><td style="padding:4px 0;font-size:11px;border-bottom:1px solid #eee">Total Debit (Receivable)</td>
+            <td class="right" style="padding:4px 0;font-size:11px;border-bottom:1px solid #eee;color:#1a5276">${formatCurrency(totalDr)}</td></tr>
+        <tr><td style="padding:4px 0;font-size:11px;border-bottom:1px solid #eee">Total Credit (Advance)</td>
+            <td class="right" style="padding:4px 0;font-size:11px;border-bottom:1px solid #eee;color:#922b21">${formatCurrency(totalCr)}</td></tr>
+        <tr><td style="padding-top:7px;font-size:13px;font-weight:700;border-top:2px solid #000">Net Receivable</td>
+            <td class="right" style="padding-top:7px;font-size:13px;font-weight:700;border-top:2px solid #000">${formatCurrency(netBalance)}</td></tr>
+      </table>
+      <div style="clear:both"></div>`;
+
+    return buildReportDoc({
+      filename: 'Customer Current Balance',
+      title: 'Customer Current Balance Report',
+      landscape: true,
+      meta: `As of ${formatDate(new Date().toISOString())} &nbsp;|&nbsp; ${allRows.length} customers`,
+      table: `<table class="rpt">
+          <thead><tr>
+            <th width="34">Sr#</th><th>Customer</th><th class="right" width="120">Current Balance</th>
+            <th class="center" width="80">Last Pmt Date</th><th class="right" width="90">Last Pmt Amt</th>
+            <th class="center" width="85">Invoice #</th><th class="center" width="80">Invoice Date</th>
+            <th class="right" width="90">Invoice Amt</th>
+          </tr></thead>
+          <tbody>${tableRows || '<tr><td colspan="8" class="center" style="padding:18px;color:#666">No customers to report</td></tr>'}</tbody>
+        </table>${totalsTable}`,
+    });
   };
 
   const tblHead = (
@@ -989,9 +1004,13 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
               {formatCurrency(netBalance)} {netBalance >= 0 ? 'Dr' : 'Cr'}
             </strong>
           </span>
-          <Button variant="secondary" icon={<Printer size={14} strokeWidth={1.75} />} size="sm" onClick={handlePrint}>
-            Print Report
+          <Button variant="secondary" icon={<Eye size={14} strokeWidth={1.75} />} size="sm" onClick={handlePreview}>
+            Preview
           </Button>
+          <Button variant="primary" icon={<FileDown size={14} strokeWidth={1.75} />} size="sm" onClick={handleDownload}>
+            Download Word
+          </Button>
+          {previewNode}
         </div>
       </div>
 
@@ -1061,41 +1080,37 @@ function DailyDayBook({ vouchers }) {
   const totalDr = dayVouchers.reduce((s, v) => s + (parseFloat(v.debit)  || 0), 0);
   const totalCr = dayVouchers.reduce((s, v) => s + (parseFloat(v.credit) || 0), 0);
 
-  const handlePrint = () => {
-    const win = window.open('', '_blank', 'width=1000,height=750');
-    win.document.write(`<!DOCTYPE html><html><head><title>Daily Day Book — ${date}</title>
-    <style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px}
-      h2{text-align:center;font-size:16px;margin-bottom:2px}
-      .sub{text-align:center;font-size:12px;color:#555;margin-bottom:16px}
-      table{width:100%;border-collapse:collapse}
-      th{background:#1a1a2e;color:#fff;padding:7px 10px;text-align:left;font-size:11px}
-      td{padding:6px 10px;border-bottom:1px solid #e0e0e0;font-size:11.5px}
-      .mono{font-family:monospace}.right{text-align:right}
-      .dr{color:#1a5276}.cr{color:#145a32}
-      tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
-    </style></head><body>
-    <h2>${COMPANY.name}</h2>
-    <div class="sub">Daily Day Book — ${date}</div>
-    <table>
-      <thead><tr><th>#</th><th>Voucher ID</th><th>Type</th><th>Account</th><th>Narration</th><th class="right">Debit</th><th class="right">Credit</th></tr></thead>
-      <tbody>${dayVouchers.map((v, i) => `<tr>
+  const { showPreview, previewNode } = useWordPreview();
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
+
+  const buildDoc = () => {
+    const rows = dayVouchers.map((v, i) => `
+      <tr>
         <td>${i + 1}</td>
-        <td class="mono">${v.voucher_id || '—'}</td>
-        <td>${v.voucher_type || '—'}</td>
-        <td>${v.account_name || '—'}</td>
-        <td>${v.narration || '—'}</td>
-        <td class="right mono dr">${v.debit  > 0 ? formatCurrency(v.debit)  : '—'}</td>
-        <td class="right mono cr">${v.credit > 0 ? formatCurrency(v.credit) : '—'}</td>
-      </tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="5" class="right">Totals</td>
-        <td class="right mono dr">${formatCurrency(totalDr)}</td>
-        <td class="right mono cr">${formatCurrency(totalCr)}</td>
-      </tr></tfoot>
-    </table></body></html>`);
-    win.document.close();
-    setTimeout(() => win.print(), 400);
+        <td>${esc(v.voucher_id || '—')}</td>
+        <td>${esc(v.voucher_type || '—')}</td>
+        <td>${esc(v.account_name || '—')}</td>
+        <td>${esc(v.narration || '—')}</td>
+        <td class="right" style="color:#1a5276">${v.debit  > 0 ? formatCurrency(v.debit)  : '—'}</td>
+        <td class="right" style="color:#145a32">${v.credit > 0 ? formatCurrency(v.credit) : '—'}</td>
+      </tr>`).join('');
+
+    return buildReportDoc({
+      filename: `Daily Day Book ${date}`,
+      title: 'Daily Day Book',
+      landscape: true,
+      meta: `Date: <strong>${esc(date)}</strong> &nbsp;|&nbsp; ${dayVouchers.length} entries`,
+      table: `<table class="rpt">
+        <thead><tr><th width="30">#</th><th width="100">Voucher ID</th><th width="80">Type</th>
+          <th width="150">Account</th><th>Narration</th>
+          <th class="right" width="100">Debit</th><th class="right" width="100">Credit</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="7" class="center" style="padding:18px;color:#666">No vouchers found for ${esc(date)}</td></tr>`}</tbody>
+        <tfoot><tr><td colspan="5" class="right">Totals</td>
+          <td class="right" style="color:#1a5276">${formatCurrency(totalDr)}</td>
+          <td class="right" style="color:#145a32">${formatCurrency(totalCr)}</td></tr></tfoot>
+      </table>`,
+    });
   };
 
   return (
@@ -1105,7 +1120,9 @@ function DailyDayBook({ vouchers }) {
         <input type="date" value={date} onChange={e => setDate(e.target.value)}
           style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '6px 12px', fontSize: 13 }} />
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{dayVouchers.length} entries</span>
-        <Button variant="secondary" icon={<Printer size={14} />} onClick={handlePrint} style={{ marginLeft: 'auto' }}>Print</Button>
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} style={{ marginLeft: 'auto' }}>Preview</Button>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload}>Download Word</Button>
+        {previewNode}
       </div>
       {dayVouchers.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>No vouchers found for {date}.</div>
@@ -1178,33 +1195,36 @@ function VendorCurrentBalance({ vendorBalances }) {
     ? `${formatCurrency(b)} Payable`
     : `${formatCurrency(Math.abs(b))} Advance`;
 
-  const handlePrint = () => {
-    const win = window.open('', '_blank', 'width=1050,height=750');
-    win.document.write(`<!DOCTYPE html><html><head><title>Vendor Current Balance</title>
-    <style>
-      *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;padding:24px}
-      h2{text-align:center;font-size:16px;margin-bottom:2px}.sub{text-align:center;color:#555;margin-bottom:16px}
-      table{width:100%;border-collapse:collapse}th{background:#1a1a2e;color:#fff;padding:7px 10px;text-align:left;font-size:11px}
-      th.right,td.right{text-align:right}
-      td{padding:6px 10px;border-bottom:1px solid #e0e0e0;font-size:11.5px}.mono{font-family:monospace}
-      tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
-    </style></head><body>
-    <h2>${COMPANY.name}</h2><div class="sub">Vendor Current Balance</div>
-    <table><thead><tr><th>#</th><th>Vendor</th><th>Category</th><th class="right">Total Purchases</th><th class="right">Total Paid</th><th class="right">Balance</th><th>Last Txn</th></tr></thead>
-    <tbody>${filtered.map((r, i) => `<tr>
-      <td>${i + 1}</td><td><strong>${r.name}</strong></td><td>${r.category || '—'}</td>
-      <td class="right mono">${formatCurrency(r.purchases)}</td>
-      <td class="right mono">${formatCurrency(r.paid)}</td>
-      <td class="right mono" style="color:${r.balance >= 0 ? '#922b21' : '#1e7d34'};font-weight:700">${balLabel(r.balance)}</td>
-      <td>${r.last_txn_date ? formatDate(r.last_txn_date) : '—'}</td>
-    </tr>`).join('')}</tbody>
-    <tfoot><tr><td colspan="3" class="right">Totals</td>
-      <td class="right mono">${formatCurrency(totalPurchases)}</td>
-      <td class="right mono">${formatCurrency(totalPaid)}</td>
-      <td class="right mono" style="color:#922b21">${balLabel(totalPayable)}</td>
-      <td></td></tr></tfoot>
-    </table></body></html>`);
-    win.document.close(); setTimeout(() => win.print(), 400);
+  const { showPreview, previewNode } = useWordPreview();
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
+
+  const buildDoc = () => {
+    const rows = filtered.map((r, i) => `
+      <tr>
+        <td>${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>${esc(r.category || '—')}</td>
+        <td class="right">${formatCurrency(r.purchases)}</td>
+        <td class="right">${formatCurrency(r.paid)}</td>
+        <td class="right" style="color:${r.balance >= 0 ? '#922b21' : '#1e7d34'};font-weight:700">${balLabel(r.balance)}</td>
+        <td>${r.last_txn_date ? formatDate(r.last_txn_date) : '—'}</td>
+      </tr>`).join('');
+
+    return buildReportDoc({
+      filename: 'Vendor Current Balance',
+      title: 'Vendor Current Balance',
+      meta: `${filtered.length} vendors &nbsp;|&nbsp; Purchases: <strong>${formatCurrency(totalPurchases)}</strong> &nbsp;|&nbsp; Payable: <strong>${formatCurrency(totalPayable)}</strong>`,
+      table: `<table class="rpt">
+        <thead><tr><th width="30">#</th><th>Vendor</th><th width="100">Category</th>
+          <th class="right" width="105">Total Purchases</th><th class="right" width="95">Total Paid</th>
+          <th class="right" width="105">Balance</th><th width="80">Last Txn</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" class="center" style="padding:18px;color:#666">No vendor balances found</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="3" class="right">Totals</td>
+          <td class="right">${formatCurrency(totalPurchases)}</td>
+          <td class="right">${formatCurrency(totalPaid)}</td>
+          <td class="right" style="color:#922b21">${balLabel(totalPayable)}</td>
+          <td></td></tr></tfoot>
+      </table>`,
+    });
   };
 
   const thRight = { padding: '8px 12px', textAlign: 'right', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' };
@@ -1216,7 +1236,9 @@ function VendorCurrentBalance({ vendorBalances }) {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor..."
           style={{ flex: 1, maxWidth: 280, background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '7px 12px', fontSize: 13 }} />
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{filtered.length} vendors · Purchases: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPurchases)}</strong> · Payable: <strong style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPayable)}</strong></span>
-        <Button variant="secondary" icon={<Printer size={14} />} onClick={handlePrint} style={{ marginLeft: 'auto' }}>Print</Button>
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} style={{ marginLeft: 'auto' }}>Preview</Button>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload}>Download Word</Button>
+        {previewNode}
       </div>
       {filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>No vendor balances found{search ? ` for "${search}"` : ''}.</div>
@@ -1319,22 +1341,26 @@ function VendorLedger({ vendors }) {
   const totalCr  = entries.reduce((s, e) => s + (parseFloat(e.credit) || 0), 0);
   const closeBal = entries[entries.length - 1]?.balance ?? 0;
 
-  const handlePrint = () => {
+  const { showPreview, previewNode } = useWordPreview();
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
+
+  const buildDoc = () => {
     if (!vendor) return;
     const rows = entries.map(e => {
       const items = itemsFor(e);
       const itemText = items.length
-        ? items.map(li => `${li.item_name || '—'}${li.quantity > 0 ? ` · ${li.quantity} ${li.unit || ''}` : ''}`).join('<br>')
+        ? items.map(li => `${esc(li.item_name || '—')}${li.quantity > 0 ? ` · ${esc(li.quantity)} ${esc(li.unit || '')}` : ''}`).join('<br>')
         : '—';
       const specText = items.length
-        ? items.map(li => lineSpec(li) || '—').join('<br>')
+        ? items.map(li => esc(lineSpec(li)) || '—').join('<br>')
         : '—';
       return `
       <tr>
         <td>${formatDate((e.date || '').slice(0, 10))}</td>
-        <td>${e.voucher_id || '—'}</td>
-        <td>${e.voucher_type || '—'}</td>
-        <td>${e.narration || '—'}</td>
+        <td>${esc(e.voucher_id || '—')}</td>
+        <td>${esc(e.voucher_type || '—')}</td>
+        <td>${esc(e.narration || '—')}</td>
         <td>${itemText}</td>
         <td>${specText}</td>
         <td class="right">${e.debit  > 0 ? formatCurrency(e.debit)  : '—'}</td>
@@ -1342,33 +1368,26 @@ function VendorLedger({ vendors }) {
         <td class="right">${formatCurrency(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
       </tr>`;
     }).join('');
-    const win = window.open('', '_blank', 'width=900,height=720');
-    win.document.write(`<!DOCTYPE html><html><head><title>Vendor Ledger — ${vendor}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px;padding:24px;color:#000}
-      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:16px}.co{font-size:18px;font-weight:700}
-      .sub{font-size:11px;color:#555;margin-top:3px}.ttl{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:10px 0}
-      .meta{font-size:11px;color:#444;margin-bottom:12px}table{width:100%;border-collapse:collapse}
-      th{background:#1a1a1a;color:#fff;padding:6px 10px;font-size:10px;text-align:left}th.right{text-align:right}
-      td{padding:5px 10px;font-size:11px;border-bottom:1px solid #eee}td.right{text-align:right;font-family:monospace}
-      tfoot td{font-weight:700;border-top:2px solid #333;background:#f9f9f9}
-      .footer{text-align:center;margin-top:20px;font-size:10px;color:#999;border-top:1px solid #ddd;padding-top:10px}
-      </style></head><body>
-      <div class="hdr"><div class="co">${COMPANY.name}</div><div class="sub">${COMPANY.address} | NTN: ${COMPANY.ntn}</div></div>
-      <div class="ttl">Vendor Ledger</div>
-      <div class="meta">Vendor: <strong>${vendor}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}</div>
-      <table>
-        <thead><tr><th>Date</th><th>Voucher</th><th>Type</th><th>Narration</th><th>Item</th><th>Size / Gauge</th><th class="right">Debit</th><th class="right">Credit</th><th class="right">Balance</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:#666">No entries for selected period</td></tr>'}</tbody>
+
+    return buildReportDoc({
+      filename: `Vendor Ledger ${vendor}`,
+      title: 'Vendor Ledger',
+      landscape: true,
+      meta: `Vendor: <strong>${esc(vendor)}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}`,
+      note: `Closing Balance: ${formatCurrency(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}`,
+      table: `<table class="rpt">
+        <thead><tr><th width="65">Date</th><th width="85">Voucher</th><th width="60">Type</th>
+          <th>Narration</th><th width="130">Item</th><th width="90">Size / Gauge</th>
+          <th class="right" width="85">Debit</th><th class="right" width="85">Credit</th>
+          <th class="right" width="100">Balance</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="9" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
         <tfoot><tr><td colspan="6" class="right">Totals</td>
           <td class="right">${formatCurrency(totalDr)}</td>
           <td class="right">${formatCurrency(totalCr)}</td>
           <td class="right">${formatCurrency(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}</td>
         </tr></tfoot>
-      </table>
-      <p class="footer">Closing Balance: ${formatCurrency(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'} | Printed: ${new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}</p>
-      </body></html>`);
-    win.document.close(); win.focus();
-    setTimeout(() => win.print(), 400);
+      </table>`,
+    });
   };
 
   return (
@@ -1392,9 +1411,13 @@ function VendorLedger({ vendors }) {
           <label className={styles.filterLabel}>To</label>
           <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
         </div>
-        <Button variant="primary" icon={<Printer size={14} />} onClick={handlePrint} disabled={!vendor}>
-          Print Ledger
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!vendor}>
+          Preview
         </Button>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload} disabled={!vendor}>
+          Download Word
+        </Button>
+        {previewNode}
       </div>
 
       {!vendor ? (
