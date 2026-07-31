@@ -118,9 +118,82 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const [deletingId, setDeletingId] = useState(null);
 
   const { data: rawVouchers, refetch: refetchVouchers } = useDb(
-    () => account ? financeDb.getVouchersByAccount(account, fromDate, toDate) : Promise.resolve({ data: [], error: null }),
-    [account, fromDate, toDate]
+    () => account
+      ? financeDb.getVouchersByAccount(account, fromDate, toDate, companyId)
+      : Promise.resolve({ data: [], error: null }),
+    [account, fromDate, toDate, companyId]
   );
+
+  // Real remarks live on the voucher lines; vouchers.narration is a placeholder from
+  // the source system ("Remarks", "Journal Voucher", …).
+  const voucherIds = useMemo(
+    () => (rawVouchers || []).map(v => v.voucher_id).filter(Boolean), [rawVouchers]);
+  const voucherIdKey = voucherIds.join(',');
+  const { data: lineNotes } = useDb(
+    () => financeDb.getVoucherLineNarrations(voucherIds, companyId),
+    [voucherIdKey, companyId]);
+
+  // Prefer the line booked against the account being viewed; fall back to any line
+  // that carries a note, since one-sided legacy vouchers often only annotate the
+  // opposite leg. Placeholder header values are never shown.
+  const narrationByVoucher = useMemo(() => {
+    const PLACEHOLDER = /^(remarks|journal voucher|cash (paid|receipt) voucher|bank cheques reconciliation|posted from purchase invoice)$/i;
+    const map = {};
+    (lineNotes || []).forEach(l => {
+      if (!l.narration) return;
+      const mine = (l.account_title || '').toLowerCase() === (account || '').toLowerCase();
+      const cur = map[l.voucher_id];
+      if (!cur || (mine && !cur.mine)) map[l.voucher_id] = { text: l.narration, mine };
+    });
+    return { map, isPlaceholder: (s) => !s || PLACEHOLDER.test(String(s).trim()) };
+  }, [lineNotes, account]);
+
+  // Item detail for vouchers the app raised, which carry a reference to the document
+  // they posted from. Imported history has no such link, so those rows show "—".
+  const soRefs = useMemo(() => {
+    const refs = (rawVouchers || [])
+      .filter(v => v.reference && /^INV-/.test(v.reference))
+      .map(v => v.reference);
+    return [...new Set(refs)];
+  }, [rawVouchers]);
+  const soRefKey = soRefs.join(',');
+  const { data: invoicesForRefs } = useDb(
+    () => soRefs.length
+      ? salesDb.getSalesInvoices(companyId)
+      : Promise.resolve({ data: [], error: null }),
+    [soRefKey, companyId]);
+
+  const orderRefByInvoice = useMemo(() => {
+    const m = {};
+    (invoicesForRefs || []).forEach(i => { if (i.sale_inv_id) m[i.sale_inv_id] = i.so_ref; });
+    return m;
+  }, [invoicesForRefs]);
+
+  const neededSoRefs = useMemo(
+    () => [...new Set(soRefs.map(r => orderRefByInvoice[r]).filter(Boolean))],
+    [soRefs, orderRefByInvoice]);
+  const neededKey = neededSoRefs.join(',');
+  const { data: ledgerLineItems } = useDb(
+    () => salesDb.getSoLineItems(neededSoRefs), [neededKey]);
+
+  const itemsForVoucher = useMemo(() => {
+    const bySo = {};
+    (ledgerLineItems || []).forEach(li => { (bySo[li.so_id] ||= []).push(li); });
+    return (v) => {
+      const so = v.reference ? orderRefByInvoice[v.reference] : null;
+      return so ? (bySo[so] || []) : [];
+    };
+  }, [ledgerLineItems, orderRefByInvoice]);
+
+  // What the Narration column shows: the real remark when there is one, else nothing
+  // rather than the source system's placeholder text.
+  const narrationFor = (v) => {
+    const line = narrationByVoucher.map[v.voucher_id]?.text;
+    if (line && !narrationByVoucher.isPlaceholder(line)) return line;
+    if (!narrationByVoucher.isPlaceholder(v.narration)) return v.narration;
+    return '';
+  };
+  const specFor = (li) => [li.size, li.gauge].filter(Boolean).join(' · ');
 
   // Delete a transaction straight from the account history — mirrors the Finance
   // Vouchers tab: grouped legs reverse together, standalone rows reverse their
@@ -167,24 +240,34 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
 
   const buildDoc = () => {
     if (!account) return;
-    const rows = entries.map(e => `
+    const rows = entries.map(e => {
+      const items = itemsForVoucher(e);
+      const join = (fn) => items.length ? items.map(fn).join('<br>') : '—';
+      return `
       <tr>
         <td>${formatDate((e.date || '').slice(0, 10))}</td>
-        <td>${esc(e.narration || '—')}</td>
+        <td>${esc(narrationFor(e)) || '—'}</td>
+        <td>${join(li => `${esc(itemLabel(li.item_name))}${li.quantity > 0 ? ` · ${esc(li.quantity)} ${esc(li.unit || '')}` : ''}`)}</td>
+        <td>${join(li => esc(specFor(li)) || '—')}</td>
+        <td class="right">${join(li => li.unit_price > 0 ? formatCurrency(li.unit_price) : '—')}</td>
         <td class="right">${e.debit  > 0 ? formatCurrency(e.debit)  : '—'}</td>
         <td class="right">${e.credit > 0 ? formatCurrency(e.credit) : '—'}</td>
         <td class="right">${formatCurrency(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     return buildReportDoc({
       filename: `Ledger ${account}`,
       title: 'Account Ledger',
+      landscape: true,
       meta: `Account: <strong>${esc(account)}</strong> &nbsp;|&nbsp; Period: ${formatDate(fromDate)} — ${formatDate(toDate)}`,
       note: `Opening: ${formatCurrency(Math.abs(openBal))}  |  Closing: ${formatCurrency(Math.abs(closeBal))}`,
       table: `<table class="rpt">
-        <thead><tr><th width="80">Date</th><th>Narration</th><th class="right" width="100">Debit</th>
-          <th class="right" width="100">Credit</th><th class="right" width="120">Balance</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
+        <thead><tr><th width="70">Date</th><th>Narration</th><th width="130">Item</th>
+          <th width="90">Size / Gauge</th><th class="right" width="80">Rate</th>
+          <th class="right" width="95">Debit</th>
+          <th class="right" width="95">Credit</th><th class="right" width="110">Balance</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="8" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
       </table>`,
     });
   };
@@ -229,6 +312,8 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
             <thead>
               <tr>
                 <th>Date</th><th>Voucher</th><th>Narration</th>
+                <th>Item</th><th>Size / Gauge</th>
+                <th className={styles.right}>Rate</th>
                 <th className={styles.right}>Debit</th>
                 <th className={styles.right}>Credit</th>
                 <th className={styles.right}>Balance</th>
@@ -237,12 +322,45 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
             </thead>
             <tbody>
               {entries.length === 0
-                ? <tr><td colSpan={7} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
-                : entries.map((e, i) => (
+                ? <tr><td colSpan={10} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
+                : entries.map((e, i) => {
+                  const items = itemsForVoucher(e);
+                  const note = narrationFor(e);
+                  return (
                   <tr key={e.id ?? i}>
                     <td className={styles.date}>{formatDate((e.date || '').slice(0, 10))}</td>
                     <td className={styles.code}>{e.voucher_id || '—'}</td>
-                    <td>{e.narration || '—'}</td>
+                    <td>{note || <span className={styles.nil}>—</span>}</td>
+                    <td>
+                      {items.length === 0
+                        ? <span className={styles.nil}>—</span>
+                        : items.map((li, idx) => (
+                          <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                            {itemLabel(li.item_name)}
+                            {li.quantity > 0 && (
+                              <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
+                            )}
+                          </div>
+                        ))}
+                    </td>
+                    <td>
+                      {items.length === 0
+                        ? <span className={styles.nil}>—</span>
+                        : items.map((li, idx) => (
+                          <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+                            {specFor(li) || <span className={styles.nil}>—</span>}
+                          </div>
+                        ))}
+                    </td>
+                    <td className={styles.right}>
+                      {items.length === 0
+                        ? <span className={styles.nil}>—</span>
+                        : items.map((li, idx) => (
+                          <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+                            {li.unit_price > 0 ? formatCurrency(li.unit_price) : '—'}
+                          </div>
+                        ))}
+                    </td>
                     <td className={styles.right}>
                       {parseFloat(e.debit) > 0 ? <span className={styles.mono}>{formatCurrency(e.debit)}</span> : <span className={styles.nil}>—</span>}
                     </td>
@@ -268,7 +386,8 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
             </tbody>
           </table>
           {entries.length > 0 && (
@@ -822,8 +941,14 @@ function BankReconciliation({ bankAccounts, paymentReconciliation }) {
 }
 
 /* ── Customer Current Balance ────────────────────────────────────────── */
-function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
+function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, companyId = 1 }) {
   const [search, setSearch] = useState('');
+
+  // A customer's real position comes from the ledger, not from invoices. Shop #58's
+  // sales were never recorded as invoices at all, and Shop #41's invoice-derived figure
+  // ignores the voucher history where most movement sits, so both branches were wrong.
+  const { data: ledgerBalances } = useDb(
+    () => financeDb.getCustomerLedgerBalances(companyId), [companyId]);
 
   const report = useMemo(() => {
     if (!customers) return [];
@@ -854,10 +979,15 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
       // first invoice was raised.
       const derivedBalance = opening + totalInvoiced - totalPaid;
 
-      // With no invoices there is nothing to derive from, so fall back to the
-      // stored outstanding_balance. This is what keeps legacy imported customers
-      // (opening_balance 0, outstanding_balance populated) reporting correctly.
-      const balance = totalInvoiced > 0 ? derivedBalance : (parseFloat(c.outstanding_balance) || 0);
+      // Prefer the ledger: the customer's own sub-ledger account carries every posting
+      // ever made against them. Only when a customer has no ledger account (never
+      // posted to) do we fall back to the invoice-derived figure, and then to the
+      // stored outstanding_balance.
+      const ledger = c.account_code ? ledgerBalances?.[c.account_code] : undefined;
+      const hasLedger = typeof ledger === 'number';
+      const balance = hasLedger
+        ? ledger
+        : (totalInvoiced > 0 ? derivedBalance : (parseFloat(c.outstanding_balance) || 0));
 
       return {
         customer_id:          c.customer_id,
@@ -874,7 +1004,7 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers }) {
         last_invoice_amount:  parseFloat(lastInv?.grand_total) || 0,
       };
     }).filter(r => r.balance !== 0 || r.last_invoice_id);
-  }, [customers, salesInvoices, receiptVouchers]);
+  }, [customers, salesInvoices, receiptVouchers, ledgerBalances]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1628,6 +1758,7 @@ export default function Reports() {
               customers={customers}
               salesInvoices={salesInvoices}
               receiptVouchers={receiptVouchers}
+              companyId={companyId}
             />
           </div>
         </Card>

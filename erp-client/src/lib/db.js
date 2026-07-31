@@ -544,13 +544,16 @@ export const financeDb = {
   // Paged so busy accounts (e.g. CASH SALES has ~8,800 vouchers) return their
   // complete history — a single request would stop at 1000 rows and the running
   // balance would be wrong.
-  getVouchersByAccount: async (accountName, fromDate, toDate) => {
+  // companyId is required: account names repeat across branches (both have a
+  // "Cash in Hand"), so without it a ledger silently mixes Shop #41 and Shop #58.
+  getVouchersByAccount: async (accountName, fromDate, toDate, companyId = 1) => {
     const PAGE = 1000;
     const all = [];
     for (let from = 0; ; from += PAGE) {
       let q = supabase.from('vouchers')
         .select('id, voucher_id, voucher_type, date, narration, debit, credit, reference')
         .eq('account_name', accountName)
+        .eq('company_id', companyId)
         .order('date').order('id')
         .range(from, from + PAGE - 1);
       if (fromDate) q = q.gte('date', fromDate);
@@ -559,6 +562,51 @@ export const financeDb = {
       if (error) return { data: null, error };
       all.push(...(data || []));
       if (!data || data.length < PAGE) break;
+    }
+    return { data: all, error: null };
+  },
+
+  // Each customer's real position, summed from the ledger rather than inferred from
+  // invoices. Customer sub-ledger accounts sit under 11-01-003-*; the balance is
+  // debit - credit because a receivable is an asset. Returns a { [account_code]:
+  // balance } map. Paged because busy branches run to tens of thousands of lines.
+  getCustomerLedgerBalances: async (companyId = 1) => {
+    const PAGE = 1000;
+    const totals = {};
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('voucher_lines')
+        .select('account_code, debit, credit')
+        .eq('company_id', companyId)
+        .like('account_code', '11-01-003-%')
+        .range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      (data || []).forEach(l => {
+        totals[l.account_code] = (totals[l.account_code] || 0)
+          + (parseFloat(l.debit) || 0) - (parseFloat(l.credit) || 0);
+      });
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: totals, error: null };
+  },
+
+  // The real free-text remark for a set of vouchers. vouchers.narration is a
+  // placeholder from the source system — the literal word "Remarks" on most sales
+  // vouchers, a voucher-type label on the rest — while the note the user actually
+  // typed sits on the line records. Returns one row per line so the caller can pick
+  // the line matching the account being viewed.
+  getVoucherLineNarrations: async (voucherIds = [], companyId = 1) => {
+    const ids = [...new Set((voucherIds || []).filter(Boolean))];
+    if (ids.length === 0) return { data: [], error: null };
+    const CHUNK = 150;
+    const all = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const { data, error } = await supabase.from('voucher_lines')
+        .select('voucher_id, line_no, account_code, account_title, narration, debit, credit')
+        .eq('company_id', companyId)
+        .in('voucher_id', ids.slice(i, i + CHUNK))
+        .order('line_no');
+      if (error) return { data: null, error };
+      if (data) all.push(...data);
     }
     return { data: all, error: null };
   },
@@ -652,7 +700,10 @@ export const salesDb = {
   // changed the orders and invoices on screen but not the customers they were for.
   getCustomers: (companyId = 1) =>
     supabase.from('customers')
-      .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance, opening_balance, opening_balance_date')
+      // account_code links the customer to their sub-ledger account, which is where
+      // the Customer Current Balance report reads the real position from. Leaving it
+      // out of this list silently falls the report back to invoice totals.
+      .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance, opening_balance, opening_balance_date, account_code')
       .eq('company_id', companyId)
       .order('id', { ascending: false }),
 
