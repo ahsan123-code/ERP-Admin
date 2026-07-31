@@ -947,11 +947,11 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
   // A customer's real position comes from the ledger, not from invoices. Shop #58's
   // sales were never recorded as invoices at all, and Shop #41's invoice-derived figure
   // ignores the voucher history where most movement sits, so both branches were wrong.
-  const { data: ledgerBalances } = useDb(
+  const { data: ledgerBalances, loading: balancesLoading } = useDb(
     () => financeDb.getCustomerLedgerBalances(companyId), [companyId]);
 
   const report = useMemo(() => {
-    if (!customers) return [];
+    if (!customers || balancesLoading) return [];
     return customers.map(c => {
       const cName = (c.name || '').toLowerCase();
 
@@ -1004,7 +1004,7 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
         last_invoice_amount:  parseFloat(lastInv?.grand_total) || 0,
       };
     }).filter(r => r.balance !== 0 || r.last_invoice_id);
-  }, [customers, salesInvoices, receiptVouchers, ledgerBalances]);
+  }, [customers, salesInvoices, receiptVouchers, ledgerBalances, balancesLoading]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1129,15 +1129,19 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <span className={styles.mono} style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-            {filtered.length} customers &nbsp;|&nbsp; Net Receivable:&nbsp;
-            <strong style={{ color: netBalance > 0 ? 'var(--blue)' : 'var(--red)' }}>
-              {formatCurrency(netBalance)} {netBalance >= 0 ? 'Dr' : 'Cr'}
-            </strong>
+            {balancesLoading
+              ? 'Loading balances…'
+              : <>
+                  {filtered.length} customers &nbsp;|&nbsp; Net Receivable:&nbsp;
+                  <strong style={{ color: netBalance > 0 ? 'var(--blue)' : 'var(--red)' }}>
+                    {formatCurrency(netBalance)} {netBalance >= 0 ? 'Dr' : 'Cr'}
+                  </strong>
+                </>}
           </span>
-          <Button variant="secondary" icon={<Eye size={14} strokeWidth={1.75} />} size="sm" onClick={handlePreview}>
+          <Button variant="secondary" icon={<Eye size={14} strokeWidth={1.75} />} size="sm" onClick={handlePreview} disabled={balancesLoading}>
             Preview
           </Button>
-          <Button variant="primary" icon={<FileDown size={14} strokeWidth={1.75} />} size="sm" onClick={handleDownload}>
+          <Button variant="primary" icon={<FileDown size={14} strokeWidth={1.75} />} size="sm" onClick={handleDownload} disabled={balancesLoading}>
             Download Word
           </Button>
           {previewNode}

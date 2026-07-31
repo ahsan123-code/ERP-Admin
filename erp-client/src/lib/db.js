@@ -567,25 +567,17 @@ export const financeDb = {
   },
 
   // Each customer's real position, summed from the ledger rather than inferred from
-  // invoices. Customer sub-ledger accounts sit under 11-01-003-*; the balance is
-  // debit - credit because a receivable is an asset. Returns a { [account_code]:
-  // balance } map. Paged because busy branches run to tens of thousands of lines.
+  // invoices. Reads the customer_ledger_balances view, which aggregates the
+  // 11-01-003-* sub-ledger accounts in Postgres — summing the raw lines in the browser
+  // meant 49 sequential requests and 48,521 rows for Shop #41, during which the report
+  // displayed the stale invoice figure. Returns a { [account_code]: balance } map.
   getCustomerLedgerBalances: async (companyId = 1) => {
-    const PAGE = 1000;
+    const { data, error } = await supabase.from('customer_ledger_balances')
+      .select('account_code, balance')
+      .eq('company_id', companyId);
+    if (error) return { data: null, error };
     const totals = {};
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase.from('voucher_lines')
-        .select('account_code, debit, credit')
-        .eq('company_id', companyId)
-        .like('account_code', '11-01-003-%')
-        .range(from, from + PAGE - 1);
-      if (error) return { data: null, error };
-      (data || []).forEach(l => {
-        totals[l.account_code] = (totals[l.account_code] || 0)
-          + (parseFloat(l.debit) || 0) - (parseFloat(l.credit) || 0);
-      });
-      if (!data || data.length < PAGE) break;
-    }
+    (data || []).forEach(r => { totals[r.account_code] = parseFloat(r.balance) || 0; });
     return { data: totals, error: null };
   },
 
