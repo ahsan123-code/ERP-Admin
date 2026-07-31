@@ -250,7 +250,7 @@ export default function HR() {
       {pageTab === 'employees' && (
         <Card padding={false}>
           <CardHeader title="Employees" subtitle={loadEmp ? 'Loading…' : `${employees.length} employee records — click any row to edit`} />
-          <DataTable columns={EMP_COLS} data={employees} keyField="employee_id" searchPlaceholder="Search employees..." onRowClick={setEditEmp} />
+          <DataTable columns={EMP_COLS} data={employees} loading={loadEmp} keyField="employee_id" searchPlaceholder="Search employees..." onRowClick={setEditEmp} />
         </Card>
       )}
 
@@ -278,7 +278,7 @@ export default function HR() {
             subtitle={loadLeave ? 'Loading…' : `${leaveRequests.length} leave applications`}
             actions={<Button icon={<Plus size={15} />} size="sm" onClick={() => setLeaveOpen(true)}>Apply Leave</Button>}
           />
-          <DataTable columns={LEAVE_COLS} data={leaveRequests} keyField="leave_id" searchPlaceholder="Search leaves..." />
+          <DataTable columns={LEAVE_COLS} data={leaveRequests} loading={loadLeave} keyField="leave_id" searchPlaceholder="Search leaves..." />
         </Card>
       )}
 
@@ -316,7 +316,7 @@ export default function HR() {
               </div>
             }
           />
-          <DataTable columns={PAY_COLS} data={sheetRecords} keyField="payroll_id" searchPlaceholder="Search payroll..." />
+          <DataTable columns={PAY_COLS} data={sheetRecords} loading={loadPay} keyField="payroll_id" searchPlaceholder="Search payroll..." />
         </Card>
       )}
 
@@ -327,7 +327,7 @@ export default function HR() {
             subtitle={loadLoans ? 'Loading…' : `${activeLoans} active loans — click any row to edit`}
             actions={<Button icon={<Plus size={15} />} size="sm" onClick={() => setLoanOpen(true)}>Add Loan</Button>}
           />
-          <DataTable columns={LOAN_COLS} data={loans} keyField="loan_id" searchPlaceholder="Search loans..." onRowClick={setEditLoan} />
+          <DataTable columns={LOAN_COLS} data={loans} loading={loadLoans} keyField="loan_id" searchPlaceholder="Search loans..." onRowClick={setEditLoan} />
         </Card>
       )}
 

@@ -73,13 +73,13 @@ export default function Procurement() {
   const [poTab, setPoTab] = useState('all');
 
   // Data fetches
-  const { data: vendors, refetch: refetchVendors } = useDb(() => procurementDb.getVendors(companyId), [companyId]);
-  const { data: dbPOs }            = useDb(() => procurementDb.getPurchaseOrders(companyId),       [companyId]);
-  const { data: dbGrns }           = useDb(() => procurementDb.getGrns(companyId),                [companyId]);
-  const { data: dbPdns }           = useDb(() => procurementDb.getPdns(companyId),                [companyId]);
-  const { data: dbPrs }            = useDb(() => procurementDb.getPurchaseRequisitions());
-  const { data: dbGPs }            = useDb(() => procurementDb.getGatePassesInward(companyId),    [companyId]);
-  const { data: dbPinvs }          = useDb(() => procurementDb.getPurchaseInvoices(companyId),    [companyId]);
+  const { data: vendors, loading: loadVendors, refetch: refetchVendors } = useDb(() => procurementDb.getVendors(companyId), [companyId]);
+  const { data: dbPOs, loading: loadPO }            = useDb(() => procurementDb.getPurchaseOrders(companyId),       [companyId]);
+  const { data: dbGrns, loading: loadGrn }           = useDb(() => procurementDb.getGrns(companyId),                [companyId]);
+  const { data: dbPdns, loading: loadPdn }           = useDb(() => procurementDb.getPdns(companyId),                [companyId]);
+  const { data: dbPrs, loading: loadPr }            = useDb(() => procurementDb.getPurchaseRequisitions());
+  const { data: dbGPs, loading: loadGp }            = useDb(() => procurementDb.getGatePassesInward(companyId),    [companyId]);
+  const { data: dbPinvs, loading: loadPinv }          = useDb(() => procurementDb.getPurchaseInvoices(companyId),    [companyId]);
 
   // Local lists (so new items appear immediately)
   const [pdnList,  setPdnList]  = useState([]);
@@ -390,14 +390,14 @@ export default function Procurement() {
       {pageTab === 'pdns' && (
         <Card padding={false}>
           <CardHeader title="Purchase Demand Notes" subtitle={`${pdnList.length} demand notes — internal material requests`} />
-          <DataTable columns={PDN_COLS} data={pdnList} keyField="pdn_id" searchPlaceholder="Search PDNs..." />
+          <DataTable columns={PDN_COLS} data={pdnList} loading={loadPdn} keyField="pdn_id" searchPlaceholder="Search PDNs..." />
         </Card>
       )}
 
       {pageTab === 'requisitions' && (
         <Card padding={false}>
           <CardHeader title="Purchase Requisitions" subtitle={`${prList.length} requisitions submitted for approval`} />
-          <DataTable columns={PR_COLS} data={prList} keyField="pr_id" searchPlaceholder="Search requisitions..." />
+          <DataTable columns={PR_COLS} data={prList} loading={loadPr} keyField="pr_id" searchPlaceholder="Search requisitions..." />
         </Card>
       )}
 
@@ -407,6 +407,7 @@ export default function Procurement() {
           <DataTable
             columns={PO_COLS}
             data={poData}
+            loading={loadPO}
             keyField="po_id"
             searchPlaceholder="Search purchase orders..."
             filterTabs={[
@@ -423,28 +424,28 @@ export default function Procurement() {
       {pageTab === 'gatepass' && (
         <Card padding={false}>
           <CardHeader title="Gate Pass Inward" subtitle={`${gpList.length} inward gate passes — goods entry records`} />
-          <DataTable columns={GP_COLS} data={gpList} keyField="gp_id" searchPlaceholder="Search gate passes..." />
+          <DataTable columns={GP_COLS} data={gpList} loading={loadGp} keyField="gp_id" searchPlaceholder="Search gate passes..." />
         </Card>
       )}
 
       {pageTab === 'grns' && (
         <Card padding={false}>
           <CardHeader title="Goods Receipt Notes" subtitle={`${grnList.length} GRNs — goods received and posted`} />
-          <DataTable columns={GRN_COLS} data={grnList} keyField="grn_id" searchPlaceholder="Search GRNs..." />
+          <DataTable columns={GRN_COLS} data={grnList} loading={loadGrn} keyField="grn_id" searchPlaceholder="Search GRNs..." />
         </Card>
       )}
 
       {pageTab === 'invoices' && (
         <Card padding={false}>
           <CardHeader title="Purchase Invoices" subtitle={`${pinvList.length} vendor bills recorded`} />
-          <DataTable columns={PINV_COLS} data={pinvList} keyField="bill_id" searchPlaceholder="Search purchase invoices..." />
+          <DataTable columns={PINV_COLS} data={pinvList} loading={loadPinv} keyField="bill_id" searchPlaceholder="Search purchase invoices..." />
         </Card>
       )}
 
       {pageTab === 'vendors' && (
         <Card padding={false}>
           <CardHeader title="Vendor Portal" subtitle={`${(vendors || []).length} registered suppliers and vendors — click a row to edit`} />
-          <DataTable columns={VENDOR_COLS} data={vendors || []} keyField="id" searchPlaceholder="Search vendors..." onRowClick={setEditVendor} />
+          <DataTable columns={VENDOR_COLS} data={vendors || []} loading={loadVendors} keyField="id" searchPlaceholder="Search vendors..." onRowClick={setEditVendor} />
         </Card>
       )}
 

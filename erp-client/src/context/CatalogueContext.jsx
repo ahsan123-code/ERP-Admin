@@ -5,11 +5,12 @@ const CatalogueContext = createContext(null);
 
 export function CatalogueProvider({ children }) {
   const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    mastersDb.getCustomCatalogueItems().then(({ data }) => {
-      if (data) setItems(data);
-    });
+    mastersDb.getCustomCatalogueItems()
+      .then(({ data }) => { if (data) setItems(data); })
+      .finally(() => setLoading(false));
   }, []);
 
   const addItem = (item) => {
@@ -30,13 +31,13 @@ export function CatalogueProvider({ children }) {
   };
 
   return (
-    <CatalogueContext.Provider value={{ items, addItem, removeItem }}>
+    <CatalogueContext.Provider value={{ items, loading, addItem, removeItem }}>
       {children}
     </CatalogueContext.Provider>
   );
 }
 
-const FALLBACK = { items: [], addItem: () => {}, removeItem: () => {} };
+const FALLBACK = { items: [], loading: false, addItem: () => {}, removeItem: () => {} };
 
 export function useCatalogue() {
   return useContext(CatalogueContext) ?? FALLBACK;

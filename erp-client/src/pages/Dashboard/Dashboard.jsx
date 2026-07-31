@@ -281,9 +281,9 @@ export default function Dashboard() {
 
   const { data: activityFeed }    = useDb(() => dashboardDb.getRecentActivity());
   const { data: empRows }         = useDb(() => dashboardDb.getEmployeeCount());
-  const { data: dbOrders }        = useDb(() => salesDb.getSalesOrders(companyId),        [companyId]);
-  const { data: dbStockItems }    = useDb(() => inventoryDb.getStockItems(companyId),     [companyId]);
-  const { data: dbSalesInvoices } = useDb(() => salesDb.getSalesInvoices(companyId),      [companyId]);
+  const { data: dbOrders, loading: loadOrders }        = useDb(() => salesDb.getSalesOrders(companyId),        [companyId]);
+  const { data: dbStockItems, loading: loadStock }    = useDb(() => inventoryDb.getStockItems(companyId),     [companyId]);
+  const { data: dbSalesInvoices, loading: loadInvoices } = useDb(() => salesDb.getSalesInvoices(companyId),      [companyId]);
   const { customers: dbCustomers } = useCustomers();
   const { data: dbVouchers }      = useDb(() => financeDb.getVouchers(companyId),         [companyId]);
   const { data: dbPOs }           = useDb(() => procurementDb.getPurchaseOrders(companyId),[companyId]);
@@ -604,6 +604,7 @@ export default function Dashboard() {
             <DataTable
               columns={STOCK_COLS}
               data={filteredStock}
+              loading={loadStock}
               keyField="id"
               searchPlaceholder="Search items..."
               filterTabs={[
@@ -646,7 +647,7 @@ export default function Dashboard() {
           </div>
           <Card padding={false}>
             <CardHeader title="Sales Orders Summary" subtitle="All sales orders with amounts and status" />
-            <DataTable columns={SO_SUMMARY_COLS} data={dbOrders} keyField="so_id" searchPlaceholder="Search orders..." />
+            <DataTable columns={SO_SUMMARY_COLS} data={dbOrders} loading={loadOrders} keyField="so_id" searchPlaceholder="Search orders..." />
           </Card>
         </>
       )}
@@ -688,7 +689,7 @@ export default function Dashboard() {
           </div>
           <Card padding={false}>
             <CardHeader title="Sales Tax Dashboard" subtitle="Invoice-wise GST summary (17%)" />
-            <DataTable columns={TAX_COLS} data={dbSalesInvoices} keyField="sale_inv_id" searchPlaceholder="Search invoices..." />
+            <DataTable columns={TAX_COLS} data={dbSalesInvoices} loading={loadInvoices} keyField="sale_inv_id" searchPlaceholder="Search invoices..." />
           </Card>
         </>
       )}

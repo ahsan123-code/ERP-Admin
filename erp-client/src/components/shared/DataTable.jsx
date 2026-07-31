@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import EmptyState from './EmptyState';
+import { SkeletonTable } from './Skeleton';
 import styles from './DataTable.module.css';
 
 const PAGE_SIZE = 12;
@@ -16,19 +17,23 @@ export default function DataTable({
   actions,
   keyField = 'id',
   onRowClick,
+  loading = false,
+  skeletonRows = 6,
 }) {
   const [query,   setQuery]   = useState('');
   const [page,    setPage]    = useState(1);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
+  const rows = data || [];
+
   const filtered = searchable && query.trim()
-    ? data.filter(row =>
+    ? rows.filter(row =>
         Object.values(row).some(v =>
           String(v ?? '').toLowerCase().includes(query.toLowerCase())
         )
       )
-    : data;
+    : rows;
 
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
@@ -117,7 +122,9 @@ export default function DataTable({
             </tr>
           </thead>
           <tbody>
-            {slice.length === 0 ? (
+            {loading ? (
+              <SkeletonTable columns={columns} rows={skeletonRows} />
+            ) : slice.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className={styles.emptyCell}>
                   <EmptyState

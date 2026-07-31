@@ -128,14 +128,14 @@ export default function Sales() {
   const [dispatchWO,    setDispatchWO]    = useState(null);
   const [deletingId,    setDeletingId]    = useState(null);
 
-  const { customers, addCustomer: addCustomerToContext, removeCustomer } = useCustomers();
-  const { data: dbOrders }             = useDb(() => salesDb.getSalesOrders(companyId),    [companyId]);
-  const { data: dbDeliveryNotes }      = useDb(() => salesDb.getDeliveryNotes(companyId),  [companyId]);
-  const { data: dbOrderConfirmations } = useDb(() => salesDb.getOrderConfirmations());
-  const { data: dbWorkOrders }         = useDb(() => salesDb.getWorkOrders());
-  const { data: dbGatePasses }         = useDb(() => salesDb.getGatePasses(companyId),     [companyId]);
-  const { data: dbSalesInvoices }      = useDb(() => salesDb.getSalesInvoices(companyId),  [companyId]);
-  const { data: salesReturns }         = useDb(() => salesDb.getSalesReturns(companyId),   [companyId]);
+  const { customers, loading: loadCustomers, addCustomer: addCustomerToContext, removeCustomer } = useCustomers();
+  const { data: dbOrders, loading: loadOrders }             = useDb(() => salesDb.getSalesOrders(companyId),    [companyId]);
+  const { data: dbDeliveryNotes, loading: loadDN }      = useDb(() => salesDb.getDeliveryNotes(companyId),  [companyId]);
+  const { data: dbOrderConfirmations, loading: loadOC } = useDb(() => salesDb.getOrderConfirmations());
+  const { data: dbWorkOrders, loading: loadWO }         = useDb(() => salesDb.getWorkOrders());
+  const { data: dbGatePasses, loading: loadGP }         = useDb(() => salesDb.getGatePasses(companyId),     [companyId]);
+  const { data: dbSalesInvoices, loading: loadInv }      = useDb(() => salesDb.getSalesInvoices(companyId),  [companyId]);
+  const { data: salesReturns, loading: loadSR }         = useDb(() => salesDb.getSalesReturns(companyId),   [companyId]);
 
   const [orders,             setOrders]             = useState([]);
   const [orderConfirmations, setOrderConfirmations] = useState([]);
@@ -349,7 +349,7 @@ export default function Sales() {
         <Card padding={false}>
           <CardHeader title="Order Booking" subtitle="All sales orders" />
           <DataTable
-            columns={SO_COLS} data={soData} keyField="so_id" searchPlaceholder="Search orders..."
+            columns={SO_COLS} data={soData} loading={loadOrders} keyField="so_id" searchPlaceholder="Search orders..."
             filterTabs={[
               { value: 'all',        label: 'All',        count: orders.length },
               { value: 'active',     label: 'Active',     count: openOrders    },
@@ -364,14 +364,14 @@ export default function Sales() {
       {pageTab === 'confirmation' && (
         <Card padding={false}>
           <CardHeader title="Order Confirmation" subtitle="Review and confirm customer orders" />
-          <DataTable columns={OC_COLS} data={orderConfirmations} keyField="confirm_id" searchPlaceholder="Search confirmations..." />
+          <DataTable columns={OC_COLS} data={orderConfirmations} loading={loadOC} keyField="confirm_id" searchPlaceholder="Search confirmations..." />
         </Card>
       )}
 
       {pageTab === 'work-order' && (
         <Card padding={false}>
           <CardHeader title="Work Orders" subtitle="Production work orders linked to confirmed orders" />
-          <DataTable columns={WO_COLS} data={workOrders} keyField="wo_id" searchPlaceholder="Search work orders..." />
+          <DataTable columns={WO_COLS} data={workOrders} loading={loadWO} keyField="wo_id" searchPlaceholder="Search work orders..." />
         </Card>
       )}
 
@@ -382,35 +382,35 @@ export default function Sales() {
             subtitle={`${customers.length} registered customer accounts`}
             actions={<Button icon={<Plus size={15} />} onClick={() => setCustomerOpen(true)}>New Customer</Button>}
           />
-          <DataTable columns={CUST_COLS} data={customers} keyField="customer_id" searchPlaceholder="Search by name, region, NTN..." />
+          <DataTable columns={CUST_COLS} data={customers} loading={loadCustomers} keyField="customer_id" searchPlaceholder="Search by name, region, NTN..." />
         </Card>
       )}
 
       {pageTab === 'deliveries' && (
         <Card padding={false}>
           <CardHeader title="Delivery Notes" subtitle="Challan and dispatch records" />
-          <DataTable columns={DN_COLS} data={deliveryNotes} keyField="delivery_id" searchPlaceholder="Search deliveries..." />
+          <DataTable columns={DN_COLS} data={deliveryNotes} loading={loadDN} keyField="delivery_id" searchPlaceholder="Search deliveries..." />
         </Card>
       )}
 
       {pageTab === 'invoice' && (
         <Card padding={false}>
           <CardHeader title="Sales Invoice" subtitle="Invoices with freight, loading, packing, toll and slitting charges" />
-          <DataTable columns={SINV_COLS} data={salesInvoices} keyField="sale_inv_id" searchPlaceholder="Search invoices..." />
+          <DataTable columns={SINV_COLS} data={salesInvoices} loading={loadInv} keyField="sale_inv_id" searchPlaceholder="Search invoices..." />
         </Card>
       )}
 
       {pageTab === 'returns' && (
         <Card padding={false}>
           <CardHeader title="Sales Returns" subtitle="Customer return and credit notes" />
-          <DataTable columns={RETURN_COLS} data={salesReturns} keyField="return_id" searchPlaceholder="Search returns..." />
+          <DataTable columns={RETURN_COLS} data={salesReturns} loading={loadSR} keyField="return_id" searchPlaceholder="Search returns..." />
         </Card>
       )}
 
       {pageTab === 'gate-pass' && (
         <Card padding={false}>
           <CardHeader title="Gate Pass" subtitle="Vehicle exit passes for outgoing goods" />
-          <DataTable columns={GP_COLS} data={gatePasses} keyField="gate_pass_id" searchPlaceholder="Search gate passes..." />
+          <DataTable columns={GP_COLS} data={gatePasses} loading={loadGP} keyField="gate_pass_id" searchPlaceholder="Search gate passes..." />
         </Card>
       )}
 

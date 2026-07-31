@@ -1,0 +1,54 @@
+/* Base shimmer. The gradient sweeps across a slightly lighter band so it reads on both
+   the dark surface and the muted panels. */
+.skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.07) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.4s infinite;
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* A moving highlight is exactly what motion-sensitive users ask to be spared, so it
+   degrades to a static block that still reads as "content pending". */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; }
+  .skeleton { opacity: 0.65; }
+}
+
+.text  { height: 12px; }
+.title { height: 16px; }
+.circle { border-radius: 50%; }
+
+/* Stacked lines, last one short so it reads as a paragraph rather than a block. */
+.lines { display: flex; flex-direction: column; gap: 8px; }
+
+/* Table body placeholder: cells keep the real column widths so the header does not
+   jump when the data lands. */
+.cell { height: 12px; }
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+}
+
+.statRow { display: grid; gap: var(--sp-4); }

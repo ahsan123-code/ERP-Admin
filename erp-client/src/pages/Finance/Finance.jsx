@@ -130,15 +130,15 @@ export default function Finance() {
   const [deletingBankId, setDeletingBankId] = useState(null);
   const [deletingAcctId, setDeletingAcctId] = useState(null);
 
-  const { data: dbVouchers, refetch: refetchVouchers } = useDb(() => financeDb.getVouchers(companyId), [companyId]);
-  const { data: bankAccounts, refetch: refetchBanks } = useDb(() => financeDb.getBankAccounts(companyId), [companyId]);
-  const { data: chequeTracking, refetch: refetchCheques } = useDb(() => financeDb.getChequeTracking());
-  const { data: chartOfAccounts, refetch: refetchCOA } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
-  const { data: agingReport } = useDb(() => financeDb.getAgingReport(companyId), [companyId]);
-  const { data: cashReceived, refetch: refetchCash } = useDb(() => financeDb.getCashReceived());
-  const { data: interBankTransfers, refetch: refetchIBT } = useDb(() => financeDb.getInterBankTransfers());
-  const { data: pettyCash, refetch: refetchPetty } = useDb(() => financeDb.getPettyCash());
-  const { data: dailyCash, refetch: refetchDailyCash } = useDb(() => financeDb.getDailyCash(companyId), [companyId]);
+  const { data: dbVouchers, loading: loadVouchers, refetch: refetchVouchers } = useDb(() => financeDb.getVouchers(companyId), [companyId]);
+  const { data: bankAccounts, loading: loadBanks, refetch: refetchBanks } = useDb(() => financeDb.getBankAccounts(companyId), [companyId]);
+  const { data: chequeTracking, loading: loadCheques, refetch: refetchCheques } = useDb(() => financeDb.getChequeTracking());
+  const { data: chartOfAccounts, loading: loadCOA, refetch: refetchCOA } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
+  const { data: agingReport, loading: loadAging } = useDb(() => financeDb.getAgingReport(companyId), [companyId]);
+  const { data: cashReceived, loading: loadCash, refetch: refetchCash } = useDb(() => financeDb.getCashReceived());
+  const { data: interBankTransfers, loading: loadIBT, refetch: refetchIBT } = useDb(() => financeDb.getInterBankTransfers());
+  const { data: pettyCash, loading: loadPetty, refetch: refetchPetty } = useDb(() => financeDb.getPettyCash());
+  const { data: dailyCash, loading: loadDailyCash, refetch: refetchDailyCash } = useDb(() => financeDb.getDailyCash(companyId), [companyId]);
 
   const [voucherList, setVoucherList] = useState([]);
   useEffect(() => { setVoucherList(dbVouchers); }, [dbVouchers]);
@@ -611,14 +611,14 @@ export default function Finance() {
       {pageTab === 'vouchers' && (
         <Card padding={false}>
           <CardHeader title="Vouchers" subtitle={`${voucherList.length} accounting vouchers`} />
-          <DataTable columns={VCH_COLS} data={voucherList} keyField="voucher_id" searchPlaceholder="Search vouchers..." />
+          <DataTable columns={VCH_COLS} data={voucherList} loading={loadVouchers} keyField="voucher_id" searchPlaceholder="Search vouchers..." />
         </Card>
       )}
 
       {pageTab === 'banks' && (
         <Card padding={false}>
           <CardHeader title="Bank Accounts" subtitle={`${bankAccounts.length} registered bank accounts`} />
-          <DataTable columns={BANK_COLS} data={bankAccounts} keyField="account_id" searchPlaceholder="Search accounts..." />
+          <DataTable columns={BANK_COLS} data={bankAccounts} loading={loadBanks} keyField="account_id" searchPlaceholder="Search accounts..." />
         </Card>
       )}
 
@@ -632,6 +632,7 @@ export default function Finance() {
           <DataTable
             columns={CHEQUE_COLS}
             data={chequeTab === 'all' ? chequeTracking : chequeTracking.filter(c => c.status === chequeTab)}
+            loading={loadCheques}
             keyField="cheque_id"
             searchPlaceholder="Search cheques..."
             filterTabs={[
@@ -653,7 +654,7 @@ export default function Finance() {
             subtitle={`${chartOfAccounts.length} accounts`}
             actions={<Button icon={<Plus size={15} />} onClick={() => setAcctOpen(true)}>New Account</Button>}
           />
-          <DataTable columns={COA_COLS} data={chartOfAccounts} keyField="account_id" searchPlaceholder="Search accounts..." />
+          <DataTable columns={COA_COLS} data={chartOfAccounts} loading={loadCOA} keyField="account_id" searchPlaceholder="Search accounts..." />
         </Card>
       )}
 
@@ -663,7 +664,7 @@ export default function Finance() {
             title="Aging Report"
             subtitle="Approximate — based on posted invoices from the last 180 days, bucketed by age. Does not account for payments already received."
           />
-          <DataTable columns={AGING_COLS} data={agingReport} keyField="party_name" searchPlaceholder="Search parties..." />
+          <DataTable columns={AGING_COLS} data={agingReport} loading={loadAging} keyField="party_name" searchPlaceholder="Search parties..." />
         </Card>
       )}
 
@@ -674,7 +675,7 @@ export default function Finance() {
             subtitle={`${cashReceived.length} payment receipts`}
             actions={<Button icon={<Plus size={15} />} onClick={() => setCrOpen(true)}>New Receipt</Button>}
           />
-          <DataTable columns={CR_COLS} data={cashReceived} keyField="cr_id" searchPlaceholder="Search receipts..." />
+          <DataTable columns={CR_COLS} data={cashReceived} loading={loadCash} keyField="cr_id" searchPlaceholder="Search receipts..." />
         </Card>
       )}
 
@@ -685,7 +686,7 @@ export default function Finance() {
             subtitle={`${interBankTransfers.length} transfers`}
             actions={<Button icon={<Plus size={15} />} onClick={() => setIbtOpen(true)}>New Transfer</Button>}
           />
-          <DataTable columns={IBT_COLS} data={interBankTransfers} keyField="ibt_id" searchPlaceholder="Search transfers..." />
+          <DataTable columns={IBT_COLS} data={interBankTransfers} loading={loadIBT} keyField="ibt_id" searchPlaceholder="Search transfers..." />
         </Card>
       )}
 
@@ -696,14 +697,14 @@ export default function Finance() {
             subtitle={`${pettyCash.length} petty cash entries`}
             actions={<Button icon={<Plus size={15} />} onClick={() => setPcOpen(true)}>New Entry</Button>}
           />
-          <DataTable columns={PC_COLS} data={pettyCash} keyField="pc_id" searchPlaceholder="Search petty cash..." />
+          <DataTable columns={PC_COLS} data={pettyCash} loading={loadPetty} keyField="pc_id" searchPlaceholder="Search petty cash..." />
         </Card>
       )}
 
       {pageTab === 'daily' && (
         <Card padding={false}>
           <CardHeader title="Daily Cash Summary" subtitle="Opening and closing cash balances per day, derived from Cash In Hand postings" />
-          <DataTable columns={DC_COLS} data={dailyCash} keyField="date" searchPlaceholder="Search by date..." />
+          <DataTable columns={DC_COLS} data={dailyCash} loading={loadDailyCash} keyField="date" searchPlaceholder="Search by date..." />
         </Card>
       )}
 

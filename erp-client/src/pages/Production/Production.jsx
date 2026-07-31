@@ -55,9 +55,9 @@ const statDefs = [
 export default function Production() {
   const [woOpen, setWoOpen] = useState(false);
 
-  const { data: boms }                = useDb(() => productionDb.getBoms());
-  const { data: dbWorkOrders }        = useDb(() => productionDb.getWorkOrders());
-  const { data: finishedGoods }       = useDb(() => productionDb.getFinishedGoods());
+  const { data: boms, loading: loadBoms }                = useDb(() => productionDb.getBoms());
+  const { data: dbWorkOrders, loading: loadWO }        = useDb(() => productionDb.getWorkOrders());
+  const { data: finishedGoods, loading: loadFG }       = useDb(() => productionDb.getFinishedGoods());
   const { data: productionSchedules } = useDb(() => productionDb.getProductionSchedules());
 
   const [workOrderList, setWorkOrderList] = useState([]);
@@ -95,17 +95,17 @@ export default function Production() {
 
       <Card padding={false}>
         <CardHeader title="Work Orders" subtitle="Active and completed production runs" />
-        <DataTable columns={WO_COLS} data={workOrderList} keyField="work_order_id" searchPlaceholder="Search work orders..." />
+        <DataTable columns={WO_COLS} data={workOrderList} loading={loadWO} keyField="work_order_id" searchPlaceholder="Search work orders..." />
       </Card>
 
       <Card padding={false}>
         <CardHeader title="Bill of Materials" subtitle={`${boms.length} material requirement definitions`} />
-        <DataTable columns={BOM_COLS} data={boms} keyField="bom_id" searchPlaceholder="Search BOM..." />
+        <DataTable columns={BOM_COLS} data={boms} loading={loadBoms} keyField="bom_id" searchPlaceholder="Search BOM..." />
       </Card>
 
       <Card padding={false}>
         <CardHeader title="Finished Goods" subtitle={`${finishedGoods.length} completed production batches`} />
-        <DataTable columns={FG_COLS} data={finishedGoods} keyField="id" searchPlaceholder="Search finished goods..." />
+        <DataTable columns={FG_COLS} data={finishedGoods} loading={loadFG} keyField="id" searchPlaceholder="Search finished goods..." />
       </Card>
 
       <NewWorkOrderModal open={woOpen} onClose={() => setWoOpen(false)} onSave={handleSave} />

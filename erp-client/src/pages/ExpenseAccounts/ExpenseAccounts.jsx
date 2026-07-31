@@ -206,6 +206,7 @@ export default function ExpenseAccounts() {
               <DataTable
                 columns={COLS}
                 data={accounts}
+                loading={loading}
                 keyField="account_id"
                 searchPlaceholder="Search expense accounts..."
               />

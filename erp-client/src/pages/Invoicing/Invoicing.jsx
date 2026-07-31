@@ -91,11 +91,11 @@ export default function Invoicing() {
   const toast = useToast();
   const { showPreview, previewNode } = useWordPreview();
 
-  const { data: salesInvoices } =
+  const { data: salesInvoices, loading: loadSales } =
     useDb(() => salesDb.getSalesInvoices(companyId), [companyId]);
 
-  const { data: dbFbrInvoices } = useDb(() => invoicingDb.getInvoices());
-  const { data: saleReturnInvoices } = useDb(() => invoicingDb.getSaleReturnInvoices());
+  const { data: dbFbrInvoices, loading: loadFbr } = useDb(() => invoicingDb.getInvoices());
+  const { data: saleReturnInvoices, loading: loadReturns } = useDb(() => invoicingDb.getSaleReturnInvoices());
 
   const [salesInvoiceList, setSalesInvoiceList] = useState([]);
   const [fbrInvoiceList, setFbrInvoiceList] = useState([]);
@@ -410,6 +410,7 @@ export default function Invoicing() {
           <DataTable
             columns={SALES_INV_COLS}
             data={displayedSales}
+            loading={loadSales}
             keyField="sale_inv_id"
             searchPlaceholder="Search by customer or invoice no..."
             filterTabs={[
@@ -447,7 +448,7 @@ export default function Invoicing() {
               title="FBR Invoice Queue"
               subtitle="Standalone FBR e-invoices — create via New FBR Invoice"
             />
-            <DataTable columns={FBR_COLS} data={fbrInvoiceList} keyField="invoice_id" searchPlaceholder="Search invoices..." />
+            <DataTable columns={FBR_COLS} data={fbrInvoiceList} loading={loadFbr} keyField="invoice_id" searchPlaceholder="Search invoices..." />
           </Card>
           {fbrQueue.length > 0 && (
             <Card padding={false}>
@@ -456,7 +457,7 @@ export default function Invoicing() {
                 subtitle={`${fbrQueue.length} invoice(s) failed FBR submission`}
                 actions={<Button variant="secondary" icon={<RefreshCw size={13} strokeWidth={1.75} />} size="sm">Retry All</Button>}
               />
-              <DataTable columns={RETRY_COLS} data={fbrQueue} keyField="invoice_id" searchable={false} />
+              <DataTable columns={RETRY_COLS} data={fbrQueue} loading={loadFbr} keyField="invoice_id" searchable={false} />
             </Card>
           )}
         </>
@@ -465,7 +466,7 @@ export default function Invoicing() {
       {pageTab === 'returns' && (
         <Card padding={false}>
           <CardHeader title="Sale Return Invoices" subtitle="Credit notes issued for customer returns" />
-          <DataTable columns={CRN_COLS} data={saleReturnInvoices} keyField="crn_id" searchPlaceholder="Search credit notes..." />
+          <DataTable columns={CRN_COLS} data={saleReturnInvoices} loading={loadReturns} keyField="crn_id" searchPlaceholder="Search credit notes..." />
         </Card>
       )}
 

@@ -51,7 +51,7 @@ export default function Inventory() {
   const [deletingId, setDeletingId] = useState(null);
   const [limitItem, setLimitItem] = useState(null);
 
-  const { data: stockItems, refetch: refetchStock } = useDb(() => inventoryDb.getStockItems(companyId), [companyId]);
+  const { data: stockItems, loading: loadStock, refetch: refetchStock } = useDb(() => inventoryDb.getStockItems(companyId), [companyId]);
 
   // Derive the low-stock alert level from current stock vs each item's reorder limit.
   const items = useMemo(
@@ -108,7 +108,7 @@ export default function Inventory() {
     },
   ];
   const { data: warehouses } = useDb(() => mastersDb.getWarehouses());
-  const { items: productCatalogue, addItem: addCatalogueItem, removeItem: removeCatalogueItem } = useCatalogue();
+  const { items: productCatalogue, loading: loadCatalogue, addItem: addCatalogueItem, removeItem: removeCatalogueItem } = useCatalogue();
 
   const handleDeleteCatalogueItem = async (row) => {
     setDeletingId(row.id);
@@ -210,6 +210,7 @@ export default function Inventory() {
             <DataTable
               columns={PRODUCT_COLS}
               data={productCatalogue}
+              loading={loadCatalogue}
               keyField="id"
               searchPlaceholder="Search products by code or name..."
             />
@@ -220,6 +221,7 @@ export default function Inventory() {
             <DataTable
               columns={STOCK_COLS}
               data={data}
+              loading={loadStock}
               keyField="id"
               searchPlaceholder="Search items..."
               filterTabs={TABS.map(t => ({ ...t, count: tabCounts[t.value] }))}
@@ -253,6 +255,7 @@ export default function Inventory() {
             <DataTable
               columns={STOCK_COLS}
               data={whStock}
+              loading={loadStock}
               keyField="id"
               searchPlaceholder="Search items..."
               filterTabs={[
