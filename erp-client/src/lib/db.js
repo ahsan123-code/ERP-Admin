@@ -566,6 +566,32 @@ export const financeDb = {
     return { data: all, error: null };
   },
 
+  // Every movement against one customer's sub-ledger account — sales, receipts,
+  // cheques, payments, journals, returns. The Customer Ledger was built from
+  // sales_invoices alone and so could only ever show bills; this is what makes the
+  // receipts and cheques visible, and the running balance correct.
+  // Paged: a busy account runs to ~20,000 lines and a single request stops at 1,000.
+  getCustomerLedgerEntries: async (accountCode, fromDate, toDate, companyId = 1) => {
+    if (!accountCode) return { data: [], error: null };
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      let q = supabase.from('customer_ledger_entries')
+        .select('voucher_id, line_no, date, voucher_type, particulars, debit, credit')
+        .eq('company_id', companyId)
+        .eq('account_code', accountCode)
+        .order('date').order('voucher_id').order('line_no')
+        .range(from, from + PAGE - 1);
+      if (fromDate) q = q.gte('date', fromDate);
+      if (toDate)   q = q.lte('date', toDate);
+      const { data, error } = await q;
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: all, error: null };
+  },
+
   // Each customer's real position, summed from the ledger rather than inferred from
   // invoices. Reads the customer_ledger_balances view, which aggregates the
   // 11-01-003-* sub-ledger accounts in Postgres — summing the raw lines in the browser

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP Redesign — Prototype</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .screens { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--sp-4); }
+  .screen-card {
+    display: block; background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: var(--r-lg); padding: var(--sp-5); transition: all var(--t-base);
+  }
+  .screen-card:hover { border-color: var(--accent-border); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+  .screen-card h3 { margin: 0 0 4px; font-size: var(--fs-md); font-weight: 650; }
+  .screen-card p { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--sp-3); }
+  .sw { border: 1px solid var(--border-subtle); border-radius: var(--r-md); overflow: hidden; }
+  .sw .chip { height: 52px; }
+  .sw .meta { padding: 7px 10px; font-size: var(--fs-xs); }
+  .sw .meta b { display: block; font-weight: 650; }
+  .sw .meta code { color: var(--text-tertiary); font-family: var(--font-mono); }
+  .type-row { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-3) 0; border-bottom: 1px solid var(--border-subtle); }
+  .type-row:last-child { border-bottom: none; }
+  .type-row .tag { width: 96px; flex-shrink: 0; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); }
+  .space-row { display: flex; align-items: center; gap: var(--sp-4); padding: 5px 0; }
+  .space-row .bar { height: 12px; background: var(--accent); border-radius: 2px; }
+  .space-row .tag { width: 70px; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">AB</div>
+      <div>
+        <div class="brand-name">Ahsan Brothers</div>
+        <div class="brand-sub">Steel ERP</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">Prototype</div>
+      <a class="nav-item active" href="index.html"><span class="ico">◆</span> Foundations</a>
+      <a class="nav-item" href="components.html"><span class="ico">▣</span> Components</a>
+      <div class="nav-section">Screens</div>
+      <a class="nav-item" href="dashboard.html"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="customer-balance.html"><span class="ico">▦</span> Customer Balance</a>
+      <a class="nav-item" href="expense-accounts.html"><span class="ico">▧</span> Expense Accounts</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <div class="proto-bar">
+      <span>Prototype — not connected to live data. Nothing here is wired into the app.</span>
+      <span class="spacer"></span>
+      <button class="btn btn-sm btn-ghost" data-theme-toggle><span data-theme-label>Dark</span> mode</button>
+    </div>
+
+    <header class="topbar">
+      <div class="crumb">Design · <b>Foundations</b></div>
+      <div class="topbar-right">
+        <div class="branch">
+          <span class="branch-label">Branch</span>
+          <div class="seg">
+            <button data-branch="Shop #41" class="on">Shop #41</button>
+            <button data-branch="Shop #58">Shop #58</button>
+          </div>
+        </div>
+        <div class="avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Redesign foundations</h1>
+          <p class="page-sub">
+            Colour, type, spacing and elevation for the whole app. Everything in the
+            prototype is built from these tokens — change one here and every screen follows.
+          </p>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Screens</h2>
+            <p class="card-sub">Click through — these are live pages, not images.</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="screens">
+            <a class="screen-card" href="dashboard.html">
+              <h3>Dashboard</h3>
+              <p>Stat tiles, activity, and the low-stock table.</p>
+            </a>
+            <a class="screen-card" href="customer-balance.html">
+              <h3>Customer Balance</h3>
+              <p>The report we have been fixing — with its loading state.</p>
+            </a>
+            <a class="screen-card" href="expense-accounts.html">
+              <h3>Expense Accounts</h3>
+              <p>Branch-scoped create form beside its list.</p>
+            </a>
+            <a class="screen-card" href="components.html">
+              <h3>Components</h3>
+              <p>Buttons, inputs, pills, tables, skeletons.</p>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid-2">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Surfaces &amp; text</h2>
+              <p class="card-sub">Four surface steps, low contrast between them.</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="swatches">
+              <div class="sw"><div class="chip" style="background:var(--bg-app)"></div><div class="meta"><b>App</b><code>--bg-app</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--bg-surface)"></div><div class="meta"><b>Surface</b><code>--bg-surface</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--bg-muted)"></div><div class="meta"><b>Muted</b><code>--bg-muted</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--bg-inset)"></div><div class="meta"><b>Inset</b><code>--bg-inset</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--text-primary)"></div><div class="meta"><b>Text</b><code>--text-primary</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--text-secondary)"></div><div class="meta"><b>Secondary</b><code>--text-secondary</code></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Accent &amp; semantic</h2>
+              <p class="card-sub">Colour always carries meaning — never decoration.</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="swatches">
+              <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><b>Accent</b><code>--accent</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--green)"></div><div class="meta"><b>Success</b><code>--green</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--red)"></div><div class="meta"><b>Danger</b><code>--red</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--amber)"></div><div class="meta"><b>Warning</b><code>--amber</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--num-debit)"></div><div class="meta"><b>Debit</b><code>--num-debit</code></div></div>
+              <div class="sw"><div class="chip" style="background:var(--num-credit)"></div><div class="meta"><b>Credit</b><code>--num-credit</code></div></div>
+            </div>
+            <p class="hint" style="margin-top:var(--sp-4)">
+              Debit reads cool and credit reads warm, so a column of figures is scannable
+              without reading the Dr/Cr suffix on every row.
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid-2">
+        <section class="card">
+          <div class="card-head"><h2 class="card-title">Type scale</h2></div>
+          <div class="card-body">
+            <div class="type-row"><span class="tag">3xl / 34</span><span style="font-size:var(--fs-3xl);font-weight:700;letter-spacing:-0.03em">PKR 8,049,441</span></div>
+            <div class="type-row"><span class="tag">2xl / 26</span><span style="font-size:var(--fs-2xl);font-weight:700;letter-spacing:-0.02em">Stat value</span></div>
+            <div class="type-row"><span class="tag">xl / 20</span><span style="font-size:var(--fs-xl);font-weight:700">Page title</span></div>
+            <div class="type-row"><span class="tag">md / 14</span><span style="font-size:var(--fs-md);font-weight:650">Card title</span></div>
+            <div class="type-row"><span class="tag">base / 13</span><span>Body and table text — 13px reads better than 14 at this density</span></div>
+            <div class="type-row"><span class="tag">sm / 12</span><span style="font-size:var(--fs-sm);color:var(--text-secondary)">Secondary and captions</span></div>
+            <div class="type-row"><span class="tag">xs / 11</span><span style="font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:0.06em;color:var(--text-tertiary);font-weight:700">Column header</span></div>
+            <div class="type-row"><span class="tag">mono</span><span class="mono">INV-542340 · 1,334.00 kg</span></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2 class="card-title">Spacing &amp; radius</h2></div>
+          <div class="card-body">
+            <div class="space-row"><span class="tag">--sp-1</span><span class="bar" style="width:4px"></span></div>
+            <div class="space-row"><span class="tag">--sp-2</span><span class="bar" style="width:8px"></span></div>
+            <div class="space-row"><span class="tag">--sp-3</span><span class="bar" style="width:12px"></span></div>
+            <div class="space-row"><span class="tag">--sp-4</span><span class="bar" style="width:16px"></span></div>
+            <div class="space-row"><span class="tag">--sp-5</span><span class="bar" style="width:20px"></span></div>
+            <div class="space-row"><span class="tag">--sp-6</span><span class="bar" style="width:24px"></span></div>
+            <div class="space-row"><span class="tag">--sp-8</span><span class="bar" style="width:32px"></span></div>
+            <div class="row" style="margin-top:var(--sp-5);gap:var(--sp-3)">
+              <div style="width:56px;height:44px;background:var(--bg-muted);border:1px solid var(--border-default);border-radius:var(--r-sm)"></div>
+              <div style="width:56px;height:44px;background:var(--bg-muted);border:1px solid var(--border-default);border-radius:var(--r-md)"></div>
+              <div style="width:56px;height:44px;background:var(--bg-muted);border:1px solid var(--border-default);border-radius:var(--r-lg)"></div>
+              <div style="width:56px;height:44px;background:var(--bg-muted);border:1px solid var(--border-default);border-radius:var(--r-xl)"></div>
+              <span class="hint">sm · md · lg · xl</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

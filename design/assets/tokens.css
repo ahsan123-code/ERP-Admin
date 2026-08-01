@@ -1,0 +1,161 @@
+/* ═══════════════════════════════════════════════════════════════════
+   PROPOSED DESIGN TOKENS — Ahsan Brothers Steel ERP
+   Prototype only. Nothing here is wired into the app yet.
+
+   What changes from the current set, and why:
+
+   · Neutrals are cooler and flatter. The current greys sit on a warm
+     axis while the indigo accent is cool, which makes surfaces look
+     slightly muddy next to it.
+   · Shadows are much lighter. This is a dense data tool; heavy card
+     shadows add visual noise between tables that sit side by side.
+     Hierarchy comes from hairline borders and surface steps instead.
+   · One accent, used sparingly. Indigo stays, but only for interactive
+     and selected states — never for decoration. Money, status and
+     charts use the semantic ramp so colour always carries meaning.
+   · A dedicated numeric ramp. Debit/credit and positive/negative need
+     to be distinguishable at a glance without reading the sign.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  /* ── Surfaces: four steps, low contrast between them ── */
+  --bg-app:      #F7F8FA;
+  --bg-surface:  #FFFFFF;
+  --bg-muted:    #F2F4F7;
+  --bg-hover:    #F7F8FA;
+  --bg-active:   #EEF1FF;
+  --bg-inset:    #FAFBFC;
+
+  /* ── Borders: hairlines do the structural work ── */
+  --border-subtle:  #EDEFF3;
+  --border-default: #DDE1E8;
+  --border-strong:  #C3C9D4;
+
+  /* ── Text ── */
+  --text-primary:   #0F1524;
+  --text-secondary: #4A5468;
+  --text-tertiary:  #8A93A5;
+  --text-disabled:  #C3C9D4;
+  --text-inverse:   #FFFFFF;
+
+  /* ── Accent ── */
+  --accent:        #5B5BD6;
+  --accent-hover:  #4A4AC4;
+  --accent-active: #3E3EA8;
+  --accent-muted:  #EEF1FF;
+  --accent-border: #C9CEFA;
+  --accent-text:   #3E3EA8;
+
+  /* ── Semantic ── */
+  --green:  #0E9F6E;  --green-muted:  #E7F8F1;  --green-border:  #A9E5CC;
+  --red:    #E5484D;  --red-muted:    #FDECEE;  --red-border:    #F5B5B8;
+  --amber:  #C77700;  --amber-muted:  #FDF3E3;  --amber-border:  #EFCF9B;
+  --blue:   #2B7FFF;  --blue-muted:   #EAF2FF;  --blue-border:   #B4D3FF;
+  --violet: #8250DF;  --violet-muted: #F4EEFE;  --violet-border: #D6C2F7;
+  --teal:   #0D9488;  --teal-muted:   #E6F6F4;  --teal-border:   #99D9D2;
+
+  /* ── Numeric: debit reads cool, credit reads warm ── */
+  --num-debit:  #1F6FEB;
+  --num-credit: #C2410C;
+  --num-zero:   #8A93A5;
+
+  /* ── Typography ── */
+  --font-ui:   'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', 'Fira Code', Consolas, monospace;
+
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;   /* dense tool: 13px body reads better than 14 at this density */
+  --fs-md:   14px;
+  --fs-lg:   16px;
+  --fs-xl:   20px;
+  --fs-2xl:  26px;
+  --fs-3xl:  34px;
+
+  --lh-tight: 1.25;
+  --lh-base:  1.5;
+
+  /* ── Spacing (4px base) ── */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
+
+  /* ── Radius ── */
+  --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px; --r-full: 999px;
+
+  /* ── Elevation: deliberately restrained ── */
+  --shadow-sm: 0 1px 2px rgba(15,21,36,0.05);
+  --shadow-md: 0 4px 12px rgba(15,21,36,0.07);
+  --shadow-lg: 0 16px 40px rgba(15,21,36,0.12);
+
+  /* ── Layout ── */
+  --sidebar-w: 240px;
+  --topbar-h:  56px;
+
+  --t-fast: 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  --t-base: 0.2s  cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Sidebar keeps its own dark scale in both themes ── */
+  --side-bg:        #0E1322;
+  --side-border:    #1A2135;
+  --side-text:      rgba(255,255,255,0.55);
+  --side-text-hi:   rgba(255,255,255,0.92);
+  --side-active-bg: rgba(91,91,214,0.22);
+  --side-active-fg: #B4B8FF;
+  --side-section:   rgba(255,255,255,0.30);
+
+  --input-bg:     #FFFFFF;
+  --input-border: #DDE1E8;
+  --focus-ring:   0 0 0 3px rgba(91,91,214,0.22);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-app:      #0A0E17;
+  --bg-surface:  #111725;
+  --bg-muted:    #182031;
+  --bg-hover:    #182031;
+  --bg-active:   #1C2544;
+  --bg-inset:    #0D131F;
+
+  --border-subtle:  #1A2131;
+  --border-default: #242D42;
+  --border-strong:  #36415C;
+
+  --text-primary:   #EDF1F7;
+  --text-secondary: #98A2B5;
+  --text-tertiary:  #66718A;
+  --text-disabled:  #2B3448;
+
+  --accent:        #7C7CF0;
+  --accent-hover:  #9A9AFA;
+  --accent-active: #B4B8FF;
+  --accent-muted:  #1B1F45;
+  --accent-border: #33357F;
+  --accent-text:   #B4B8FF;
+
+  --green:  #3DD68C;  --green-muted:  #08291D;  --green-border:  #12563B;
+  --red:    #FF6369;  --red-muted:    #2B1013;  --red-border:    #6B2225;
+  --amber:  #F0B429;  --amber-muted:  #2A1D05;  --amber-border:  #6B4A0C;
+  --blue:   #5EA2FF;  --blue-muted:   #0C1D33;  --blue-border:   #1D4373;
+  --violet: #A88BF5;  --violet-muted: #1B1330;  --violet-border: #3F2C6B;
+
+  --num-debit:  #5EA2FF;
+  --num-credit: #FF9A62;
+  --num-zero:   #66718A;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.5);
+  --shadow-lg: 0 16px 44px rgba(0,0,0,0.65);
+
+  --side-bg:        #070B14;
+  --side-border:    #111725;
+  --side-active-bg: rgba(124,124,240,0.20);
+  --side-active-fg: #B4B8FF;
+
+  --input-bg:     #182031;
+  --input-border: #36415C;
+  --focus-ring:   0 0 0 3px rgba(124,124,240,0.28);
+}

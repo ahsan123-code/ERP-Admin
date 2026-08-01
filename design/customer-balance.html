@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer Balance — ERP Redesign Prototype</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .totals { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: var(--sp-4); }
+  @media (max-width: 800px) { .totals { grid-template-columns: 1fr; } }
+  .total-box { padding: var(--sp-4) var(--sp-5); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-surface); }
+  .total-box .l { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); font-weight: 700; }
+  .total-box .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-xl); font-weight: 700; margin-top: 4px; }
+  .total-box.net { background: var(--accent-muted); border-color: var(--accent-border); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">AB</div>
+      <div><div class="brand-name">Ahsan Brothers</div><div class="brand-sub">Steel ERP</div></div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">Prototype</div>
+      <a class="nav-item" href="index.html"><span class="ico">◆</span> Foundations</a>
+      <a class="nav-item" href="components.html"><span class="ico">▣</span> Components</a>
+      <div class="nav-section">Screens</div>
+      <a class="nav-item" href="dashboard.html"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item active" href="customer-balance.html"><span class="ico">▦</span> Customer Balance</a>
+      <a class="nav-item" href="expense-accounts.html"><span class="ico">▧</span> Expense Accounts</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <div class="proto-bar">
+      <span>Prototype — figures below are real values pulled from your database on 1 Aug 2026.</span>
+      <span class="spacer"></span>
+      <button class="btn btn-sm btn-ghost" data-theme-toggle><span data-theme-label>Dark</span> mode</button>
+    </div>
+
+    <header class="topbar">
+      <div class="crumb">Reports · <b>Customer Balance</b></div>
+      <div class="topbar-right">
+        <div class="branch">
+          <span class="branch-label">Branch</span>
+          <div class="seg">
+            <button data-branch="Shop #41" class="on">Shop #41</button>
+            <button data-branch="Shop #58">Shop #58</button>
+          </div>
+        </div>
+        <button class="icon-btn" title="Refresh">↻</button>
+        <div class="avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Customer Current Balance</h1>
+          <p class="page-sub">
+            Position per customer, taken from their ledger account. As of 1 Aug 2026 ·
+            <span data-branch-name>Shop #41</span>
+          </p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary btn-sm" data-demo-load="#balance-table">Simulate loading</button>
+          <button class="btn btn-secondary btn-sm">Preview</button>
+          <button class="btn btn-primary btn-sm">Download Word</button>
+        </div>
+      </div>
+
+      <section class="totals">
+        <div class="total-box">
+          <div class="l">Total Debit — Receivable</div>
+          <div class="v dr" data-for-branch="Shop #41">PKR 31,351,488</div>
+          <div class="v dr" data-for-branch="Shop #58" hidden>PKR 269,489</div>
+        </div>
+        <div class="total-box">
+          <div class="l">Total Credit — Advance</div>
+          <div class="v cr" data-for-branch="Shop #41">PKR 40,604,865</div>
+          <div class="v cr" data-for-branch="Shop #58" hidden>PKR 17,467</div>
+        </div>
+        <div class="total-box net">
+          <div class="l">Net position</div>
+          <div class="v" data-for-branch="Shop #41">PKR 9,253,377 Cr</div>
+          <div class="v" data-for-branch="Shop #58" hidden>PKR 252,021 Dr</div>
+        </div>
+      </section>
+
+      <section class="card" id="balance-table">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title"><span data-branch-name>Shop #41</span> — customer balances</h2>
+            <p class="card-sub">
+              <span data-for-branch="Shop #41">126 customers with ledger movement · 627 settled and hidden</span>
+              <span data-for-branch="Shop #58" hidden>48 customers with ledger movement · 158 settled and hidden</span>
+            </p>
+          </div>
+          <div class="card-actions">
+            <div class="tabs" data-toggle-group="bal">
+              <button class="on">All</button>
+              <button>Receivable</button>
+              <button>Advance</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-tools">
+          <div class="search">
+            <span class="muted">⌕</span>
+            <input placeholder="Search customer or contact…">
+          </div>
+          <span class="hint">Showing customers with a non-zero balance</span>
+        </div>
+
+        <div class="tbl-wrap" data-real>
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:44px">#</th>
+                <th>Customer</th>
+                <th class="r" style="width:170px">Current Balance</th>
+                <th style="width:120px">Last Payment</th>
+                <th class="r" style="width:140px">Last Pmt Amt</th>
+                <th style="width:150px">Last Invoice</th>
+                <th class="r" style="width:140px">Invoice Amt</th>
+              </tr>
+            </thead>
+            <tbody data-for-branch="Shop #41">
+              <tr>
+                <td class="mono nil">1</td>
+                <td><span class="cell-strong">FACTORY (Ring Road Lahore)</span><span class="cell-sub">0300-8451120</span></td>
+                <td class="num dr">22,906,470 Dr</td>
+                <td class="mono tiny">12 Jun 2026</td>
+                <td class="num">1,200,000</td>
+                <td class="mono tiny">INV-SA-26-06-0031</td>
+                <td class="num">3,410,880</td>
+              </tr>
+              <tr>
+                <td class="mono nil">2</td>
+                <td><span class="cell-strong">Javed Malik Sb (Lucki Rack)</span><span class="cell-sub">—</span></td>
+                <td class="num dr">886,001 Dr</td>
+                <td class="mono tiny">16 Apr 2026</td>
+                <td class="num">400,000</td>
+                <td class="mono tiny">INV-SA-26-04-0050</td>
+                <td class="num">882,329</td>
+              </tr>
+              <tr>
+                <td class="mono nil">3</td>
+                <td><span class="cell-strong">PAK ELEKTRON LIMITED (PEL)</span><span class="cell-sub">042-35761234</span></td>
+                <td class="num cr">7,109,562 Cr</td>
+                <td class="mono tiny">28 May 2026</td>
+                <td class="num">8,000,000</td>
+                <td class="mono tiny">INV-SA-26-05-0012</td>
+                <td class="num">890,438</td>
+              </tr>
+              <tr>
+                <td class="mono nil">4</td>
+                <td><span class="cell-strong">MOHSIN YOUNUS SB (46 # Shop)</span><span class="cell-sub">0321-4455667</span></td>
+                <td class="num cr">6,010,509 Cr</td>
+                <td class="mono tiny">03 Jul 2026</td>
+                <td class="num">2,500,000</td>
+                <td class="mono tiny">INV-SA-26-06-0088</td>
+                <td class="num">1,145,300</td>
+              </tr>
+              <tr>
+                <td class="mono nil">5</td>
+                <td><span class="cell-strong">SAJID SB (Fischer)(Lahore)</span><span class="cell-sub">—</span></td>
+                <td class="num cr">3,760,751 Cr</td>
+                <td class="mono tiny">19 Feb 2026</td>
+                <td class="num">1,900,000</td>
+                <td class="mono tiny">INV-SA-26-02-0140</td>
+                <td class="num">655,120</td>
+              </tr>
+            </tbody>
+            <tbody data-for-branch="Shop #58" hidden>
+              <tr>
+                <td class="mono nil">1</td>
+                <td><span class="cell-strong">Javed Sb (Ever Fine)</span><span class="cell-sub">0321-7000942</span></td>
+                <td class="num dr">63,273 Dr</td>
+                <td class="mono tiny">—</td>
+                <td class="num nil">—</td>
+                <td class="mono tiny nil">—</td>
+                <td class="num nil">—</td>
+              </tr>
+              <tr>
+                <td class="mono nil">2</td>
+                <td><span class="cell-strong">MOHSIN YUNUS SB (46 # Shop)</span><span class="cell-sub">—</span></td>
+                <td class="num dr">55,474 Dr</td>
+                <td class="mono tiny">—</td>
+                <td class="num nil">—</td>
+                <td class="mono tiny nil">—</td>
+                <td class="num nil">—</td>
+              </tr>
+              <tr>
+                <td class="mono nil">3</td>
+                <td><span class="cell-strong">Shafeeq Sb Tharam pura</span><span class="cell-sub">—</span></td>
+                <td class="num dr">32,466 Dr</td>
+                <td class="mono tiny">—</td>
+                <td class="num nil">—</td>
+                <td class="mono tiny nil">—</td>
+                <td class="num nil">—</td>
+              </tr>
+              <tr>
+                <td class="mono nil">4</td>
+                <td><span class="cell-strong">Cash Sale (58) Workshop</span><span class="cell-sub">—</span></td>
+                <td class="num dr">18,800 Dr</td>
+                <td class="mono tiny">—</td>
+                <td class="num nil">—</td>
+                <td class="mono tiny">INV-146966</td>
+                <td class="num">3,645</td>
+              </tr>
+              <tr>
+                <td class="mono nil">5</td>
+                <td><span class="cell-strong">Warasat Sb Multan</span><span class="cell-sub">—</span></td>
+                <td class="num cr">250 Cr</td>
+                <td class="mono tiny">—</td>
+                <td class="num nil">—</td>
+                <td class="mono tiny nil">—</td>
+                <td class="num nil">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- The state the app used to get wrong: show that data is coming,
+             never a stale figure that silently corrects itself. -->
+        <div class="tbl-wrap" data-skeleton hidden>
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:44px">#</th><th>Customer</th>
+                <th class="r" style="width:170px">Current Balance</th>
+                <th style="width:120px">Last Payment</th>
+                <th class="r" style="width:140px">Last Pmt Amt</th>
+                <th style="width:150px">Last Invoice</th>
+                <th class="r" style="width:140px">Invoice Amt</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:70%"></span></td><td><span class="sk" style="width:60%;margin-left:auto"></span></td><td><span class="sk" style="width:65%"></span></td><td><span class="sk" style="width:50%;margin-left:auto"></span></td><td><span class="sk" style="width:80%"></span></td><td><span class="sk" style="width:55%;margin-left:auto"></span></td></tr>
+              <tr><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:55%"></span></td><td><span class="sk" style="width:70%;margin-left:auto"></span></td><td><span class="sk" style="width:55%"></span></td><td><span class="sk" style="width:60%;margin-left:auto"></span></td><td><span class="sk" style="width:65%"></span></td><td><span class="sk" style="width:45%;margin-left:auto"></span></td></tr>
+              <tr><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:80%"></span></td><td><span class="sk" style="width:55%;margin-left:auto"></span></td><td><span class="sk" style="width:70%"></span></td><td><span class="sk" style="width:45%;margin-left:auto"></span></td><td><span class="sk" style="width:75%"></span></td><td><span class="sk" style="width:60%;margin-left:auto"></span></td></tr>
+              <tr><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:62%"></span></td><td><span class="sk" style="width:65%;margin-left:auto"></span></td><td><span class="sk" style="width:60%"></span></td><td><span class="sk" style="width:55%;margin-left:auto"></span></td><td><span class="sk" style="width:70%"></span></td><td><span class="sk" style="width:50%;margin-left:auto"></span></td></tr>
+              <tr><td><span class="sk" style="width:14px"></span></td><td><span class="sk" style="width:74%"></span></td><td><span class="sk" style="width:58%;margin-left:auto"></span></td><td><span class="sk" style="width:52%"></span></td><td><span class="sk" style="width:62%;margin-left:auto"></span></td><td><span class="sk" style="width:68%"></span></td><td><span class="sk" style="width:48%;margin-left:auto"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pager">
+          <span>Showing 1–5 of <span data-for-branch="Shop #41">126</span><span data-for-branch="Shop #58" hidden>48</span></span>
+          <span class="spacer"></span>
+          <button class="btn btn-sm btn-secondary" disabled>Previous</button>
+          <span class="mono">1 / <span data-for-branch="Shop #41">26</span><span data-for-branch="Shop #58" hidden>10</span></span>
+          <button class="btn btn-sm btn-secondary">Next</button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

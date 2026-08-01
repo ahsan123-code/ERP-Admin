@@ -9,6 +9,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
+import Skeleton from '../../components/shared/Skeleton';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { financeDb, salesDb, procurementDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
@@ -45,12 +46,12 @@ const REPORT_CSS = `
 // spec. Both the Preview and the Download button build from this one function, so
 // what the preview shows is always what the .doc contains.
 // `landscape` is for the wide multi-column reports that would otherwise be cut off.
-function buildReportDoc({ filename, title, meta = '', table, landscape = false, note = null }) {
+function buildReportDoc({ filename, title, meta = '', table, landscape = false, note = null, css = '' }) {
   return {
     filename,
     title,
     landscape,
-    css: REPORT_CSS,
+    css: REPORT_CSS + css,
     body: `
       ${companyHeader(COMPANY, { title })}
       ${meta ? `<div class="rpt-meta">${meta}</div>` : ''}
@@ -504,14 +505,41 @@ function IncomeStatement({ chartOfAccounts }) {
   );
 }
 
-/* ── Customer Sales Ledger ──────────────────────────────────────────── */
-function CustomerLedger({ salesInvoices, customers = [] }) {
-  // Every registered customer, not only those who already have an invoice. A newly
-  // added customer — especially one carried over with an opening balance — has no
-  // invoices yet, and building this list from invoices alone made them unselectable
-  // so their balance was impossible to view.
+/* ── Customer Ledger ────────────────────────────────────────────────── */
+
+// Legacy sales vouchers carry their invoice number inside the narration:
+//   "Sales-28-Sep-2020-0157-L-…"  ->  INV-SA-20-09-0157
+// That is the only reliable link from a ledger line back to its invoice, and so to
+// its items — it resolves 94.8% of sales vouchers, where matching on customer + date
+// + amount managed 11%. Rows that do not resolve simply show no item detail.
+const MONTHS = { jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06',
+                 jul:'07', aug:'08', sep:'09', oct:'10', nov:'11', dec:'12' };
+
+function invoiceIdFromNarration(narration) {
+  const m = /^Sales-(\d{2})-([A-Za-z]{3})-(\d{4})-(\d{4})-/.exec(String(narration || ''));
+  if (!m) return null;
+  const month = MONTHS[m[2].toLowerCase()];
+  return month ? `INV-SA-${m[3].slice(2)}-${month}-${m[4]}` : null;
+}
+
+// Sales add to what a customer owes; receipts and cheques reduce it. Colouring the
+// type makes a column of 20,000 rows scannable without reading every word.
+const TYPE_TONE = {
+  SA: 'info', SR: 'warning', CRV: 'success', BRV: 'success',
+  CPV: 'error', BPV: 'error', BR: 'neutral', JV: 'neutral', PI: 'neutral', PR: 'neutral',
+};
+const TYPE_LABEL = {
+  SA: 'Sale', SR: 'Sale Return', CRV: 'Receipt', BRV: 'Bank Receipt',
+  CPV: 'Payment', BPV: 'Bank Payment', BR: 'Bank', JV: 'Journal',
+  PI: 'Purchase', PR: 'Purch. Return',
+};
+
+function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
+  // Every registered customer, not only those who already have an invoice — one
+  // carried over with an opening balance has none yet, and building the list from
+  // invoices alone made them unselectable.
   const customerNames = useMemo(() => {
-    const names = new Set(salesInvoices.map(i => i.customer_name).filter(Boolean));
+    const names = new Set((salesInvoices || []).map(i => i.customer_name).filter(Boolean));
     (customers || []).forEach(c => { if (c.name) names.add(c.name); });
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [salesInvoices, customers]);
@@ -520,52 +548,96 @@ function CustomerLedger({ salesInvoices, customers = [] }) {
   const [fromDate, setFrom] = useState('');
   const [toDate,   setTo]   = useState('');
 
-  // Default to the first customer once data has loaded.
-  useEffect(() => {
-    setCustomer(c => c || customerNames[0] || '');
-  }, [customerNames]);
+  useEffect(() => { setCustomer(c => c || customerNames[0] || ''); }, [customerNames]);
 
-  const inRange = (dateStr) => {
-    const d = (dateStr || '').slice(0, 10);
-    if (fromDate && d < fromDate) return false;
-    if (toDate   && d > toDate)   return false;
+  const custRow = useMemo(
+    () => (customers || []).find(c => c.name === customer) || null,
+    [customers, customer]);
+  const accountCode = custRow?.account_code || null;
+
+  // Deliberately unfiltered: the opening balance is the sum of everything before
+  // `fromDate`, so the rows preceding the period have to be in hand. Filtering in
+  // the query would hide them and the brought-forward figure would silently read
+  // zero, taking every running balance below it with it.
+  const { data: allEntries, loading } = useDb(
+    () => financeDb.getCustomerLedgerEntries(accountCode, null, null, companyId),
+    [accountCode, companyId]);
+
+  const inPeriod = (d) => {
+    const day = (d || '').slice(0, 10);
+    if (fromDate && day < fromDate) return false;
+    if (toDate   && day > toDate)   return false;
     return true;
   };
 
-  const invs = useMemo(() => salesInvoices.filter(i => {
-    if (i.customer_name !== customer) return false;
-    return inRange(i.date);
+  const entries = useMemo(
+    () => (allEntries || []).filter(e => inPeriod(e.date)),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [salesInvoices, customer, fromDate, toDate]);
+    [allEntries, fromDate, toDate]);
 
-  // Brought-forward balance, shown as the first row so the ledger opens from the
-  // customer's real starting position rather than from zero.
-  const openingRow = useMemo(() => {
-    const c = (customers || []).find(x => x.name === customer);
-    const amount = parseFloat(c?.opening_balance) || 0;
-    if (amount === 0) return null;
-    if (c.opening_balance_date && !inRange(c.opening_balance_date)) return null;
-    return { amount, date: c.opening_balance_date };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customers, customer, fromDate, toDate]);
+  // Invoice -> order, so a resolved ledger line can reach its line items.
+  const soRefByInvoice = useMemo(() => {
+    const m = {};
+    (salesInvoices || []).forEach(i => { if (i.sale_inv_id) m[i.sale_inv_id] = i.so_ref; });
+    return m;
+  }, [salesInvoices]);
 
-  const openingAmount = openingRow?.amount || 0;
-
-  // Pull the sold-item detail (item name + size + rate) for this customer's orders.
-  const soRefs = useMemo(() => invs.map(i => i.so_ref).filter(Boolean), [invs]);
-  const soRefsKey = soRefs.join(',');
-  const { data: lineItems } = useDb(() => salesDb.getSoLineItems(soRefs), [soRefsKey]);
-
-  // Group line items by their SO ref so each invoice can show what was sold.
-  const itemsByRef = useMemo(() => {
-    const map = {};
-    (lineItems || []).forEach(li => {
-      (map[li.so_id] ||= []).push(li);
+  const neededSoRefs = useMemo(() => {
+    const refs = new Set();
+    (entries || []).forEach(e => {
+      const inv = invoiceIdFromNarration(e.particulars);
+      const so = inv ? soRefByInvoice[inv] : null;
+      if (so) refs.add(so);
     });
-    return map;
+    return [...refs];
+  }, [entries, soRefByInvoice]);
+  const soKey = neededSoRefs.join(',');
+
+  const { data: lineItems } = useDb(() => salesDb.getSoLineItems(neededSoRefs), [soKey]);
+
+  const itemsBySo = useMemo(() => {
+    const m = {};
+    (lineItems || []).forEach(li => { (m[li.so_id] ||= []).push(li); });
+    return m;
   }, [lineItems]);
 
-  const grandTotal = openingAmount + invs.reduce((s, i) => s + (i.grand_total || 0), 0);
+  // Brought forward = the balance carried into the period. The stored
+  // customers.opening_balance is a legacy field and is zero for every customer in
+  // this database, so in practice this is the sum of the ledger before `fromDate`.
+  const opening = useMemo(() => {
+    const stored = parseFloat(custRow?.opening_balance) || 0;
+    if (!fromDate) return stored;
+    return (allEntries || []).reduce((sum, e) => (
+      (e.date || '').slice(0, 10) < fromDate
+        ? sum + (parseFloat(e.debit) || 0) - (parseFloat(e.credit) || 0)
+        : sum
+    ), stored);
+  }, [allEntries, custRow, fromDate]);
+
+  // One pass: attach items, carry the running balance.
+  // Reduced rather than mapped over a mutable counter: the running total is derived
+  // from the row before it, so it stays a pure function of `entries`.
+  const rows = useMemo(() => (entries || []).reduce((acc, e) => {
+    const debit  = parseFloat(e.debit)  || 0;
+    const credit = parseFloat(e.credit) || 0;
+    const prev   = acc.length ? acc[acc.length - 1].balance : opening;
+    const invId  = invoiceIdFromNarration(e.particulars);
+    const so     = invId ? soRefByInvoice[invId] : null;
+    acc.push({
+      ...e, debit, credit,
+      balance: prev + debit - credit,
+      invoiceId: invId,
+      items: so ? (itemsBySo[so] || []) : [],
+    });
+    return acc;
+  }, []), [entries, itemsBySo, soRefByInvoice, opening]);
+
+  const totalDr = rows.reduce((s, r) => s + r.debit, 0);
+  const totalCr = rows.reduce((s, r) => s + r.credit, 0);
+  const closing = rows.length ? rows[rows.length - 1].balance : opening;
+
+  const spec = (li) => [li.size, li.gauge].filter(Boolean).join(' · ');
+  const drCr = (v) => `${formatCurrency(Math.abs(v))} ${v >= 0 ? 'Dr' : 'Cr'}`;
 
   const { showPreview, previewNode } = useWordPreview();
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
@@ -573,55 +645,68 @@ function CustomerLedger({ salesInvoices, customers = [] }) {
 
   const buildDoc = () => {
     if (!customer) return;
-    const openingHtml = openingRow
-      ? `<tr>
-          <td>${openingRow.date ? formatDate(openingRow.date) : '—'}</td>
-          <td><strong>Opening Balance</strong></td>
-          <td>Brought forward</td>
-          <td>—</td>
-          <td class="right">—</td>
-          <td class="right">—</td>
-          <td class="right">—</td>
-          <td class="right">${formatCurrency(openingRow.amount)}</td>
-          <td>—</td>
-        </tr>`
-      : '';
-    const rows = openingHtml + invs.map(inv => {
-      const items = itemsByRef[inv.so_ref] || [];
-      const itemText = items.length
-        ? items.map(li => `${esc(itemLabel(li.item_name))}${li.quantity > 0 ? ` · ${esc(li.quantity)} ${esc(li.unit || '')}` : ''}`).join('<br>')
-        : '—';
-      const specText = items.length
-        ? items.map(li => [li.size, li.gauge].filter(Boolean).join(' · ') || '—').join('<br>')
-        : '—';
-      const rateText = items.length
-        ? items.map(li => li.unit_price > 0 ? formatCurrency(li.unit_price) : '—').join('<br>')
-        : '—';
-      return `<tr>
-        <td>${formatDate(inv.date)}</td>
-        <td>${inv.sale_inv_id || '—'}</td>
-        <td>${itemText}</td>
-        <td>${specText}</td>
-        <td class="right">${rateText}</td>
-        <td class="right">${formatCurrency(inv.subtotal)}</td>
-        <td class="right">${formatCurrency(inv.total_charges || 0)}</td>
-        <td class="right">${formatCurrency(inv.grand_total)}</td>
-        <td>${getStatus(inv.status).label}</td>
+
+    // Date carries its age underneath and the voucher carries its type, the way the
+    // client's own ledger does. Eleven columns become nine, and the money columns
+    // keep enough width to never wrap.
+    // Only when there is genuinely a balance carried into the period. With no
+    // From date, and no stored opening balance, the row could only ever read zero.
+    const openingRow = opening === 0 ? '' : `
+      <tr class="open">
+        <td>${fromDate ? formatDate(fromDate) : '—'}</td>
+        <td>—</td>
+        <td><strong>Opening Balance</strong><div class="sub">Brought forward</div></td>
+        <td>—</td><td>—</td><td class="right">—</td>
+        <td class="right">—</td><td class="right">—</td>
+        <td class="right"><strong>${drCr(opening)}</strong></td>
+      </tr>`;
+
+    const body = rows.map(r => {
+      const join = (fn) => r.items.length ? r.items.map(fn).join('<br>') : '—';
+      const age = agDays(r.date);
+      return `
+      <tr>
+        <td>${formatDate((r.date || '').slice(0, 10))}<div class="sub">${age}d</div></td>
+        <td class="mono">${esc(r.voucher_id || '—')}<div class="sub">${esc(TYPE_LABEL[r.voucher_type] || r.voucher_type || '')}</div></td>
+        <td>${esc(r.particulars) || '—'}</td>
+        <td>${join(li => `${esc(itemLabel(li.item_name))}${li.quantity > 0 ? `<span class="sub"> · ${esc(li.quantity)} ${esc(li.unit || '')}</span>` : ''}`)}</td>
+        <td>${join(li => esc(spec(li)) || '—')}</td>
+        <td class="right">${join(li => li.unit_price > 0 ? formatCurrency(li.unit_price) : '—')}</td>
+        <td class="right">${r.debit  > 0 ? formatCurrency(r.debit)  : '—'}</td>
+        <td class="right">${r.credit > 0 ? formatCurrency(r.credit) : '—'}</td>
+        <td class="right">${drCr(r.balance)}</td>
       </tr>`;
     }).join('');
+
     return buildReportDoc({
-      filename: `Customer Sales Ledger ${customer}`,
-      title: 'Customer Sales Ledger',
+      filename: `Customer Ledger ${customer}`,
+      title: 'Customer Ledger',
       landscape: true,
-      meta: `Customer: <strong>${esc(customer)}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}`,
+      meta: `Customer: <strong>${esc(customer)}</strong>`
+          + (accountCode ? ` &nbsp;|&nbsp; Account: <strong>${esc(accountCode)}</strong>` : '')
+          + ` &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}`,
+      note: `Closing Balance: ${drCr(closing)}`,
+      css: `
+        .rpt td .sub { font-size: 8px; color: #888; }
+        .rpt tr.open td { background: #f4f6fb; }
+        .rpt tfoot td { background: #f4f6fb; }
+      `,
       table: `<table class="rpt">
-        <thead><tr><th width="70">Date</th><th width="90">Invoice No.</th><th>Item</th>
-          <th width="100">Size / Gauge</th><th class="right" width="80">Rate</th>
-          <th class="right" width="90">Subtotal</th><th class="right" width="80">Charges</th>
-          <th class="right" width="95">Grand Total</th><th width="70">Status</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="9" class="center" style="padding:18px;color:#666">No invoices for selected period</td></tr>'}</tbody>
-        <tfoot><tr><td colspan="7" class="right">Total</td>
-          <td class="right">${formatCurrency(grandTotal)}</td><td></td></tr></tfoot>
+        <thead><tr>
+          <th width="62">Date</th><th width="92">Voucher</th><th>Particulars</th>
+          <th width="130">Item</th><th width="78">Size / Gauge</th>
+          <th class="right" width="62">Rate</th>
+          <th class="right" width="84">Debit</th>
+          <th class="right" width="84">Credit</th>
+          <th class="right" width="104">Balance</th>
+        </tr></thead>
+        <tbody>${openingRow}${body || '<tr><td colspan="9" class="center" style="padding:18px;color:#666">No transactions for selected period</td></tr>'}</tbody>
+        <tfoot><tr>
+          <td colspan="6" class="right"><strong>Totals</strong></td>
+          <td class="right"><strong>${formatCurrency(totalDr)}</strong></td>
+          <td class="right"><strong>${formatCurrency(totalCr)}</strong></td>
+          <td class="right"><strong>${drCr(closing)}</strong></td>
+        </tr></tfoot>
       </table>`,
     });
   };
@@ -647,90 +732,135 @@ function CustomerLedger({ salesInvoices, customers = [] }) {
           <label className={styles.filterLabel}>To</label>
           <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
         </div>
-        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!customer}>
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!customer || loading}>
           Preview
         </Button>
-        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload} disabled={!customer}>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload} disabled={!customer || loading}>
           Download Word
         </Button>
         {previewNode}
       </div>
+
+      {accountCode === null && customer && !loading && (
+        <div style={{ padding: '10px 14px', margin: '0 0 12px', fontSize: 12.5,
+                      background: 'var(--orange-muted)', border: '1px solid var(--orange-border)',
+                      borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)' }}>
+          <strong>{customer}</strong> has no ledger account linked, so only its opening
+          balance can be shown. Run <code>backfill-customer-account-codes.js</code> to link it.
+        </div>
+      )}
+
       <div className={styles.reportTable}>
         <table className={styles.tbl}>
-          <thead><tr><th>Date</th><th>Invoice No.</th><th>Item</th><th>Size / Gauge</th><th className={styles.right}>Rate</th><th className={styles.right}>Subtotal</th><th className={styles.right}>Charges</th><th className={styles.right}>Grand Total</th><th>Status</th><th className={styles.right}>AG-DAYS</th></tr></thead>
+          <thead>
+            <tr>
+              <th style={{ width: 92 }}>Date</th>
+              <th style={{ width: 120 }}>Voucher</th>
+              <th>Particulars</th>
+              <th style={{ width: 170 }}>Item</th>
+              <th style={{ width: 110 }}>Size / Gauge</th>
+              <th className={styles.right} style={{ width: 90 }}>Rate</th>
+              <th className={styles.right} style={{ width: 110 }}>Debit</th>
+              <th className={styles.right} style={{ width: 110 }}>Credit</th>
+              <th className={styles.right} style={{ width: 140 }}>Balance</th>
+            </tr>
+          </thead>
           <tbody>
-            {openingRow && (
-              <tr>
-                <td className={styles.code}>{openingRow.date ? formatDate(openingRow.date) : '—'}</td>
-                <td><strong>Opening Balance</strong></td>
-                <td><span style={{ color: 'var(--text-tertiary)' }}>Brought forward</span></td>
-                <td><span className={styles.nil}>—</span></td>
-                <td className={styles.right}><span className={styles.nil}>—</span></td>
-                <td className={styles.right}><span className={styles.nil}>—</span></td>
-                <td className={styles.right}><span className={styles.nil}>—</span></td>
-                <td className={styles.right}><span className={`${styles.mono} ${styles.total}`}>{formatCurrency(openingRow.amount)}</span></td>
-                <td><Badge variant="neutral">Opening</Badge></td>
-                <td className={styles.right}><span className={styles.nil}>—</span></td>
-              </tr>
-            )}
-            {invs.length === 0 && !openingRow
-              ? <tr><td colSpan={10} style={{ textAlign:'center', padding:'20px', color:'#666' }}>No invoices found</td></tr>
-              : invs.map(inv => {
-                const days = agDays(inv.date);
-                const dayVariant = days > 60 ? 'error' : days > 30 ? 'warning' : 'neutral';
-                const s = getStatus(inv.status);
-                const items = itemsByRef[inv.so_ref] || [];
-                return (
-                  <tr key={inv.sale_inv_id}>
-                    <td className={styles.code}>{formatDate(inv.date)}</td>
-                    <td className={styles.code}>{inv.sale_inv_id}</td>
-                    <td>
-                      {items.length === 0
-                        ? <span className={styles.nil}>—</span>
-                        : items.map((li, idx) => (
-                          <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
-                            {itemLabel(li.item_name)}
-                            {li.quantity > 0 && (
-                              <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
-                            )}
-                          </div>
-                        ))}
-                    </td>
-                    <td>
-                      {/* Gauge and size as their own column. Older rows kept both
-                          baked into item_name, so they read as "—" here rather
-                          than being parsed back out of free text. */}
-                      {items.length === 0
-                        ? <span className={styles.nil}>—</span>
-                        : items.map((li, idx) => (
-                          <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                            {[li.size, li.gauge].filter(Boolean).join(' · ') || <span className={styles.nil}>—</span>}
-                          </div>
-                        ))}
-                    </td>
-                    <td className={styles.right}>
-                      {items.length === 0
-                        ? <span className={styles.nil}>—</span>
-                        : items.map((li, idx) => (
-                          <div key={idx} className={styles.mono} style={{ fontSize: 12, lineHeight: 1.5 }}>
-                            {li.unit_price > 0 ? formatCurrency(li.unit_price) : '—'}
-                          </div>
-                        ))}
-                    </td>
-                    <td className={styles.right}><span className={styles.mono}>{formatCurrency(inv.subtotal)}</span></td>
-                    <td className={styles.right}><span className={styles.mono}>{formatCurrency(inv.total_charges || 0)}</span></td>
-                    <td className={styles.right}><span className={`${styles.mono} ${styles.total}`}>{formatCurrency(inv.grand_total)}</span></td>
-                    <td><Badge variant={s.variant}>{s.label}</Badge></td>
-                    <td className={styles.right}><Badge variant={dayVariant}>{days}d</Badge></td>
+            {loading ? (
+              Array.from({ length: 8 }, (_, i) => (
+                <tr key={`sk${i}`}>
+                  {Array.from({ length: 9 }, (_, c) => (
+                    <td key={c}><Skeleton width={['70%','55%','85%','60%','45%','50%','65%','65%','75%'][c]} /></td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <>
+                {opening !== 0 && (
+                  <tr className={styles.totalRow}>
+                    <td className={styles.date}>{fromDate ? formatDate(fromDate) : '—'}</td>
+                    <td><span className={styles.nil}>—</span></td>
+                    <td><strong>Opening Balance</strong></td>
+                    <td colSpan={3}><span className={styles.nil}>Brought forward</span></td>
+                    <td className={styles.right}><span className={styles.nil}>—</span></td>
+                    <td className={styles.right}><span className={styles.nil}>—</span></td>
+                    <td className={styles.right}><span className={`${styles.mono} ${styles.total}`}>{drCr(opening)}</span></td>
                   </tr>
-                );
-              })}
-            {(invs.length > 0 || openingRow) && (
-              <tr className={styles.totalRow}>
-                <td colSpan={7}><strong>{openingRow ? 'Total (incl. opening)' : 'Total'}</strong></td>
-                <td className={styles.right}><strong className={styles.mono}>{formatCurrency(grandTotal)}</strong></td>
-                <td colSpan={2}></td>
-              </tr>
+                )}
+
+                {rows.length === 0
+                  ? <tr><td colSpan={9} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>No transactions for selected period</td></tr>
+                  : rows.map((r, i) => {
+                    const age = agDays(r.date);
+                    const ageTone = age > 60 ? 'error' : age > 30 ? 'warning' : 'neutral';
+                    return (
+                      <tr key={`${r.voucher_id}-${r.line_no}-${i}`}>
+                        <td className={styles.date}>
+                          {formatDate((r.date || '').slice(0, 10))}
+                          <div><Badge variant={ageTone}>{age}d</Badge></div>
+                        </td>
+                        <td className={styles.code}>
+                          {r.voucher_id || '—'}
+                          <div><Badge variant={TYPE_TONE[r.voucher_type] || 'neutral'}>
+                            {TYPE_LABEL[r.voucher_type] || r.voucher_type || '—'}
+                          </Badge></div>
+                        </td>
+                        <td style={{ fontSize: 12.5 }}>{r.particulars || <span className={styles.nil}>—</span>}</td>
+                        <td>
+                          {r.items.length === 0
+                            ? <span className={styles.nil}>—</span>
+                            : r.items.map((li, idx) => (
+                              <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                                {itemLabel(li.item_name)}
+                                {li.quantity > 0 && (
+                                  <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
+                                )}
+                              </div>
+                            ))}
+                        </td>
+                        <td>
+                          {r.items.length === 0
+                            ? <span className={styles.nil}>—</span>
+                            : r.items.map((li, idx) => (
+                              <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+                                {spec(li) || <span className={styles.nil}>—</span>}
+                              </div>
+                            ))}
+                        </td>
+                        <td className={styles.right}>
+                          {r.items.length === 0
+                            ? <span className={styles.nil}>—</span>
+                            : r.items.map((li, idx) => (
+                              <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+                                {li.unit_price > 0 ? formatCurrency(li.unit_price) : '—'}
+                              </div>
+                            ))}
+                        </td>
+                        <td className={styles.right}>
+                          {r.debit > 0 ? <span className={styles.mono}>{formatCurrency(r.debit)}</span> : <span className={styles.nil}>—</span>}
+                        </td>
+                        <td className={styles.right}>
+                          {r.credit > 0 ? <span className={styles.mono}>{formatCurrency(r.credit)}</span> : <span className={styles.nil}>—</span>}
+                        </td>
+                        <td className={styles.right}>
+                          <span className={`${styles.mono} ${styles.total}`}>{formatCurrency(Math.abs(r.balance))}</span>
+                          <span style={{ fontSize: 10, marginLeft: 4, color: r.balance >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                            {r.balance >= 0 ? 'Dr' : 'Cr'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                {rows.length > 0 && (
+                  <tr className={styles.totalRow}>
+                    <td colSpan={6} className={styles.right}><strong>Totals</strong></td>
+                    <td className={styles.right}><strong className={styles.mono}>{formatCurrency(totalDr)}</strong></td>
+                    <td className={styles.right}><strong className={styles.mono}>{formatCurrency(totalCr)}</strong></td>
+                    <td className={styles.right}><strong className={styles.mono}>{drCr(closing)}</strong></td>
+                  </tr>
+                )}
+              </>
             )}
           </tbody>
         </table>
@@ -1706,7 +1836,7 @@ export default function Reports() {
       {pageTab === 'customer-ledger' && (
         <Card padding={false}>
           <CardHeader title="Customer Sales Ledger" subtitle="Customer-wise invoice history with AG-DAYS aging" />
-          <div className={styles.cardBody}><CustomerLedger salesInvoices={salesInvoices} customers={customers} /></div>
+          <div className={styles.cardBody}><CustomerLedger salesInvoices={salesInvoices} customers={customers} companyId={companyId} /></div>
         </Card>
       )}
       {pageTab === 'vendor-ledger' && (

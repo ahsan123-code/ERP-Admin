@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — ERP Redesign Prototype</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .bars { display: flex; align-items: flex-end; gap: var(--sp-3); height: 190px; padding-top: var(--sp-4); }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); height: 100%; justify-content: flex-end; }
+  .bar { width: 100%; max-width: 42px; border-radius: var(--r-sm) var(--r-sm) 0 0; background: var(--accent); transition: opacity var(--t-fast); }
+  .bar-col:hover .bar { opacity: 0.75; }
+  .bar.alt { background: var(--accent-muted); border: 1px solid var(--accent-border); }
+  .bar-lbl { font-size: var(--fs-xs); color: var(--text-tertiary); font-family: var(--font-mono); }
+  .legend { display: flex; gap: var(--sp-4); font-size: var(--fs-sm); color: var(--text-secondary); }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+  .feed { display: flex; flex-direction: column; }
+  .feed-row { display: flex; gap: var(--sp-3); padding: var(--sp-3) 0; border-bottom: 1px solid var(--border-subtle); }
+  .feed-row:last-child { border-bottom: none; }
+  .feed-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+  .feed-main { font-size: var(--fs-base); }
+  .feed-time { font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">AB</div>
+      <div><div class="brand-name">Ahsan Brothers</div><div class="brand-sub">Steel ERP</div></div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">Prototype</div>
+      <a class="nav-item" href="index.html"><span class="ico">◆</span> Foundations</a>
+      <a class="nav-item" href="components.html"><span class="ico">▣</span> Components</a>
+      <div class="nav-section">Screens</div>
+      <a class="nav-item active" href="dashboard.html"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="customer-balance.html"><span class="ico">▦</span> Customer Balance</a>
+      <a class="nav-item" href="expense-accounts.html"><span class="ico">▧</span> Expense Accounts</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <div class="proto-bar">
+      <span>Prototype — illustrative figures.</span>
+      <span class="spacer"></span>
+      <button class="btn btn-sm btn-ghost" data-theme-toggle><span data-theme-label>Dark</span> mode</button>
+    </div>
+
+    <header class="topbar">
+      <div class="crumb"><b>Dashboard</b></div>
+      <div class="topbar-right">
+        <div class="branch">
+          <span class="branch-label">Branch</span>
+          <div class="seg">
+            <button data-branch="Shop #41" class="on">Shop #41</button>
+            <button data-branch="Shop #58">Shop #58</button>
+          </div>
+        </div>
+        <div class="avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Good morning</h1>
+          <p class="page-sub"><span data-branch-name>Shop #41</span> · Saturday, 1 August 2026</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-secondary btn-sm">Export</button>
+          <button class="btn btn-primary btn-sm">New Sales Order</button>
+        </div>
+      </div>
+
+      <section class="stats">
+        <div class="stat">
+          <span class="stat-label">Sales this month</span>
+          <span class="stat-value">3.41M</span>
+          <span class="stat-foot"><span class="delta up">▲ 12.4%</span> vs July</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Receivable</span>
+          <span class="stat-value dr">31.35M</span>
+          <span class="stat-foot">126 customers with a balance</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Payable</span>
+          <span class="stat-value cr">4.82M</span>
+          <span class="stat-foot">38 vendors</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Low stock</span>
+          <span class="stat-value">7</span>
+          <span class="stat-foot"><span class="delta down">▲ 2</span> since last week</span>
+        </div>
+      </section>
+
+      <div class="grid-2">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title">Sales by month</h2>
+              <p class="card-sub">Cash and credit split, last six months</p>
+            </div>
+            <div class="card-actions">
+              <div class="legend">
+                <span><i style="background:var(--accent)"></i>Credit</span>
+                <span><i style="background:var(--accent-muted);border:1px solid var(--accent-border)"></i>Cash</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="bars">
+              <div class="bar-col"><span class="bar" style="height:44%"></span><span class="bar alt" style="height:18%"></span><span class="bar-lbl">Mar</span></div>
+              <div class="bar-col"><span class="bar" style="height:58%"></span><span class="bar alt" style="height:22%"></span><span class="bar-lbl">Apr</span></div>
+              <div class="bar-col"><span class="bar" style="height:39%"></span><span class="bar alt" style="height:26%"></span><span class="bar-lbl">May</span></div>
+              <div class="bar-col"><span class="bar" style="height:66%"></span><span class="bar alt" style="height:20%"></span><span class="bar-lbl">Jun</span></div>
+              <div class="bar-col"><span class="bar" style="height:52%"></span><span class="bar alt" style="height:31%"></span><span class="bar-lbl">Jul</span></div>
+              <div class="bar-col"><span class="bar" style="height:71%"></span><span class="bar alt" style="height:24%"></span><span class="bar-lbl">Aug</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div><h2 class="card-title">Recent activity</h2></div>
+            <div class="card-actions"><button class="btn btn-ghost btn-sm">View all</button></div>
+          </div>
+          <div class="card-body">
+            <div class="feed">
+              <div class="feed-row">
+                <span class="feed-dot" style="background:var(--green)"></span>
+                <div><div class="feed-main">Invoice <span class="mono">INV-542340</span> posted for <b>BIO TROLL C/O ZEESHAN SB</b></div><div class="feed-time">PKR 386,000 · 12 minutes ago</div></div>
+              </div>
+              <div class="feed-row">
+                <span class="feed-dot" style="background:var(--blue)"></span>
+                <div><div class="feed-main">Purchase order <span class="mono">PO-11284</span> approved</div><div class="feed-time">1 hour ago</div></div>
+              </div>
+              <div class="feed-row">
+                <span class="feed-dot" style="background:var(--amber)"></span>
+                <div><div class="feed-main"><b>GI Sheet, 48", 1.60MM</b> fell below reorder level</div><div class="feed-time">3 hours ago</div></div>
+              </div>
+              <div class="feed-row">
+                <span class="feed-dot" style="background:var(--violet)"></span>
+                <div><div class="feed-main">Payroll generated for <b>July 2026</b> — 40 employees</div><div class="feed-time">Yesterday</div></div>
+              </div>
+              <div class="feed-row">
+                <span class="feed-dot" style="background:var(--green)"></span>
+                <div><div class="feed-main">Receipt <span class="mono">RV-88213</span> from <b>PAK ELEKTRON LIMITED</b></div><div class="feed-time">PKR 8,000,000 · Yesterday</div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Low stock alerts</h2>
+            <p class="card-sub">Items at or below their reorder level</p>
+          </div>
+          <div class="card-actions"><button class="btn btn-secondary btn-sm">Create requisition</button></div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Item</th><th style="width:120px">Gauge</th><th style="width:150px">Warehouse</th>
+                <th class="r" style="width:140px">In stock</th><th class="r" style="width:140px">Reorder level</th>
+                <th style="width:120px">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="cell-strong">GI Sheet, 48"</span><span class="cell-sub">Galvanised plain</span></td>
+                <td class="mono">1.60MM</td><td>Main Store</td>
+                <td class="num" style="color:var(--red)">120 kg</td><td class="num nil">500 kg</td>
+                <td><span class="pill red">Critical</span></td>
+              </tr>
+              <tr>
+                <td><span class="cell-strong">GI Sheet, 48"</span><span class="cell-sub">Galvanised plain</span></td>
+                <td class="mono">1.20MM</td><td>Main Store</td>
+                <td class="num" style="color:var(--amber)">460 kg</td><td class="num nil">500 kg</td>
+                <td><span class="pill amber">Low</span></td>
+              </tr>
+              <tr>
+                <td><span class="cell-strong">Patri (Black)</span><span class="cell-sub">Cut strip</span></td>
+                <td class="mono nil">—</td><td>Shop #58</td>
+                <td class="num" style="color:var(--amber)">310 kg</td><td class="num nil">350 kg</td>
+                <td><span class="pill amber">Low</span></td>
+              </tr>
+              <tr>
+                <td><span class="cell-strong">GI Coil</span><span class="cell-sub">Slit</span></td>
+                <td class="mono">2.00MM</td><td>Factory</td>
+                <td class="num" style="color:var(--red)">0 kg</td><td class="num nil">200 kg</td>
+                <td><span class="pill red">Out of stock</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

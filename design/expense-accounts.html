@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expense Accounts — ERP Redesign Prototype</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .branch-bar {
+    display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap;
+    padding: var(--sp-4) var(--sp-5);
+    background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-lg);
+  }
+  .seg.lg button { padding: 8px 18px; font-size: var(--fs-base); }
+  .seg.lg button.on { background: var(--accent); color: #fff; box-shadow: none; }
+  .seg.lg .count { font-family: var(--font-mono); font-size: var(--fs-xs); margin-left: 7px; padding: 1px 7px; border-radius: var(--r-full); background: var(--bg-surface); color: var(--text-tertiary); }
+  .seg.lg button.on .count { background: rgba(255,255,255,0.2); color: #fff; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">AB</div>
+      <div><div class="brand-name">Ahsan Brothers</div><div class="brand-sub">Steel ERP</div></div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">Prototype</div>
+      <a class="nav-item" href="index.html"><span class="ico">◆</span> Foundations</a>
+      <a class="nav-item" href="components.html"><span class="ico">▣</span> Components</a>
+      <div class="nav-section">Screens</div>
+      <a class="nav-item" href="dashboard.html"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="customer-balance.html"><span class="ico">▦</span> Customer Balance</a>
+      <a class="nav-item active" href="expense-accounts.html"><span class="ico">▧</span> Expense Accounts</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <div class="proto-bar">
+      <span>Prototype — account counts are real (Shop #41: 422 · Shop #58: 136).</span>
+      <span class="spacer"></span>
+      <button class="btn btn-sm btn-ghost" data-theme-toggle><span data-theme-label>Dark</span> mode</button>
+    </div>
+
+    <header class="topbar">
+      <div class="crumb"><b>Expense Accounts</b></div>
+      <div class="topbar-right"><div class="avatar">A</div></div>
+    </header>
+
+    <main class="page">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Expense Accounts</h1>
+          <p class="page-sub">
+            Create expense heads for a branch. An account appears only in the expense
+            dropdowns of the branch it belongs to.
+          </p>
+        </div>
+      </div>
+
+      <!-- One selector drives both the form and the list. Two separate branch
+           controls would let you file an account against a branch you are not
+           looking at — the mistake this layout is designed to prevent. -->
+      <div class="branch-bar">
+        <span class="branch-label">Branch</span>
+        <div class="seg lg">
+          <button data-branch="Shop #41" class="on">Shop #41 <span class="count">422</span></button>
+          <button data-branch="Shop #58">Shop #58 <span class="count">136</span></button>
+        </div>
+        <span class="hint" style="margin-left:auto">Everything on this page applies to <b data-branch-name>Shop #41</b></span>
+      </div>
+
+      <div class="grid-side">
+        <section class="card">
+          <div class="card-head"><h2 class="card-title">Add expense account</h2></div>
+          <div class="card-body stack">
+            <div class="field">
+              <label class="label">Account name <span class="req">*</span></label>
+              <input class="input" placeholder="e.g. Office Rent, Vehicle Repair">
+            </div>
+            <div class="grid-2" style="gap:var(--sp-3)">
+              <div class="field">
+                <label class="label">Opening balance</label>
+                <input class="input mono" placeholder="0.00">
+                <span class="hint">PKR — blank for zero</span>
+              </div>
+              <div class="field">
+                <label class="label">Description</label>
+                <input class="input" placeholder="Optional">
+              </div>
+            </div>
+            <div class="callout">
+              <span>ℹ</span>
+              <span>Created in <b data-branch-name>Shop #41</b>. It will only appear in that branch's expense dropdowns.</span>
+            </div>
+            <button class="btn btn-primary" style="align-self:flex-end">Add to <span data-branch-name>Shop #41</span></button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title"><span data-branch-name>Shop #41</span> — expense accounts</h2>
+              <p class="card-sub">
+                <span data-for-branch="Shop #41">422 accounts</span>
+                <span data-for-branch="Shop #58" hidden>136 accounts</span>
+              </p>
+            </div>
+          </div>
+          <div class="table-tools">
+            <div class="search"><span class="muted">⌕</span><input placeholder="Search expense accounts…"></div>
+          </div>
+          <div class="tbl-wrap">
+            <table class="tbl">
+              <thead><tr><th style="width:170px">Code</th><th>Expense account</th><th class="r" style="width:160px">Balance</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">12-00-000-000000</td><td class="cell-strong">Expense</td><td class="num nil">—</td></tr>
+                <tr><td class="mono">12-01-000-000000</td><td>Cost of Goods Sold</td><td class="num nil">—</td></tr>
+                <tr><td class="mono">12-01-001-000001</td><td>General Purchases</td><td class="num dr">1,204,880</td></tr>
+                <tr><td class="mono">12-01-005-000000</td><td>Store &amp; Spares</td><td class="num dr">86,400</td></tr>
+                <tr><td class="mono">12-01-007-000000</td><td>Diesel</td><td class="num dr">142,650</td></tr>
+                <tr><td class="mono">12-01-008-000000</td><td>Oil &amp; Lubricants</td><td class="num dr">38,900</td></tr>
+                <tr><td class="mono">12-07-000-000000</td><td>Financial charges</td><td class="num dr">12,340</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <span>Showing 1–7 of <span data-for-branch="Shop #41">422</span><span data-for-branch="Shop #58" hidden>136</span></span>
+            <span class="spacer"></span>
+            <button class="btn btn-sm btn-secondary" disabled>Previous</button>
+            <button class="btn btn-sm btn-secondary">Next</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>

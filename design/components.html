@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Components — ERP Redesign Prototype</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .demo { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+  .spec { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); margin-top: var(--sp-3); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">AB</div>
+      <div><div class="brand-name">Ahsan Brothers</div><div class="brand-sub">Steel ERP</div></div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">Prototype</div>
+      <a class="nav-item" href="index.html"><span class="ico">◆</span> Foundations</a>
+      <a class="nav-item active" href="components.html"><span class="ico">▣</span> Components</a>
+      <div class="nav-section">Screens</div>
+      <a class="nav-item" href="dashboard.html"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="customer-balance.html"><span class="ico">▦</span> Customer Balance</a>
+      <a class="nav-item" href="expense-accounts.html"><span class="ico">▧</span> Expense Accounts</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <div class="proto-bar">
+      <span>Prototype component library.</span>
+      <span class="spacer"></span>
+      <button class="btn btn-sm btn-ghost" data-theme-toggle><span data-theme-label>Dark</span> mode</button>
+    </div>
+
+    <header class="topbar">
+      <div class="crumb">Design · <b>Components</b></div>
+      <div class="topbar-right"><div class="avatar">A</div></div>
+    </header>
+
+    <main class="page">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">Components</h1>
+          <p class="page-sub">Every control in the app, in both themes. Hover and focus states are live — tab through them.</p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <section class="card">
+          <div class="card-head"><h2 class="card-title">Buttons</h2></div>
+          <div class="card-body stack">
+            <div class="demo">
+              <button class="btn btn-primary">Primary</button>
+              <button class="btn btn-secondary">Secondary</button>
+              <button class="btn btn-ghost">Ghost</button>
+              <button class="btn btn-danger">Delete</button>
+              <button class="btn btn-primary" disabled>Disabled</button>
+            </div>
+            <div class="demo">
+              <button class="btn btn-primary btn-sm">Small primary</button>
+              <button class="btn btn-secondary btn-sm">Small secondary</button>
+            </div>
+            <p class="spec">8px 14px · --r-md · weight 600 · --t-fast</p>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2 class="card-title">Status pills</h2></div>
+          <div class="card-body stack">
+            <div class="demo">
+              <span class="pill green">Posted</span>
+              <span class="pill blue">Dispatched</span>
+              <span class="pill amber">Pending</span>
+              <span class="pill red">Failed</span>
+              <span class="pill violet">Synced</span>
+              <span class="pill grey">Draft</span>
+            </div>
+            <p class="spec">Dot + label so status is not colour-only — readable when printed or colour-blind.</p>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid-2">
+        <section class="card">
+          <div class="card-head"><h2 class="card-title">Form controls</h2></div>
+          <div class="card-body stack">
+            <div class="field">
+              <label class="label">Customer <span class="req">*</span></label>
+              <input class="input" placeholder="Search customer…">
+            </div>
+            <div class="field">
+              <label class="label">Branch</label>
+              <select class="select"><option>Shop #41</option><option>Shop #58</option></select>
+            </div>
+            <div class="field">
+              <label class="label">Rate</label>
+              <input class="input mono" value="288.11">
+              <span class="hint">PKR per kilogram</span>
+            </div>
+            <div class="callout">
+              <span>ℹ</span>
+              <span>This account will be created in <b>Shop #58</b> and appear only in that branch.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2 class="card-title">Numbers</h2></div>
+          <div class="card-body">
+            <table class="tbl">
+              <thead><tr><th>Account</th><th class="r">Debit</th><th class="r">Credit</th><th class="r">Balance</th></tr></thead>
+              <tbody>
+                <tr><td>Accounts Receivable</td><td class="num dr">886,001</td><td class="num nil">—</td><td class="num dr">886,001 Dr</td></tr>
+                <tr><td>Goods Sales</td><td class="num nil">—</td><td class="num cr">384,336</td><td class="num cr">384,336 Cr</td></tr>
+                <tr><td>Freight Charges</td><td class="num nil">—</td><td class="num cr">1,664</td><td class="num cr">1,664 Cr</td></tr>
+                <tr><td>Cash in Hand</td><td class="num dr">18,800</td><td class="num nil">—</td><td class="num dr">18,800 Dr</td></tr>
+              </tbody>
+            </table>
+            <p class="spec">Tabular figures, right-aligned, monospace — columns line up regardless of digit width.</p>
+          </div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <div><h2 class="card-title">Loading state</h2><p class="card-sub">What every table shows while its query is in flight.</p></div>
+          <div class="card-actions"><button class="btn btn-secondary btn-sm" data-demo-load="#demo-tbl">Replay</button></div>
+        </div>
+        <div id="demo-tbl">
+          <div class="tbl-wrap" data-real>
+            <table class="tbl">
+              <thead><tr><th>Invoice</th><th>Customer</th><th class="r">Amount</th><th style="width:120px">Status</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">INV-542340</td><td>BIO TROLL C/O ZEESHAN SB</td><td class="num">386,000</td><td><span class="pill green">Posted</span></td></tr>
+                <tr><td class="mono">INV-523876</td><td>CASH SALES (41)</td><td class="num">10,725</td><td><span class="pill green">Posted</span></td></tr>
+                <tr><td class="mono">INV-491696</td><td>CASH SALES (41)</td><td class="num">201,300</td><td><span class="pill amber">Pending</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="tbl-wrap" data-skeleton hidden>
+            <table class="tbl">
+              <thead><tr><th>Invoice</th><th>Customer</th><th class="r">Amount</th><th style="width:120px">Status</th></tr></thead>
+              <tbody>
+                <tr><td><span class="sk" style="width:70%"></span></td><td><span class="sk" style="width:60%"></span></td><td><span class="sk" style="width:50%;margin-left:auto"></span></td><td><span class="sk" style="width:60px"></span></td></tr>
+                <tr><td><span class="sk" style="width:65%"></span></td><td><span class="sk" style="width:75%"></span></td><td><span class="sk" style="width:45%;margin-left:auto"></span></td><td><span class="sk" style="width:60px"></span></td></tr>
+                <tr><td><span class="sk" style="width:72%"></span></td><td><span class="sk" style="width:55%"></span></td><td><span class="sk" style="width:55%;margin-left:auto"></span></td><td><span class="sk" style="width:60px"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+</body>
+</html>
