@@ -16,7 +16,8 @@ import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
 import { useToast } from '../../components/shared/Toast';
 import { useCustomers } from '../../context/CustomerContext';
-import { formatDate, formatCurrency, itemLabel } from '../../utils/format';
+import { formatDate, formatDateNumeric, formatCurrency, formatAmount,
+  itemMaterial, itemGauge, itemSize, itemWeight } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import { downloadWordDoc, esc, companyHeader, documentFooter } from '../../utils/wordExport';
 import { useWordPreview } from '../../hooks/useWordPreview';
@@ -40,6 +41,16 @@ const REPORT_CSS = `
   .rpt td.center { text-align:center; }
   .rpt tfoot td  { font-weight:700; border-top:2px solid #333; background:#f9f9f9; }
   .rpt-meta { font-size:10px; color:#444; margin-bottom:10px; }
+`;
+
+// The ledgers print a step larger than the summary reports — they are read row by row on
+// paper, where 10px is a squint. Passed as the `css` prop so it lands after REPORT_CSS and
+// wins on equal specificity; only the three ledger documents opt in.
+const LEDGER_DOC_CSS = `
+  .rpt { font-size:11.5px; }
+  .rpt th { font-size:10px; padding:7px 9px; }
+  .rpt td { font-size:11.5px; padding:6px 9px; }
+  .rpt-meta { font-size:11px; }
 `;
 
 // Wraps a report table in the standard letterhead + footer, returning the document
@@ -98,6 +109,85 @@ const PAGE_TABS = [
   { value: 'day-book',        label: 'Daily Day Book',      icon: CalendarDays   },
 ];
 
+// Legacy sales vouchers carry their invoice number inside the narration:
+//   "Sales-28-Sep-2020-0157-L-…"  ->  INV-SA-20-09-0157
+// That is the only reliable link from a ledger line back to its invoice, and so to
+// its items — it resolves 94.8% of sales vouchers, where matching on customer + date
+// + amount managed 11%. Rows that do not resolve simply show no item detail.
+const MONTHS = { jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06',
+                 jul:'07', aug:'08', sep:'09', oct:'10', nov:'11', dec:'12' };
+
+function invoiceIdFromNarration(narration) {
+  const m = /^Sales-(\d{2})-([A-Za-z]{3})-(\d{4})-(\d{4})-/.exec(String(narration || ''));
+  if (!m) return null;
+  const month = MONTHS[m[2].toLowerCase()];
+  return month ? `INV-SA-${m[3].slice(2)}-${month}-${m[4]}` : null;
+}
+
+// A machine-written narration buries one useful reference in a long string the rest of the
+// row already accounts for — the date has its own column, the items have theirs. Three
+// shapes exist and all reduce to that reference:
+//
+//   sale, imported     : "Sales-21-Aug-2020-0127-L-21-Aug-2020-0003- Bill#40-4"          -> "Bill#40-4"
+//   purchase, imported : "Purchases Charged,GRN:GRN-20-12-0012,PO:DM-20-12-0012-Bill#83-2" -> "Bill#83-2"
+//   either, in-app     : "Sales invoice INV-844969 — Tahir Sb"                            -> "INV-844969"
+//                        "Purchase invoice PBILL-58635 — ABDUL RAHMAN (T)(Khi)"           -> "PBILL-58635"
+//
+// Of 18,808 imported sales lines, 18,477 carry a bill number (15,944 labelled "Bill#", the
+// rest a bare "-94-4" from before the label existed); the 331 with none fall back to the
+// invoice serial. Of 1,737 purchase lines, 1,519 carry one; the 216 without are 2017 rows
+// that name only their documents, so those fall back to the GRN — still the reference a
+// reader would look up. Anything else is a hand-typed remark and is the only record of
+// what happened, so it is left exactly as written.
+//
+// Display only: invoiceIdFromNarration above, and the GRN the Vendor Ledger parses to find
+// what was bought, both still read the raw text.
+const IMPORTED_SALE = /^Sales-\d{2}-[A-Za-z]{3}-\d{4}-(\d{4})-[A-Za-z]-\d{2}-[A-Za-z]{3}-\d{4}-\d{4}(.*)$/;
+// A document raised in the app names itself the same way on both sides; the vendor or
+// customer that follows is already the ledger you are looking at.
+const IN_APP_DOC    = /^(?:Sales|Purchase) invoice\s+(\S+)/i;
+const PURCHASE_DOC  = /^[^,]*,\s*GRN:\s*([A-Za-z0-9-]+)\s*,\s*PO:/i;
+
+// Stray backticks and trailing separators are import noise, present on a few dozen rows.
+// Everything after "Bill#" is otherwise kept verbatim — a handful read "Bill#3136 (1)-9"
+// and the parenthetical is part of how the bill was written.
+const billNo = (text) => {
+  const m = /Bill#\s*(.+)$/i.exec(text);
+  const no = m ? m[1].replace(/`/g, '').replace(/[-\s]+$/, '').trim() : '';
+  return no || null;
+};
+
+function shortParticulars(text) {
+  const s = String(text ?? '').trim();
+
+  const inApp = IN_APP_DOC.exec(s);
+  if (inApp) return inApp[1];
+
+  const purchase = PURCHASE_DOC.exec(s);
+  if (purchase) return billNo(s) ? `Bill#${billNo(s)}` : purchase[1];
+
+  const m = IMPORTED_SALE.exec(s);
+  if (!m) return s;
+
+  const tail = (m[2] || '').replace(/`/g, '').replace(/[-\s]+$/, '').trim();
+  const bill = billNo(tail) || /^-\s*(\d+[-/]\d+)$/.exec(tail)?.[1];
+  return bill ? `Bill#${bill}` : `Inv ${m[1]}`;
+}
+
+// One voucher can sell several items, so the Item / Gauge / Size / Weight columns each
+// stack a line per item and read across as rows. Shared by all three ledgers rather than
+// repeating the same block twelve times.
+function ItemLines({ items, render, mono = true, align }) {
+  if (!items?.length) return <span className={styles.nil}>—</span>;
+  return items.map((li, idx) => (
+    <div key={idx}
+         className={mono ? styles.mono : undefined}
+         style={{ fontSize: 11.5, lineHeight: 1.5, textAlign: align }}>
+      {render(li) || <span className={styles.nil}>—</span>}
+    </div>
+  ));
+}
+
 /* ── Account Ledger ─────────────────────────────────────────────────── */
 function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const printRef = useRef();
@@ -149,20 +239,23 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     return { map, isPlaceholder: (s) => !s || PLACEHOLDER.test(String(s).trim()) };
   }, [lineNotes, account]);
 
-  // Item detail for vouchers the app raised, which carry a reference to the document
-  // they posted from. Imported history has no such link, so those rows show "—".
-  const soRefs = useMemo(() => {
-    const refs = (rawVouchers || [])
-      .filter(v => v.reference && /^INV-/.test(v.reference))
-      .map(v => v.reference);
-    return [...new Set(refs)];
-  }, [rawVouchers]);
-  const soRefKey = soRefs.join(',');
+  // Item detail comes from the sales order behind the voucher, and a voucher names its
+  // invoice one of two ways: the app writes an INV- reference, while imported history has
+  // no reference at all and instead carries the invoice inside its line narration
+  // ("Sales-21-Aug-2020-0127-…"). Reading both is what gives the 18,801 imported sales
+  // rows their items — going by reference alone left every one of them blank.
+  const invoiceOf = (v) =>
+    (v.reference && /^INV-/.test(v.reference) ? v.reference : null)
+    ?? invoiceIdFromNarration(narrationByVoucher.map[v.voucher_id]?.text)
+    ?? invoiceIdFromNarration(v.narration);
+
+  const invoiceIds = useMemo(
+    () => [...new Set((rawVouchers || []).map(invoiceOf).filter(Boolean))],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rawVouchers, narrationByVoucher]);
+  const invoiceIdKey = invoiceIds.join(',');
   const { data: invoicesForRefs } = useDb(
-    () => soRefs.length
-      ? salesDb.getSalesInvoices(companyId)
-      : Promise.resolve({ data: [], error: null }),
-    [soRefKey, companyId]);
+    () => salesDb.getSalesOrderRefs(invoiceIds), [invoiceIdKey]);
 
   const orderRefByInvoice = useMemo(() => {
     const m = {};
@@ -171,8 +264,8 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   }, [invoicesForRefs]);
 
   const neededSoRefs = useMemo(
-    () => [...new Set(soRefs.map(r => orderRefByInvoice[r]).filter(Boolean))],
-    [soRefs, orderRefByInvoice]);
+    () => [...new Set(invoiceIds.map(r => orderRefByInvoice[r]).filter(Boolean))],
+    [invoiceIds, orderRefByInvoice]);
   const neededKey = neededSoRefs.join(',');
   const { data: ledgerLineItems } = useDb(
     () => salesDb.getSoLineItems(neededSoRefs), [neededKey]);
@@ -181,10 +274,12 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     const bySo = {};
     (ledgerLineItems || []).forEach(li => { (bySo[li.so_id] ||= []).push(li); });
     return (v) => {
-      const so = v.reference ? orderRefByInvoice[v.reference] : null;
+      const inv = invoiceOf(v);
+      const so = inv ? orderRefByInvoice[inv] : null;
       return so ? (bySo[so] || []) : [];
     };
-  }, [ledgerLineItems, orderRefByInvoice]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledgerLineItems, orderRefByInvoice, narrationByVoucher]);
 
   // What the Narration column shows: the real remark when there is one, else nothing
   // rather than the source system's placeholder text.
@@ -194,7 +289,6 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     if (!narrationByVoucher.isPlaceholder(v.narration)) return v.narration;
     return '';
   };
-  const specFor = (li) => [li.size, li.gauge].filter(Boolean).join(' · ');
 
   // Delete a transaction straight from the account history — mirrors the Finance
   // Vouchers tab: grouped legs reverse together, standalone rows reverse their
@@ -246,14 +340,16 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
       const join = (fn) => items.length ? items.map(fn).join('<br>') : '—';
       return `
       <tr>
-        <td>${formatDate((e.date || '').slice(0, 10))}</td>
-        <td>${esc(narrationFor(e)) || '—'}</td>
-        <td>${join(li => `${esc(itemLabel(li.item_name))}${li.quantity > 0 ? ` · ${esc(li.quantity)} ${esc(li.unit || '')}` : ''}`)}</td>
-        <td>${join(li => esc(specFor(li)) || '—')}</td>
-        <td class="right">${join(li => li.unit_price > 0 ? formatCurrency(li.unit_price) : '—')}</td>
-        <td class="right">${e.debit  > 0 ? formatCurrency(e.debit)  : '—'}</td>
-        <td class="right">${e.credit > 0 ? formatCurrency(e.credit) : '—'}</td>
-        <td class="right">${formatCurrency(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
+        <td>${formatDateNumeric((e.date || '').slice(0, 10))}</td>
+        <td>${esc(shortParticulars(narrationFor(e))) || '—'}</td>
+        <td>${join(li => esc(itemMaterial(li)) || '—')}</td>
+        <td>${join(li => esc(itemGauge(li))  || '—')}</td>
+        <td>${join(li => esc(itemSize(li))   || '—')}</td>
+        <td class="right">${join(li => esc(itemWeight(li)) || '—')}</td>
+        <td class="right">${join(li => li.unit_price > 0 ? formatAmount(li.unit_price) : '—')}</td>
+        <td class="right">${e.debit  > 0 ? formatAmount(e.debit)  : '—'}</td>
+        <td class="right">${e.credit > 0 ? formatAmount(e.credit) : '—'}</td>
+        <td class="right">${formatAmount(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
       </tr>`;
     }).join('');
 
@@ -261,14 +357,16 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
       filename: `Ledger ${account}`,
       title: 'Account Ledger',
       landscape: true,
-      meta: `Account: <strong>${esc(account)}</strong> &nbsp;|&nbsp; Period: ${formatDate(fromDate)} — ${formatDate(toDate)}`,
-      note: `Opening: ${formatCurrency(Math.abs(openBal))}  |  Closing: ${formatCurrency(Math.abs(closeBal))}`,
+      css: LEDGER_DOC_CSS,
+      meta: `Account: <strong>${esc(account)}</strong> &nbsp;|&nbsp; Period: ${formatDateNumeric(fromDate)} — ${formatDateNumeric(toDate)}`,
+      note: `Opening: ${formatAmount(Math.abs(openBal))}  |  Closing: ${formatAmount(Math.abs(closeBal))}`,
       table: `<table class="rpt">
-        <thead><tr><th width="70">Date</th><th>Narration</th><th width="130">Item</th>
-          <th width="90">Size / Gauge</th><th class="right" width="80">Rate</th>
-          <th class="right" width="95">Debit</th>
-          <th class="right" width="95">Credit</th><th class="right" width="110">Balance</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="8" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
+        <thead><tr><th width="70">Date</th><th>Narration</th><th width="96">Item</th>
+          <th width="58">Gauge</th><th width="42">Size</th><th class="right" width="66">Weight</th>
+          <th class="right" width="72">Rate</th>
+          <th class="right" width="92">Debit</th>
+          <th class="right" width="92">Credit</th><th class="right" width="106">Balance</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="10" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
       </table>`,
     });
   };
@@ -313,7 +411,8 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
             <thead>
               <tr>
                 <th>Date</th><th>Voucher</th><th>Narration</th>
-                <th>Item</th><th>Size / Gauge</th>
+                <th>Item</th><th>Gauge</th><th>Size</th>
+                <th className={styles.right}>Weight</th>
                 <th className={styles.right}>Rate</th>
                 <th className={styles.right}>Debit</th>
                 <th className={styles.right}>Credit</th>
@@ -323,53 +422,33 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
             </thead>
             <tbody>
               {entries.length === 0
-                ? <tr><td colSpan={10} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
+                ? <tr><td colSpan={12} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
                 : entries.map((e, i) => {
                   const items = itemsForVoucher(e);
                   const note = narrationFor(e);
                   return (
                   <tr key={e.id ?? i}>
-                    <td className={styles.date}>{formatDate((e.date || '').slice(0, 10))}</td>
+                    <td className={styles.date}>{formatDateNumeric((e.date || '').slice(0, 10))}</td>
                     <td className={styles.code}>{e.voucher_id || '—'}</td>
-                    <td>{note || <span className={styles.nil}>—</span>}</td>
-                    <td>
-                      {items.length === 0
-                        ? <span className={styles.nil}>—</span>
-                        : items.map((li, idx) => (
-                          <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
-                            {itemLabel(li.item_name)}
-                            {li.quantity > 0 && (
-                              <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
-                            )}
-                          </div>
-                        ))}
+                    <td title={note || undefined}>
+                      {shortParticulars(note) || <span className={styles.nil}>—</span>}
                     </td>
-                    <td>
-                      {items.length === 0
-                        ? <span className={styles.nil}>—</span>
-                        : items.map((li, idx) => (
-                          <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                            {specFor(li) || <span className={styles.nil}>—</span>}
-                          </div>
-                        ))}
+                    <td><ItemLines items={items} render={itemMaterial} mono={false} /></td>
+                    <td><ItemLines items={items} render={itemGauge} /></td>
+                    <td><ItemLines items={items} render={itemSize} /></td>
+                    <td className={styles.right}><ItemLines items={items} render={itemWeight} align="right" /></td>
+                    <td className={styles.right}>
+                      <ItemLines items={items} align="right"
+                        render={li => (li.unit_price > 0 ? formatAmount(li.unit_price) : '')} />
                     </td>
                     <td className={styles.right}>
-                      {items.length === 0
-                        ? <span className={styles.nil}>—</span>
-                        : items.map((li, idx) => (
-                          <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                            {li.unit_price > 0 ? formatCurrency(li.unit_price) : '—'}
-                          </div>
-                        ))}
+                      {parseFloat(e.debit) > 0 ? <span className={styles.mono}>{formatAmount(e.debit)}</span> : <span className={styles.nil}>—</span>}
                     </td>
                     <td className={styles.right}>
-                      {parseFloat(e.debit) > 0 ? <span className={styles.mono}>{formatCurrency(e.debit)}</span> : <span className={styles.nil}>—</span>}
+                      {parseFloat(e.credit) > 0 ? <span className={styles.mono}>{formatAmount(e.credit)}</span> : <span className={styles.nil}>—</span>}
                     </td>
                     <td className={styles.right}>
-                      {parseFloat(e.credit) > 0 ? <span className={styles.mono}>{formatCurrency(e.credit)}</span> : <span className={styles.nil}>—</span>}
-                    </td>
-                    <td className={styles.right}>
-                      <span className={styles.mono}>{formatCurrency(Math.abs(e.balance))}</span>
+                      <span className={styles.mono}>{formatAmount(Math.abs(e.balance))}</span>
                       <span style={{ fontSize: 10, marginLeft: 4, color: e.balance >= 0 ? 'var(--green)' : 'var(--red)' }}>
                         {e.balance >= 0 ? 'Dr' : 'Cr'}
                       </span>
@@ -393,8 +472,8 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
           </table>
           {entries.length > 0 && (
             <div style={{ display:'flex', justifyContent:'flex-end', padding:'12px 0', gap:24, fontSize:12, color:'var(--text-secondary)' }}>
-              <span>Opening: <strong>{formatCurrency(Math.abs(openBal))}</strong></span>
-              <span>Closing: <strong>{formatCurrency(Math.abs(closeBal))}</strong></span>
+              <span>Opening: <strong>{formatAmount(Math.abs(openBal))}</strong></span>
+              <span>Closing: <strong>{formatAmount(Math.abs(closeBal))}</strong></span>
               <span>Entries: <strong>{entries.length}</strong></span>
             </div>
           )}
@@ -507,21 +586,6 @@ function IncomeStatement({ chartOfAccounts }) {
 
 /* ── Customer Ledger ────────────────────────────────────────────────── */
 
-// Legacy sales vouchers carry their invoice number inside the narration:
-//   "Sales-28-Sep-2020-0157-L-…"  ->  INV-SA-20-09-0157
-// That is the only reliable link from a ledger line back to its invoice, and so to
-// its items — it resolves 94.8% of sales vouchers, where matching on customer + date
-// + amount managed 11%. Rows that do not resolve simply show no item detail.
-const MONTHS = { jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06',
-                 jul:'07', aug:'08', sep:'09', oct:'10', nov:'11', dec:'12' };
-
-function invoiceIdFromNarration(narration) {
-  const m = /^Sales-(\d{2})-([A-Za-z]{3})-(\d{4})-(\d{4})-/.exec(String(narration || ''));
-  if (!m) return null;
-  const month = MONTHS[m[2].toLowerCase()];
-  return month ? `INV-SA-${m[3].slice(2)}-${month}-${m[4]}` : null;
-}
-
 // Sales add to what a customer owes; receipts and cheques reduce it. Colouring the
 // type makes a column of 20,000 rows scannable without reading every word.
 const TYPE_TONE = {
@@ -575,12 +639,22 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
     [allEntries, fromDate, toDate]);
 
-  // Invoice -> order, so a resolved ledger line can reach its line items.
+  // Invoice -> order, so a resolved ledger line can reach its line items. Looked up by the
+  // ids this customer's rows actually name: the `salesInvoices` prop is a plain list and
+  // stops at Supabase's 1,000-row cap, which covered barely a year of the 19,217 invoices
+  // and left every older row without item detail.
+  const invoiceIds = useMemo(
+    () => [...new Set((entries || []).map(e => invoiceIdFromNarration(e.particulars)).filter(Boolean))],
+    [entries]);
+  const invoiceIdKey = invoiceIds.join(',');
+  const { data: invoiceRefs } = useDb(
+    () => salesDb.getSalesOrderRefs(invoiceIds), [invoiceIdKey]);
+
   const soRefByInvoice = useMemo(() => {
     const m = {};
-    (salesInvoices || []).forEach(i => { if (i.sale_inv_id) m[i.sale_inv_id] = i.so_ref; });
+    (invoiceRefs || []).forEach(i => { if (i.sale_inv_id) m[i.sale_inv_id] = i.so_ref; });
     return m;
-  }, [salesInvoices]);
+  }, [invoiceRefs]);
 
   const neededSoRefs = useMemo(() => {
     const refs = new Set();
@@ -601,18 +675,21 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
     return m;
   }, [lineItems]);
 
-  // Brought forward = the balance carried into the period. The stored
-  // customers.opening_balance is a legacy field and is zero for every customer in
-  // this database, so in practice this is the sum of the ledger before `fromDate`.
+  // Brought forward = the sum of the ledger before `fromDate`.
+  //
+  // customers.opening_balance is deliberately NOT added on top. An opening balance is
+  // posted as a real "Opening" voucher against the customer's own sub-ledger account, so
+  // it already arrives as one of the entries below; adding the stored field as well would
+  // count it twice. (It is zero for all 959 customers today — the field is written
+  // alongside the voucher, never instead of it.)
   const opening = useMemo(() => {
-    const stored = parseFloat(custRow?.opening_balance) || 0;
-    if (!fromDate) return stored;
+    if (!fromDate) return 0;
     return (allEntries || []).reduce((sum, e) => (
       (e.date || '').slice(0, 10) < fromDate
         ? sum + (parseFloat(e.debit) || 0) - (parseFloat(e.credit) || 0)
         : sum
-    ), stored);
-  }, [allEntries, custRow, fromDate]);
+    ), 0);
+  }, [allEntries, fromDate]);
 
   // One pass: attach items, carry the running balance.
   // Reduced rather than mapped over a mutable counter: the running total is derived
@@ -636,8 +713,7 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
   const totalCr = rows.reduce((s, r) => s + r.credit, 0);
   const closing = rows.length ? rows[rows.length - 1].balance : opening;
 
-  const spec = (li) => [li.size, li.gauge].filter(Boolean).join(' · ');
-  const drCr = (v) => `${formatCurrency(Math.abs(v))} ${v >= 0 ? 'Dr' : 'Cr'}`;
+  const drCr = (v) => `${formatAmount(Math.abs(v))} ${v >= 0 ? 'Dr' : 'Cr'}`;
 
   const { showPreview, previewNode } = useWordPreview();
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
@@ -647,16 +723,15 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
     if (!customer) return;
 
     // Date carries its age underneath and the voucher carries its type, the way the
-    // client's own ledger does. Eleven columns become nine, and the money columns
-    // keep enough width to never wrap.
+    // client's own ledger does.
     // Only when there is genuinely a balance carried into the period. With no
     // From date, and no stored opening balance, the row could only ever read zero.
     const openingRow = opening === 0 ? '' : `
       <tr class="open">
-        <td>${fromDate ? formatDate(fromDate) : '—'}</td>
+        <td>${fromDate ? formatDateNumeric(fromDate) : '—'}</td>
         <td>—</td>
         <td><strong>Opening Balance</strong><div class="sub">Brought forward</div></td>
-        <td>—</td><td>—</td><td class="right">—</td>
+        <td>—</td><td>—</td><td>—</td><td class="right">—</td><td class="right">—</td>
         <td class="right">—</td><td class="right">—</td>
         <td class="right"><strong>${drCr(opening)}</strong></td>
       </tr>`;
@@ -666,14 +741,16 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
       const age = agDays(r.date);
       return `
       <tr>
-        <td>${formatDate((r.date || '').slice(0, 10))}<div class="sub">${age}d</div></td>
+        <td>${formatDateNumeric((r.date || '').slice(0, 10))}<div class="sub">${age}d</div></td>
         <td class="mono">${esc(r.voucher_id || '—')}<div class="sub">${esc(TYPE_LABEL[r.voucher_type] || r.voucher_type || '')}</div></td>
-        <td>${esc(r.particulars) || '—'}</td>
-        <td>${join(li => `${esc(itemLabel(li.item_name))}${li.quantity > 0 ? `<span class="sub"> · ${esc(li.quantity)} ${esc(li.unit || '')}</span>` : ''}`)}</td>
-        <td>${join(li => esc(spec(li)) || '—')}</td>
-        <td class="right">${join(li => li.unit_price > 0 ? formatCurrency(li.unit_price) : '—')}</td>
-        <td class="right">${r.debit  > 0 ? formatCurrency(r.debit)  : '—'}</td>
-        <td class="right">${r.credit > 0 ? formatCurrency(r.credit) : '—'}</td>
+        <td>${esc(shortParticulars(r.particulars)) || '—'}</td>
+        <td>${join(li => esc(itemMaterial(li)) || '—')}</td>
+        <td>${join(li => esc(itemGauge(li))  || '—')}</td>
+        <td>${join(li => esc(itemSize(li))   || '—')}</td>
+        <td class="right">${join(li => esc(itemWeight(li)) || '—')}</td>
+        <td class="right">${join(li => li.unit_price > 0 ? formatAmount(li.unit_price) : '—')}</td>
+        <td class="right">${r.debit  > 0 ? formatAmount(r.debit)  : '—'}</td>
+        <td class="right">${r.credit > 0 ? formatAmount(r.credit) : '—'}</td>
         <td class="right">${drCr(r.balance)}</td>
       </tr>`;
     }).join('');
@@ -684,27 +761,28 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
       landscape: true,
       meta: `Customer: <strong>${esc(customer)}</strong>`
           + (accountCode ? ` &nbsp;|&nbsp; Account: <strong>${esc(accountCode)}</strong>` : '')
-          + ` &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}`,
+          + ` &nbsp;|&nbsp; Period: ${fromDate ? formatDateNumeric(fromDate) : 'Start'} — ${toDate ? formatDateNumeric(toDate) : 'To date'}`,
       note: `Closing Balance: ${drCr(closing)}`,
-      css: `
-        .rpt td .sub { font-size: 8px; color: #888; }
+      css: LEDGER_DOC_CSS + `
+        .rpt td .sub { font-size: 9.5px; color: #888; }
         .rpt tr.open td { background: #f4f6fb; }
         .rpt tfoot td { background: #f4f6fb; }
       `,
       table: `<table class="rpt">
         <thead><tr>
-          <th width="62">Date</th><th width="92">Voucher</th><th>Particulars</th>
-          <th width="130">Item</th><th width="78">Size / Gauge</th>
-          <th class="right" width="62">Rate</th>
-          <th class="right" width="84">Debit</th>
-          <th class="right" width="84">Credit</th>
-          <th class="right" width="104">Balance</th>
+          <th width="62">Date</th><th width="88">Voucher</th><th>Particulars</th>
+          <th width="94">Item</th><th width="56">Gauge</th><th width="40">Size</th>
+          <th class="right" width="64">Weight</th>
+          <th class="right" width="58">Rate</th>
+          <th class="right" width="82">Debit</th>
+          <th class="right" width="82">Credit</th>
+          <th class="right" width="100">Balance</th>
         </tr></thead>
-        <tbody>${openingRow}${body || '<tr><td colspan="9" class="center" style="padding:18px;color:#666">No transactions for selected period</td></tr>'}</tbody>
+        <tbody>${openingRow}${body || '<tr><td colspan="11" class="center" style="padding:18px;color:#666">No transactions for selected period</td></tr>'}</tbody>
         <tfoot><tr>
-          <td colspan="6" class="right"><strong>Totals</strong></td>
-          <td class="right"><strong>${formatCurrency(totalDr)}</strong></td>
-          <td class="right"><strong>${formatCurrency(totalCr)}</strong></td>
+          <td colspan="8" class="right"><strong>Totals</strong></td>
+          <td class="right"><strong>${formatAmount(totalDr)}</strong></td>
+          <td class="right"><strong>${formatAmount(totalCr)}</strong></td>
           <td class="right"><strong>${drCr(closing)}</strong></td>
         </tr></tfoot>
       </table>`,
@@ -757,9 +835,11 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
               <th style={{ width: 92 }}>Date</th>
               <th style={{ width: 120 }}>Voucher</th>
               <th>Particulars</th>
-              <th style={{ width: 170 }}>Item</th>
-              <th style={{ width: 110 }}>Size / Gauge</th>
-              <th className={styles.right} style={{ width: 90 }}>Rate</th>
+              <th style={{ width: 130 }}>Item</th>
+              <th style={{ width: 78 }}>Gauge</th>
+              <th style={{ width: 60 }}>Size</th>
+              <th className={styles.right} style={{ width: 92 }}>Weight</th>
+              <th className={styles.right} style={{ width: 84 }}>Rate</th>
               <th className={styles.right} style={{ width: 110 }}>Debit</th>
               <th className={styles.right} style={{ width: 110 }}>Credit</th>
               <th className={styles.right} style={{ width: 140 }}>Balance</th>
@@ -769,8 +849,8 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
             {loading ? (
               Array.from({ length: 8 }, (_, i) => (
                 <tr key={`sk${i}`}>
-                  {Array.from({ length: 9 }, (_, c) => (
-                    <td key={c}><Skeleton width={['70%','55%','85%','60%','45%','50%','65%','65%','75%'][c]} /></td>
+                  {Array.from({ length: 11 }, (_, c) => (
+                    <td key={c}><Skeleton width={['70%','55%','85%','60%','45%','40%','50%','50%','65%','65%','75%'][c]} /></td>
                   ))}
                 </tr>
               ))
@@ -778,10 +858,10 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
               <>
                 {opening !== 0 && (
                   <tr className={styles.totalRow}>
-                    <td className={styles.date}>{fromDate ? formatDate(fromDate) : '—'}</td>
+                    <td className={styles.date}>{fromDate ? formatDateNumeric(fromDate) : '—'}</td>
                     <td><span className={styles.nil}>—</span></td>
                     <td><strong>Opening Balance</strong></td>
-                    <td colSpan={3}><span className={styles.nil}>Brought forward</span></td>
+                    <td colSpan={5}><span className={styles.nil}>Brought forward</span></td>
                     <td className={styles.right}><span className={styles.nil}>—</span></td>
                     <td className={styles.right}><span className={styles.nil}>—</span></td>
                     <td className={styles.right}><span className={`${styles.mono} ${styles.total}`}>{drCr(opening)}</span></td>
@@ -789,14 +869,14 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
                 )}
 
                 {rows.length === 0
-                  ? <tr><td colSpan={9} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>No transactions for selected period</td></tr>
+                  ? <tr><td colSpan={11} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>No transactions for selected period</td></tr>
                   : rows.map((r, i) => {
                     const age = agDays(r.date);
                     const ageTone = age > 60 ? 'error' : age > 30 ? 'warning' : 'neutral';
                     return (
                       <tr key={`${r.voucher_id}-${r.line_no}-${i}`}>
                         <td className={styles.date}>
-                          {formatDate((r.date || '').slice(0, 10))}
+                          {formatDateNumeric((r.date || '').slice(0, 10))}
                           <div><Badge variant={ageTone}>{age}d</Badge></div>
                         </td>
                         <td className={styles.code}>
@@ -805,45 +885,25 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
                             {TYPE_LABEL[r.voucher_type] || r.voucher_type || '—'}
                           </Badge></div>
                         </td>
-                        <td style={{ fontSize: 12.5 }}>{r.particulars || <span className={styles.nil}>—</span>}</td>
-                        <td>
-                          {r.items.length === 0
-                            ? <span className={styles.nil}>—</span>
-                            : r.items.map((li, idx) => (
-                              <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
-                                {itemLabel(li.item_name)}
-                                {li.quantity > 0 && (
-                                  <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
-                                )}
-                              </div>
-                            ))}
+                        <td style={{ fontSize: 12.5 }} title={r.particulars || undefined}>
+                          {shortParticulars(r.particulars) || <span className={styles.nil}>—</span>}
                         </td>
-                        <td>
-                          {r.items.length === 0
-                            ? <span className={styles.nil}>—</span>
-                            : r.items.map((li, idx) => (
-                              <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                                {spec(li) || <span className={styles.nil}>—</span>}
-                              </div>
-                            ))}
+                        <td><ItemLines items={r.items} render={itemMaterial} mono={false} /></td>
+                        <td><ItemLines items={r.items} render={itemGauge} /></td>
+                        <td><ItemLines items={r.items} render={itemSize} /></td>
+                        <td className={styles.right}><ItemLines items={r.items} render={itemWeight} align="right" /></td>
+                        <td className={styles.right}>
+                          <ItemLines items={r.items} align="right"
+                            render={li => (li.unit_price > 0 ? formatAmount(li.unit_price) : '')} />
                         </td>
                         <td className={styles.right}>
-                          {r.items.length === 0
-                            ? <span className={styles.nil}>—</span>
-                            : r.items.map((li, idx) => (
-                              <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                                {li.unit_price > 0 ? formatCurrency(li.unit_price) : '—'}
-                              </div>
-                            ))}
+                          {r.debit > 0 ? <span className={styles.mono}>{formatAmount(r.debit)}</span> : <span className={styles.nil}>—</span>}
                         </td>
                         <td className={styles.right}>
-                          {r.debit > 0 ? <span className={styles.mono}>{formatCurrency(r.debit)}</span> : <span className={styles.nil}>—</span>}
+                          {r.credit > 0 ? <span className={styles.mono}>{formatAmount(r.credit)}</span> : <span className={styles.nil}>—</span>}
                         </td>
                         <td className={styles.right}>
-                          {r.credit > 0 ? <span className={styles.mono}>{formatCurrency(r.credit)}</span> : <span className={styles.nil}>—</span>}
-                        </td>
-                        <td className={styles.right}>
-                          <span className={`${styles.mono} ${styles.total}`}>{formatCurrency(Math.abs(r.balance))}</span>
+                          <span className={`${styles.mono} ${styles.total}`}>{formatAmount(Math.abs(r.balance))}</span>
                           <span style={{ fontSize: 10, marginLeft: 4, color: r.balance >= 0 ? 'var(--green)' : 'var(--red)' }}>
                             {r.balance >= 0 ? 'Dr' : 'Cr'}
                           </span>
@@ -854,9 +914,9 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
 
                 {rows.length > 0 && (
                   <tr className={styles.totalRow}>
-                    <td colSpan={6} className={styles.right}><strong>Totals</strong></td>
-                    <td className={styles.right}><strong className={styles.mono}>{formatCurrency(totalDr)}</strong></td>
-                    <td className={styles.right}><strong className={styles.mono}>{formatCurrency(totalCr)}</strong></td>
+                    <td colSpan={8} className={styles.right}><strong>Totals</strong></td>
+                    <td className={styles.right}><strong className={styles.mono}>{formatAmount(totalDr)}</strong></td>
+                    <td className={styles.right}><strong className={styles.mono}>{formatAmount(totalCr)}</strong></td>
                     <td className={styles.right}><strong className={styles.mono}>{drCr(closing)}</strong></td>
                   </tr>
                 )}
@@ -1548,23 +1608,39 @@ function VendorCurrentBalance({ vendorBalances }) {
 }
 
 /* ── Vendor Ledger ──────────────────────────────────────────────────── */
-function VendorLedger({ vendors }) {
+function VendorLedger({ vendors, companyId = 1 }) {
   const { data: rawAccounts } = useDb(() => financeDb.getVoucherAccounts());
+  const { data: ledgerVendors } = useDb(() => financeDb.getVendorLedgerNames(companyId), [companyId]);
 
-  // Only offer vendors that actually have ledger activity (name matches a voucher account).
+  // Two sources, unioned, because neither is complete on its own:
+  //   * the creditors sub-ledger — 278 names, and the only place purchases appear;
+  //   * vendors named on a voucher header — 217, of which 58 have no creditor line at all
+  //     (their postings sit on other accounts) and would otherwise vanish from the picker.
   const vendorList = useMemo(() => {
-    const ledgerNames = new Set((rawAccounts || []).map(r => r.account_name).filter(Boolean));
-    const names = (vendors || []).map(v => v.name).filter(Boolean);
-    return [...new Set(names.filter(n => ledgerNames.has(n)))].sort();
-  }, [rawAccounts, vendors]);
+    const names = new Set(ledgerVendors || []);
+    const headerNames = new Set((rawAccounts || []).map(r => r.account_name).filter(Boolean));
+    (vendors || []).forEach(v => { if (v.name && headerNames.has(v.name)) names.add(v.name); });
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [ledgerVendors, rawAccounts, vendors]);
 
   const [vendor,   setVendor] = useState('');
   const [fromDate, setFrom]   = useState('');
   const [toDate,   setTo]     = useState('');
 
+  // Ledger first. A vendor with no creditor line still has voucher-header activity worth
+  // showing, so those fall back to the header query rather than reading as an empty ledger.
   const { data: rawVouchers } = useDb(
-    () => vendor ? financeDb.getVouchersByAccount(vendor, fromDate, toDate) : Promise.resolve({ data: [], error: null }),
-    [vendor, fromDate, toDate]
+    async () => {
+      if (!vendor) return { data: [], error: null };
+      const res = await financeDb.getVendorLedgerEntries(vendor, fromDate, toDate, companyId);
+      if (res.error || (res.data && res.data.length)) return res;
+      const fallback = await financeDb.getVouchersByAccount(vendor, fromDate, toDate, companyId);
+      return {
+        data: (fallback.data || []).map(v => ({ ...v, particulars: v.narration })),
+        error: fallback.error,
+      };
+    },
+    [vendor, fromDate, toDate, companyId]
   );
 
   const entries = useMemo(() => {
@@ -1577,12 +1653,22 @@ function VendorLedger({ vendors }) {
     return out;
   }, [rawVouchers]);
 
-  // What each bill on this ledger was actually for. Purchase vouchers are posted
-  // with the bill id as their voucher_id, so that is what joins them back to
-  // purchase_invoice_items. Payments and other voucher types have no items and
-  // simply read as "—".
+  // What each purchase on this ledger was actually for, reached two different ways.
+  //
+  // A bill raised in the app posts under its own bill id, which joins straight to
+  // purchase_invoice_items. The 2,470 imported PI vouchers have no bill and no reference —
+  // they name their goods-receipt note in the line narration instead:
+  //
+  //   "Vendor Charged,GRN:GRN-26-05-0001,PO:PO-26-05-0001-Bill#57-2"
+  //
+  // 2,401 of them (97.2%) name a GRN, and every one of those GRNs has lines. Going by bill
+  // alone is why this column was empty for the whole of the imported history.
+  // The reference, never the voucher id: every leg of a posting carries its own suffixed
+  // id ("PBILL-58635-3") and only the reference holds the plain bill id the items are
+  // filed under.
+  const billOf = (e) => e.reference || String(e.voucher_id || '').replace(/-\d+$/, '');
   const billIds = useMemo(
-    () => entries.filter(e => e.voucher_type === 'Purchase').map(e => e.reference || e.voucher_id),
+    () => entries.filter(e => e.voucher_type === 'Purchase').map(billOf).filter(Boolean),
     [entries]
   );
   const billIdsKey = billIds.join(',');
@@ -1596,10 +1682,38 @@ function VendorLedger({ vendors }) {
     return map;
   }, [billItems]);
 
-  const lineSpec = (li) => [li.size, li.gauge].filter(Boolean).join(' · ');
-  const itemsFor = (e) => (e.voucher_type === 'Purchase'
-    ? itemsByBill[e.reference || e.voucher_id] || []
-    : []);
+  // The vendor's own line is the one that names the GRN, and the ledger view already
+  // returns it as `particulars` — no second round-trip needed.
+  const grnByVoucher = useMemo(() => {
+    const map = {};
+    entries.forEach(e => {
+      const m = /GRN:\s*([A-Za-z0-9-]+)/.exec(e.particulars || '');
+      if (m && !map[e.voucher_id]) map[e.voucher_id] = m[1];
+    });
+    return map;
+  }, [entries]);
+
+  const grnIds = useMemo(() => [...new Set(Object.values(grnByVoucher))], [grnByVoucher]);
+  const grnKey = grnIds.join(',');
+  const { data: grnItems } = useDb(
+    () => procurementDb.getGrnLineItemsBulk(grnIds), [grnKey]);
+
+  const itemsByGrn = useMemo(() => {
+    const map = {};
+    // Stored ids carry a doubled prefix; key on the bare form so the lookup matches the
+    // narration either way.
+    (grnItems || []).forEach(li => {
+      const id = String(li.grn_id || '').replace(/^GRN-(?=GRN-)/, '');
+      (map[id] ||= []).push(li);
+    });
+    return map;
+  }, [grnItems]);
+
+  const itemsFor = (e) => {
+    if (e.voucher_type === 'Purchase') return itemsByBill[billOf(e)] || [];
+    if (e.voucher_type === 'PI') return itemsByGrn[grnByVoucher[e.voucher_id]] || [];
+    return [];
+  };
 
   const totalDr  = entries.reduce((s, e) => s + (parseFloat(e.debit)  || 0), 0);
   const totalCr  = entries.reduce((s, e) => s + (parseFloat(e.credit) || 0), 0);
@@ -1613,23 +1727,20 @@ function VendorLedger({ vendors }) {
     if (!vendor) return;
     const rows = entries.map(e => {
       const items = itemsFor(e);
-      const itemText = items.length
-        ? items.map(li => `${esc(li.item_name || '—')}${li.quantity > 0 ? ` · ${esc(li.quantity)} ${esc(li.unit || '')}` : ''}`).join('<br>')
-        : '—';
-      const specText = items.length
-        ? items.map(li => esc(lineSpec(li)) || '—').join('<br>')
-        : '—';
+      const join = (fn) => items.length ? items.map(fn).join('<br>') : '—';
       return `
       <tr>
-        <td>${formatDate((e.date || '').slice(0, 10))}</td>
+        <td>${formatDateNumeric((e.date || '').slice(0, 10))}</td>
         <td>${esc(e.voucher_id || '—')}</td>
         <td>${esc(e.voucher_type || '—')}</td>
-        <td>${esc(e.narration || '—')}</td>
-        <td>${itemText}</td>
-        <td>${specText}</td>
-        <td class="right">${e.debit  > 0 ? formatCurrency(e.debit)  : '—'}</td>
-        <td class="right">${e.credit > 0 ? formatCurrency(e.credit) : '—'}</td>
-        <td class="right">${formatCurrency(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
+        <td>${esc(shortParticulars(e.particulars)) || '—'}</td>
+        <td>${join(li => esc(itemMaterial(li)) || '—')}</td>
+        <td>${join(li => esc(itemGauge(li))  || '—')}</td>
+        <td>${join(li => esc(itemSize(li))   || '—')}</td>
+        <td class="right">${join(li => esc(itemWeight(li)) || '—')}</td>
+        <td class="right">${e.debit  > 0 ? formatAmount(e.debit)  : '—'}</td>
+        <td class="right">${e.credit > 0 ? formatAmount(e.credit) : '—'}</td>
+        <td class="right">${formatAmount(Math.abs(e.balance))} ${e.balance >= 0 ? 'Dr' : 'Cr'}</td>
       </tr>`;
     }).join('');
 
@@ -1637,18 +1748,20 @@ function VendorLedger({ vendors }) {
       filename: `Vendor Ledger ${vendor}`,
       title: 'Vendor Ledger',
       landscape: true,
-      meta: `Vendor: <strong>${esc(vendor)}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDate(fromDate) : 'Start'} — ${toDate ? formatDate(toDate) : 'To date'}`,
-      note: `Closing Balance: ${formatCurrency(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}`,
+      css: LEDGER_DOC_CSS,
+      meta: `Vendor: <strong>${esc(vendor)}</strong> &nbsp;|&nbsp; Period: ${fromDate ? formatDateNumeric(fromDate) : 'Start'} — ${toDate ? formatDateNumeric(toDate) : 'To date'}`,
+      note: `Closing Balance: ${formatAmount(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}`,
       table: `<table class="rpt">
         <thead><tr><th width="65">Date</th><th width="85">Voucher</th><th width="60">Type</th>
-          <th>Narration</th><th width="130">Item</th><th width="90">Size / Gauge</th>
-          <th class="right" width="85">Debit</th><th class="right" width="85">Credit</th>
-          <th class="right" width="100">Balance</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="9" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
-        <tfoot><tr><td colspan="6" class="right">Totals</td>
-          <td class="right">${formatCurrency(totalDr)}</td>
-          <td class="right">${formatCurrency(totalCr)}</td>
-          <td class="right">${formatCurrency(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}</td>
+          <th>Narration</th><th width="96">Item</th><th width="56">Gauge</th><th width="40">Size</th>
+          <th class="right" width="64">Weight</th>
+          <th class="right" width="82">Debit</th><th class="right" width="82">Credit</th>
+          <th class="right" width="98">Balance</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="11" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="8" class="right">Totals</td>
+          <td class="right">${formatAmount(totalDr)}</td>
+          <td class="right">${formatAmount(totalCr)}</td>
+          <td class="right">${formatAmount(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}</td>
         </tr></tfoot>
       </table>`,
     });
@@ -1694,7 +1807,8 @@ function VendorLedger({ vendors }) {
             <thead>
               <tr>
                 <th>Date</th><th>Voucher</th><th>Type</th><th>Narration</th>
-                <th>Item</th><th>Size / Gauge</th>
+                <th>Item</th><th>Gauge</th><th>Size</th>
+                <th className={styles.right}>Weight</th>
                 <th className={styles.right}>Debit</th>
                 <th className={styles.right}>Credit</th>
                 <th className={styles.right}>Balance</th>
@@ -1702,44 +1816,29 @@ function VendorLedger({ vendors }) {
             </thead>
             <tbody>
               {entries.length === 0
-                ? <tr><td colSpan={9} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
+                ? <tr><td colSpan={11} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
                 : entries.map((e, i) => {
                   const items = itemsFor(e);
                   return (
                   <tr key={e.id ?? i}>
-                    <td className={styles.date}>{formatDate((e.date || '').slice(0, 10))}</td>
+                    <td className={styles.date}>{formatDateNumeric((e.date || '').slice(0, 10))}</td>
                     <td className={styles.code}>{e.voucher_id || '—'}</td>
                     <td className={styles.type}>{e.voucher_type || '—'}</td>
-                    <td>{e.narration || '—'}</td>
-                    <td>
-                      {items.length === 0
-                        ? <span className={styles.nil}>—</span>
-                        : items.map((li, idx) => (
-                          <div key={idx} style={{ fontSize: 12, lineHeight: 1.5 }}>
-                            {li.item_name || '—'}
-                            {li.quantity > 0 && (
-                              <span style={{ color: 'var(--text-tertiary)' }}> · {li.quantity} {li.unit || ''}</span>
-                            )}
-                          </div>
-                        ))}
+                    <td title={e.particulars || undefined}>
+                      {shortParticulars(e.particulars) || <span className={styles.nil}>—</span>}
                     </td>
-                    <td>
-                      {items.length === 0
-                        ? <span className={styles.nil}>—</span>
-                        : items.map((li, idx) => (
-                          <div key={idx} className={styles.mono} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                            {lineSpec(li) || <span className={styles.nil}>—</span>}
-                          </div>
-                        ))}
+                    <td><ItemLines items={items} render={itemMaterial} mono={false} /></td>
+                    <td><ItemLines items={items} render={itemGauge} /></td>
+                    <td><ItemLines items={items} render={itemSize} /></td>
+                    <td className={styles.right}><ItemLines items={items} render={itemWeight} align="right" /></td>
+                    <td className={styles.right}>
+                      {parseFloat(e.debit) > 0 ? <span className={styles.mono}>{formatAmount(e.debit)}</span> : <span className={styles.nil}>—</span>}
                     </td>
                     <td className={styles.right}>
-                      {parseFloat(e.debit) > 0 ? <span className={styles.mono}>{formatCurrency(e.debit)}</span> : <span className={styles.nil}>—</span>}
+                      {parseFloat(e.credit) > 0 ? <span className={styles.mono}>{formatAmount(e.credit)}</span> : <span className={styles.nil}>—</span>}
                     </td>
                     <td className={styles.right}>
-                      {parseFloat(e.credit) > 0 ? <span className={styles.mono}>{formatCurrency(e.credit)}</span> : <span className={styles.nil}>—</span>}
-                    </td>
-                    <td className={styles.right}>
-                      <span className={styles.mono}>{formatCurrency(Math.abs(e.balance))}</span>
+                      <span className={styles.mono}>{formatAmount(Math.abs(e.balance))}</span>
                       <span style={{ fontSize: 10, marginLeft: 4, color: e.balance >= 0 ? 'var(--green)' : 'var(--red)' }}>
                         {e.balance >= 0 ? 'Dr' : 'Cr'}
                       </span>
@@ -1751,9 +1850,9 @@ function VendorLedger({ vendors }) {
           </table>
           {entries.length > 0 && (
             <div style={{ display:'flex', justifyContent:'flex-end', padding:'12px 0', gap:24, fontSize:12, color:'var(--text-secondary)' }}>
-              <span>Total Debit: <strong>{formatCurrency(totalDr)}</strong></span>
-              <span>Total Credit: <strong>{formatCurrency(totalCr)}</strong></span>
-              <span>Closing: <strong>{formatCurrency(Math.abs(closeBal))} {closeBal >= 0 ? 'Dr' : 'Cr'}</strong></span>
+              <span>Total Debit: <strong>{formatAmount(totalDr)}</strong></span>
+              <span>Total Credit: <strong>{formatAmount(totalCr)}</strong></span>
+              <span>Closing: <strong>{formatAmount(Math.abs(closeBal))} {closeBal >= 0 ? 'Dr' : 'Cr'}</strong></span>
               <span>Entries: <strong>{entries.length}</strong></span>
             </div>
           )}
@@ -1842,7 +1941,7 @@ export default function Reports() {
       {pageTab === 'vendor-ledger' && (
         <Card padding={false}>
           <CardHeader title="Vendor Ledger" subtitle="Vendor-wise transaction history with running balance" />
-          <div className={styles.cardBody}><VendorLedger vendors={vendors} /></div>
+          <div className={styles.cardBody}><VendorLedger vendors={vendors} companyId={companyId} /></div>
         </Card>
       )}
       {pageTab === 'region' && (

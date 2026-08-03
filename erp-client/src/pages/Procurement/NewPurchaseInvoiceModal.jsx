@@ -51,6 +51,7 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [lineItems, setLineItems] = useState([]);
+  const [showAllDocs, setShowAllDocs] = useState(false);
 
   const { data: purchaseOrders } = useDb(() => procurementDb.getPurchaseOrders(companyId), [companyId]);
   const { data: grns }           = useDb(() => procurementDb.getGrns(companyId),           [companyId]);
@@ -61,6 +62,7 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
       setForm({ ...EMPTY_FORM, bill_date: today() });
       setDraft(EMPTY_DRAFT);
       setLineItems([]);
+      setShowAllDocs(false);
     }
   }, [open]);
 
@@ -213,11 +215,44 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
     }
   };
 
-  const poOptions  = (purchaseOrders || []).map(p => ({
-    value: p.po_id, label: `${p.po_id} — ${p.vendor_name}`, hint: formatCurrency(p.total_amount),
+  // A decade of purchase history makes these pickers unusable unfiltered: 2,512 POs of
+  // which 2,202 are closed, and 2,486 of 2,506 GRNs already turned into a bill. Neither is
+  // something you would raise a new bill against, so the default is the documents still
+  // waiting to be billed, for the vendor being billed. "Show all" brings the rest back —
+  // an old document occasionally does need a corrective bill.
+  const relevantDocs = (rows, { billed, vendorOf, dateOf }) => {
+    let out = rows || [];
+    if (!showAllDocs) out = out.filter(r => !billed(r));
+    const vendor = form.vendor_name.trim().toLowerCase();
+    if (vendor) {
+      const mine = out.filter(r => String(vendorOf(r) || '').toLowerCase().includes(vendor));
+      // Never narrow to nothing: a half-typed or differently-spelled vendor should leave
+      // the list usable rather than empty.
+      if (mine.length) out = mine;
+    }
+    return [...out].sort((a, b) => String(dateOf(b) || '').localeCompare(String(dateOf(a) || '')));
+  };
+
+  const day = (d) => String(d || '').slice(0, 10);
+
+  const poOptions = relevantDocs(purchaseOrders, {
+    billed:   p => String(p.status || '').toLowerCase() === 'completed',
+    vendorOf: p => p.vendor_name,
+    dateOf:   p => p.po_date,
+  }).map(p => ({
+    value: p.po_id,
+    label: `${p.po_id} — ${p.vendor_name || 'Unnamed vendor'}`,
+    hint:  `${day(p.po_date)} · ${formatCurrency(p.total_amount)}`,
   }));
-  const grnOptions = (grns || []).map(g => ({
-    value: g.grn_id, label: `${g.grn_id} — ${g.vendor_name || ''}`, hint: g.received_date,
+
+  const grnOptions = relevantDocs(grns, {
+    billed:   g => g.status === 'PurchaseInvoiceGenerated',
+    vendorOf: g => g.vendor_name,
+    dateOf:   g => g.received_date,
+  }).map(g => ({
+    value: g.grn_id,
+    label: `${g.grn_id} — ${g.vendor_name || 'Unnamed vendor'}`,
+    hint:  day(g.received_date),
   }));
   const productOptions = (catalogue || []).map(c => ({
     value: String(c.id), label: c.name, search: c.code,
@@ -272,6 +307,22 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
             onChange={handleGrnSelect}
             options={grnOptions}
           />
+        </div>
+
+        <div className="ff" style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+          <input
+            type="checkbox"
+            id="show_all_docs"
+            checked={showAllDocs}
+            onChange={e => setShowAllDocs(e.target.checked)}
+            style={{ width: 16, height: 16, cursor: 'pointer' }}
+          />
+          <label htmlFor="show_all_docs" style={{ fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            Show orders and receipts that were already billed
+          </label>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', marginLeft: 'auto' }}>
+            {poOptions.length} PO{poOptions.length === 1 ? '' : 's'} · {grnOptions.length} GRN{grnOptions.length === 1 ? '' : 's'}
+          </span>
         </div>
         <div className="ff">
           <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Notes</label>

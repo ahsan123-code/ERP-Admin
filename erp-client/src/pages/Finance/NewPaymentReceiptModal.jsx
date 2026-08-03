@@ -129,11 +129,24 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
         throw new Error('Could not resolve the receivable/payable control account.');
       }
 
-      const parties = filledLines.map(l => ({
-        controlAccount: l.party.startsWith('vend:') ? apAccount : arAccount,
-        name: partyOptions.find(o => o.value === l.party).label,
-        amount: l.amountNum,
-        narration: l.narration.trim() || null,
+      // A customer line posts to that customer's own sub-ledger account, not to the shared
+      // AR control account — the Customer Ledger and Customer Balance reports read the
+      // sub-ledgers, so a receipt booked against the control account never reaches the
+      // customer it settles. AR stays the fallback for a customer with no code of its own.
+      // Vendors keep the control account: there is no per-vendor sub-ledger to post to.
+      const parties = await Promise.all(filledLines.map(async (l) => {
+        const isVendor = l.party.startsWith('vend:');
+        const customer = isVendor
+          ? null
+          : (customers || []).find(c => `cust:${c.id}` === l.party) || null;
+        return {
+          controlAccount: isVendor
+            ? apAccount
+            : await financeDb.customerLedgerAccount({ customer, companyId, fallback: arAccount }),
+          name: partyOptions.find(o => o.value === l.party).label,
+          amount: l.amountNum,
+          narration: l.narration.trim() || null,
+        };
       }));
 
       const { voucherId } = await financeDb.addPaymentReceipt({

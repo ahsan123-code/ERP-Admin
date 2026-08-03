@@ -308,6 +308,39 @@ export const financeDb = {
     return created;
   },
 
+  // A customer's side of a sale or a receipt belongs on that customer's OWN sub-ledger
+  // account (11-01-003-*), not on the shared Accounts Receivable control account.
+  // Both customer reports read the sub-ledgers — customer_ledger_entries selects
+  // `account_code like '11-01-003-%'` and customer_ledger_balances aggregates the same —
+  // so anything posted to the control account is invisible in the Customer Ledger and
+  // absent from the customer's balance, however correct the totals look elsewhere.
+  //
+  // Resolves by customer row when the caller has one, otherwise by name (invoices carry
+  // only customer_name). Returns `fallback` — the control account — when the customer has
+  // no code of their own, so a brand-new customer never blocks a posting; run
+  // server/backfill-customer-account-codes.js to give those customers a code.
+  customerLedgerAccount: async ({ customer = null, customerName = null, companyId = 1, fallback = null }) => {
+    let row = customer;
+    if (!row?.account_code && customerName) {
+      const { data } = await supabase
+        .from('customers').select('name, account_code')
+        .eq('company_id', companyId).eq('name', customerName)
+        .not('account_code', 'is', null).limit(1);
+      row = data?.[0] || null;
+    }
+    if (!row?.account_code) return fallback;
+    // A handful of customers carry a code whose chart row was never imported; create it
+    // on demand rather than silently dropping the entry into the control account.
+    const account = await financeDb.ensureLedgerAccount({
+      code: row.account_code,
+      name: row.name || customerName || row.account_code,
+      type: 'Asset',
+      parent: '11-01-003',
+      companyId,
+    });
+    return account || fallback;
+  },
+
   // Posts a Payment (PV) or Receipt (RV) voucher as a balanced double entry.
   //   Receipt (money IN):  pocket DEBIT, parties CREDIT  (each party shown by name)
   //   Payment (money OUT): parties DEBIT, pocket CREDIT
@@ -592,6 +625,50 @@ export const financeDb = {
     return { data: all, error: null };
   },
 
+  // Every posting against a vendor, from their own sub-ledger account under Trade
+  // Creditors. Reads vendor_ledger_entries (see server/migrate-vendor-ledger-entries-view).
+  //
+  // The report used to read the `vouchers` header and match on account_name. No imported
+  // purchase voucher carries the vendor there — the header names the expense account
+  // ("Good Purchase", "Labour Charges") — so a vendor's bills never appeared and the
+  // running balance was built from payments alone.
+  //
+  // Selected by account_title: vendors has no account_code column, and the title is the
+  // vendor name the report already picks from.
+  // Paged, for the same reason the customer one is.
+  getVendorLedgerEntries: async (vendorName, fromDate, toDate, companyId = 1) => {
+    if (!vendorName) return { data: [], error: null };
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      let q = supabase.from('vendor_ledger_entries')
+        .select('voucher_id, line_no, date, voucher_type, particulars, reference, debit, credit')
+        .eq('company_id', companyId)
+        .eq('account_title', vendorName)
+        .order('date').order('voucher_id').order('line_no')
+        .range(from, from + PAGE - 1);
+      if (fromDate) q = q.gte('date', fromDate);
+      if (toDate)   q = q.lte('date', toDate);
+      const { data, error } = await q;
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: all, error: null };
+  },
+
+  // The vendor names that have ledger movement, for the report's picker. Reads the
+  // pre-grouped vendor_ledger_vendors view — 278 rows rather than the 10,517 lines behind
+  // them. De-duplicating in the browser instead meant fetching the whole ledger, and a
+  // request stops at 1,000 rows however high a limit is asked for, so the picker silently
+  // showed only the vendors falling in that first page.
+  getVendorLedgerNames: async (companyId = 1) => {
+    const { data, error } = await supabase.from('vendor_ledger_vendors')
+      .select('account_title').eq('company_id', companyId);
+    if (error) return { data: null, error };
+    return { data: (data || []).map(r => r.account_title).filter(Boolean), error: null };
+  },
+
   // Each customer's real position, summed from the ledger rather than inferred from
   // invoices. Reads the customer_ledger_balances view, which aggregates the
   // 11-01-003-* sub-ledger accounts in Postgres — summing the raw lines in the browser
@@ -754,11 +831,32 @@ export const salesDb = {
       .order('date', { ascending: false })
       .limit(50),
 
-  addCustomer: (c) =>
-    supabase.from('customers').insert([c]).select().single(),
+  // Every customer needs a sub-ledger account of their own (11-01-003-*): it is what the
+  // Customer Ledger and Customer Balance reports read. A customer without one has their
+  // sales fall back to the shared Accounts Receivable control account, where neither
+  // report can find them. The imported customers arrived with a code; one created here is
+  // given the next free number in the range, and the matching chart row is created with it.
+  nextCustomerAccountCode: async (companyId = 1) => {
+    const { data } = await supabase
+      .from('chart_of_accounts').select('account_code')
+      .eq('company_id', companyId).like('account_code', '11-01-003-%')
+      .order('account_code', { ascending: false }).limit(1);
+    const last = parseInt(String(data?.[0]?.account_code || '').slice(-6), 10) || 0;
+    return `11-01-003-${String(last + 1).padStart(6, '0')}`;
+  },
+
+  addCustomer: async (c) => {
+    if (c.account_code) return supabase.from('customers').insert([c]).select().single();
+    const companyId = c.company_id ?? 1;
+    const account_code = await salesDb.nextCustomerAccountCode(companyId);
+    await financeDb.ensureLedgerAccount({
+      code: account_code, name: c.name, type: 'Asset', parent: '11-01-003', companyId,
+    });
+    return supabase.from('customers').insert([{ ...c, account_code }]).select().single();
+  },
 
   // Posts a customer's brought-forward balance as a real double entry:
-  //   Accounts Receivable   DEBIT   amount   (shown under the customer's name)
+  //   Customer sub-ledger    DEBIT   amount   (shown under the customer's name)
   //   Opening Balance Equity CREDIT  amount
   //
   // Storing the figure on the customer row alone would leave it invisible to the
@@ -788,6 +886,12 @@ export const salesDb = {
       throw new Error('Could not resolve the ledger accounts for the opening balance.');
     }
 
+    // The customer's own sub-ledger, so the brought-forward figure is the first line of
+    // their ledger rather than an invisible entry on the control account.
+    const customerAccount = await financeDb.customerLedgerAccount({
+      customerName, companyId, fallback: arAccount,
+    });
+
     const magnitude = Math.abs(value);
     const voucherId = 'OB-' + String(Date.now()).slice(-6);
     await financeDb.postJournalEntry({
@@ -797,12 +901,12 @@ export const salesDb = {
       companyId,
       legs: value > 0
         ? [
-          { account: arAccount,     debit: magnitude, credit: 0, displayName: customerName },
+          { account: customerAccount, debit: magnitude, credit: 0, displayName: customerName },
           { account: equityAccount, debit: 0, credit: magnitude },
         ]
         : [
-          { account: equityAccount, debit: magnitude, credit: 0 },
-          { account: arAccount,     debit: 0, credit: magnitude, displayName: customerName },
+          { account: equityAccount,   debit: magnitude, credit: 0 },
+          { account: customerAccount, debit: 0, credit: magnitude, displayName: customerName },
         ],
       narration: `Opening balance — ${customerName}`,
       reference: customerName,
@@ -868,6 +972,29 @@ export const salesDb = {
       .select('*')
       .eq('company_id', companyId)
       .order('date', { ascending: false }),
+
+  // Maps sales-invoice ids to the order they were raised from — the hop a ledger row makes
+  // on its way to its item detail.
+  //
+  // Fetched by id rather than by listing every invoice. sales_invoices holds 19,217 rows
+  // and an unpaged select is capped at 1,000 by Supabase, so the full list reached back
+  // only to Jul-2025: every ledger row older than that found no invoice, and its Item and
+  // Gauge/Size/Weight columns came out empty. Asking for the ids actually referenced
+  // returns all of them however old they are, and moves less data doing it.
+  getSalesOrderRefs: async (invoiceIds = []) => {
+    const ids = [...new Set((invoiceIds || []).filter(Boolean))];
+    if (ids.length === 0) return { data: [], error: null };
+    const CHUNK = 150;
+    const all = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const { data, error } = await supabase.from('sales_invoices')
+        .select('sale_inv_id, so_ref')
+        .in('sale_inv_id', ids.slice(i, i + CHUNK));
+      if (error) return { data: null, error };
+      if (data) all.push(...data);
+    }
+    return { data: all, error: null };
+  },
 
   // Sold-item detail for a set of sales orders (so_line_items.so_id == invoice.so_ref).
   // item_name carries the size (e.g. 'GI,2.50MM X 48"'); unit_price is the rate.
@@ -956,6 +1083,13 @@ export const salesDb = {
       throw new Error('Could not resolve the ledger accounts for this invoice.');
     }
 
+    // The debit belongs on the customer's own sub-ledger account, which is what the
+    // Customer Ledger and Customer Balance reports read; arAccount is only the fallback
+    // for a customer who has no code yet.
+    const customerAccount = await financeDb.customerLedgerAccount({
+      customerName: invoice.customer_name, companyId, fallback: arAccount,
+    });
+
     const voucherId = invoice.sale_inv_id;
     await financeDb.postJournalEntry({
       voucherId,
@@ -963,7 +1097,7 @@ export const salesDb = {
       date: invoice.date,
       companyId,
       legs: [
-        { account: arAccount, debit: grandTotal, credit: 0, displayName: invoice.customer_name },
+        { account: customerAccount, debit: grandTotal, credit: 0, displayName: invoice.customer_name },
         ...creditAccounts.map((account, i) => ({ account, debit: 0, credit: creditParts[i].amount })),
       ],
       narration: `Sales invoice ${voucherId} — ${invoice.customer_name}`,
@@ -1082,11 +1216,25 @@ export const procurementDb = {
   addPrLineItems: (items) =>
     supabase.from('pr_line_items').insert(items).select(),
 
-  getPurchaseOrders: (companyId = 1) =>
-    supabase.from('purchase_orders')
-      .select('id, po_id, vendor_name, po_date, delivery_due_date, item_count, total_amount, status, company_id, pr_ref')
-      .eq('company_id', companyId)
-      .order('po_date', { ascending: false }),
+  // Paged so all 2,512 orders survive Supabase's 1,000-row cap. Unpaged, the list stopped
+  // at the newest 1,000 — which reached back only to 2018, so the purchase-bill picker
+  // could offer 122 of the 310 orders still open, and the Procurement listing showed a
+  // truncated history without saying so.
+  getPurchaseOrders: async (companyId = 1) => {
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('purchase_orders')
+        .select('id, po_id, vendor_name, po_date, delivery_due_date, item_count, total_amount, status, company_id, pr_ref')
+        .eq('company_id', companyId)
+        .order('po_date', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: all, error: null };
+  },
 
   addPurchaseOrder: (po) =>
     supabase.from('purchase_orders').insert([po]).select().single(),
@@ -1104,8 +1252,24 @@ export const procurementDb = {
   addGatePassInward: (gp) =>
     supabase.from('gate_passes_inward').insert([gp]).select().single(),
 
-  getGrns: (companyId = 1) =>
-    supabase.from('grns').select('*').eq('company_id', companyId).order('received_date', { ascending: false }),
+  // Paged for the same reason as getPurchaseOrders: 15 of the 20 goods receipts still
+  // waiting to be billed are from 2016-17, so the newest 1,000 rows contained only 5 of
+  // them and the bill screen's GRN picker looked almost empty.
+  getGrns: async (companyId = 1) => {
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('grns')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('received_date', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: all, error: null };
+  },
 
   addGrn: (grn) =>
     supabase.from('grns').insert([grn]).select().single(),
@@ -1203,6 +1367,30 @@ export const procurementDb = {
       const { data, error } = await supabase.from('purchase_invoice_items')
         .select('bill_id, line_no, item_name, unit, gauge, size, quantity, unit_price, total_price')
         .in('bill_id', ids.slice(i, i + CHUNK));
+      if (error) return { data: null, error };
+      if (data) all.push(...data);
+    }
+    return { data: all, error: null };
+  },
+
+  // Received goods for a set of GRNs — what the imported purchase history has instead of
+  // bill items. An imported PI voucher carries no bill reference at all; it names its GRN
+  // inside the line narration ("Vendor Charged,GRN:GRN-26-05-0001,PO:PO-26-05-0001"), and
+  // that GRN is the only route from an old purchase voucher to what was actually bought.
+  //
+  // grn_line_items stores the id with the prefix doubled ("GRN-GRN-26-05-0001") while the
+  // narration writes it once, so both spellings are queried.
+  getGrnLineItemsBulk: async (grnIds = [], companyId = 1) => {
+    const ids = [...new Set((grnIds || []).filter(Boolean))];
+    if (ids.length === 0) return { data: [], error: null };
+    const both = ids.flatMap(id => (id.startsWith('GRN-GRN-') ? [id] : [id, `GRN-${id}`]));
+    const CHUNK = 150;
+    const all = [];
+    for (let i = 0; i < both.length; i += CHUNK) {
+      const { data, error } = await supabase.from('grn_line_items')
+        .select('grn_id, line_no, item_name, unit, gauge, size, quantity, unit_price, total_price')
+        .eq('company_id', companyId)
+        .in('grn_id', both.slice(i, i + CHUNK));
       if (error) return { data: null, error };
       if (data) all.push(...data);
     }
