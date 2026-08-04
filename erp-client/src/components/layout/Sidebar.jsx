@@ -4,10 +4,10 @@ import {
   Receipt, Wallet, UserCheck, ChevronRight,
   BarChart3, TrendingUp,
   PanelLeftClose, PanelLeftOpen,
-  Scale, Coins,
+  Scale, Coins, Settings as SettingsIcon,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { currentUser } from '../../data/shell';
+import { useAdminProfile } from '../../context/AdminProfileContext';
 import Tooltip from '../ui/Tooltip';
 import styles from './Sidebar.module.css';
 
@@ -140,6 +140,12 @@ const NAV = [
       },
     ],
   },
+  {
+    label: 'System',
+    items: [
+      { path: '/settings', label: 'Settings', icon: SettingsIcon },
+    ],
+  },
 ];
 
 function NavItem({ item, collapsed, onClose }) {
@@ -225,6 +231,7 @@ function NavItem({ item, collapsed, onClose }) {
 }
 
 export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
+  const { name, role, photo, initials } = useAdminProfile();
   const sidebarClass = [
     styles.sidebar,
     collapsed ? styles.collapsed : '',
@@ -281,19 +288,21 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
       {!collapsed && (
         <div className={styles.profile}>
           <div className={styles.profileAvatar}>
-            {currentUser.initials}
+            {photo ? <img src={photo} alt="" className={styles.profileAvatarImg} /> : initials}
           </div>
           <div className={styles.profileInfo}>
-            <p className={styles.profileName}>{currentUser.name}</p>
-            <p className={styles.profileRole}>{currentUser.role}</p>
+            <p className={styles.profileName}>{name}</p>
+            <p className={styles.profileRole}>{role}</p>
           </div>
           <div className={styles.onlineDot} />
         </div>
       )}
       {collapsed && (
-        <Tooltip content={currentUser.name} placement="right">
+        <Tooltip content={name} placement="right">
           <div className={`${styles.profile} ${styles.profileMini}`}>
-            <div className={styles.profileAvatar}>{currentUser.initials}</div>
+            <div className={styles.profileAvatar}>
+              {photo ? <img src={photo} alt="" className={styles.profileAvatarImg} /> : initials}
+            </div>
           </div>
         </Tooltip>
       )}

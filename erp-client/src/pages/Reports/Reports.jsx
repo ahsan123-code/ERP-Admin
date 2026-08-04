@@ -203,6 +203,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   }, [rawAccounts, chartOfAccounts]);
 
   // Default to ALL dates (historical data spans many years) — the user can narrow if needed.
+  // Default to ALL dates (historical data spans many years) — the user can narrow if needed.
   const [account,  setAccount] = useState('');
   const [fromDate, setFrom]    = useState('');
   const [toDate,   setTo]      = useState('');

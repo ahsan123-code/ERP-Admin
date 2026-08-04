@@ -1491,6 +1491,38 @@ export const mastersDb = {
 
   getFiscalYears: () =>
     supabase.from('fiscal_years').select('*').order('start_date', { ascending: false }),
+
+  // A year is named for the July it starts in, so the label and the end date follow from
+  // the start and are derived here rather than typed by an admin.
+  addFiscalYear: (startYear) =>
+    supabase.from('fiscal_years').insert([{
+      label: `F-${startYear}-${startYear + 1}`,
+      start_date: `${startYear}-07-01`,
+      end_date: `${startYear + 1}-06-30`,
+      is_active: false,
+    }]).select().single(),
+
+  // Exactly one year carries the active flag: it is what a fresh browser opens on, before
+  // anyone has made a choice of their own.
+  setActiveFiscalYear: async (id) => {
+    const { error: clearErr } = await supabase
+      .from('fiscal_years').update({ is_active: false }).neq('id', id);
+    if (clearErr) return { data: null, error: clearErr };
+    return supabase.from('fiscal_years').update({ is_active: true }).eq('id', id).select().single();
+  },
+
+  deleteFiscalYear: (id) =>
+    supabase.from('fiscal_years').delete().eq('id', id),
+
+  // The single admin_profile row. `maybeSingle` so a database that has not had the table
+  // seeded yet returns null instead of erroring the whole Settings page.
+  getAdminProfile: () =>
+    supabase.from('admin_profile').select('*').eq('id', 1).maybeSingle(),
+
+  updateAdminProfile: (patch) =>
+    supabase.from('admin_profile')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', 1).select().single(),
 };
 
 // ── AUDIT LOG ─────────────────────────────────────────────────────────────

@@ -1,0 +1,259 @@
+/* The robot sits on the top edge of the sign-in box, shins hanging over the front.
+   The viewBox is -26 -18 250 236, so y=126 (where the pelvis meets the card) sits 144 units
+   below the top edge of the canvas, leaving 92 units hanging below it. The negative margin
+   drops that line onto the box's top border. Every offset derives from the three values
+   here, so a size change needs no other edits. */
+.wrap {
+  --bot-w: 196px;
+  --bot-h: 185px;                        /* 236 viewBox units at 196/250 scale */
+  --dangle: 72px;                        /* 92 units at the same scale */
+
+  position: absolute;
+  bottom: 100%;
+  right: 4px;
+  width: var(--bot-w);
+  height: var(--bot-h);
+  margin-bottom: calc(var(--dangle) * -1);
+  z-index: 2;                            /* in front of the card, since it sits on top */
+  pointer-events: none;
+  animation: sitDown 0.85s 2.9s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+
+/* Settles onto the edge once the wordmark has cooled and the card has arrived. */
+@keyframes sitDown {
+  from { opacity: 0; transform: translateY(-28px) scale(0.9); }
+  55%  { opacity: 1; }
+  to   { opacity: 1; transform: translateY(0)     scale(1); }
+}
+
+.bot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Grounds the figure against the card rather than letting it float over it. */
+  filter: drop-shadow(0 5px 10px rgba(31, 41, 55, 0.24));
+  overflow: visible;                     /* the antenna's bloom may spill past the box */
+}
+
+/* ── Swinging legs ────────────────────────────────────────────────────── */
+/* Both swing from the hip, out of step and over different durations — synchronised legs
+   read as a puppet. This is the detail that sells the sit. */
+.legNear,
+.legFar {
+  transform-origin: 112px 116px;         /* the hip joint, not the middle of the leg */
+  animation: swing 2.5s 3.7s ease-in-out infinite;
+}
+
+.legFar {
+  animation-delay: 4.05s;
+  animation-duration: 2.9s;
+}
+
+@keyframes swing {
+  0%, 100% { transform: rotate(-4.5deg); }
+  50%      { transform: rotate(5.5deg); }
+}
+
+/* ── Banner ───────────────────────────────────────────────────────────── */
+/* Arm, pole, cloth and hand are one rig pivoting at the shoulder, so the banner can never
+   detach from the grip. */
+.bannerRig {
+  transform-origin: 104px 70px;          /* the shoulder */
+  animation: hoist 0.9s 3.5s cubic-bezier(0.3, 1.5, 0.5, 1) both,
+             sway 4.2s 4.5s ease-in-out infinite;
+}
+
+/* Raised into place, rather than fading in already up. */
+@keyframes hoist {
+  from { opacity: 0; transform: rotate(30deg); }
+  to   { opacity: 1; transform: rotate(0deg); }
+}
+
+/* A slow lean, as though the arm is tiring — enough to read as weight, not a wobble. */
+@keyframes sway {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(2.6deg); }
+}
+
+/* The cloth unrolls away from the pole once the arm is up — the pole is at its right edge,
+   so that is where it unfurls from. */
+.cloth {
+  transform-origin: 80px 29px;           /* the pole, which is where it rolls out from */
+  animation: unfurl 0.7s 4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes unfurl {
+  from { transform: scaleX(0.02); opacity: 0.4; }
+  to   { transform: scaleX(1);    opacity: 1; }
+}
+
+/* The width is pinned by textLength on the element itself, so this only has to set the
+   weight and colour — a fallback font can no longer push the word past the cloth. */
+.bannerText {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  fill: #ffffff;
+  /* Held back until the cloth has actually opened, so the word never floats in mid-air. */
+  animation: fadeWord 0.4s 4.45s ease-out both;
+}
+
+@keyframes fadeWord {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Face ─────────────────────────────────────────────────────────────── */
+/* A small tilt toward the banner as it goes up, then held. Reads as looking at what it is
+   showing you. */
+.head {
+  transform-origin: 127px 56px;          /* the neck */
+  animation: tilt 1.2s 3.6s ease-in-out both;
+}
+
+@keyframes tilt {
+  0%   { transform: rotate(0deg); }
+  45%  { transform: rotate(-4.5deg); }
+  100% { transform: rotate(-2.2deg); }
+}
+
+.eyes {
+  transform-origin: 127px 30px;
+  animation: blink 5.5s 4.8s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95%           { transform: scaleY(0.12); }
+}
+
+/* The smile widens as the banner opens, then settles — the greeting landing. */
+.smile {
+  transform-origin: 127px 41px;
+  animation: grin 1s 4.1s cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+
+@keyframes grin {
+  0%   { transform: scale(0.55, 0.3); opacity: 0.35; }
+  60%  { transform: scale(1.12, 1.15); opacity: 1; }
+  100% { transform: scale(1, 1);       opacity: 1; }
+}
+
+/* The antenna tip and chest light idle on their own offsets, the way standby lights do. */
+.tip,
+.chest {
+  animation: pulse 2.8s 3.6s ease-in-out infinite;
+}
+
+.chest { animation-delay: 4.2s; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.42; }
+}
+
+/* ── The glint ────────────────────────────────────────────────────────── */
+/* A band of light travels across the plates every few seconds, clipped to the metal so it
+   never crosses open space. The same idea as the sheen on the wordmark, which is what ties
+   the robot to the type above it. */
+.glint {
+  animation: sweep 7s 5.2s linear infinite;
+}
+
+@keyframes sweep {
+  0%       { transform: skewX(-16deg) translateX(70px); opacity: 0; }
+  4%       { opacity: 1; }
+  26%      { opacity: 1; }
+  30%, 100% { transform: skewX(-16deg) translateX(200px); opacity: 0; }
+}
+
+/* The right panel narrows before the card does, so the figure shrinks rather than crowding
+   the wordmark above it. */
+@media (max-width: 1180px) {
+  .wrap { --bot-w: 156px; --bot-h: 153px; --dangle: 60px; }
+}
+
+@media (max-width: 640px) {
+  .wrap { --bot-w: 124px; --bot-h: 122px; --dangle: 48px; right: 2px; }
+}
+
+/* Calm motion: already seated, banner already up, smiling, nothing moving. */
+@media (prefers-reduced-motion: reduce) {
+  .wrap, .legNear, .legFar, .bannerRig, .cloth, .bannerText,
+  .head, .eyes, .smile, .tip, .chest, .glint { animation: none; }
+  .glint { opacity: 0; }
+}
+
+/* ══════════════════════════════════════════
+   REFUSED SIGN-IN
+   The greeting turns to commiseration. Everything here overrides an idling animation, so
+   each rule needs `animation: none` before its own transform can hold.
+   ══════════════════════════════════════════ */
+
+/* The mouth is flipped rather than redrawn: the same arc mirrored about its own centre is
+   exactly a frown, so one path serves both moods. */
+.sad .smile {
+  animation: none;
+  transform: scaleY(-1) translateY(-6px);
+  transition: transform 0.45s cubic-bezier(0.34, 1.3, 0.6, 1);
+}
+
+/* Eyes narrow and dim — a lit ring at full brightness reads as cheerful whatever the mouth
+   is doing. */
+.sad .eyes {
+  animation: none;
+  transform: scaleY(0.62);
+  opacity: 0.75;
+  transition: transform 0.4s ease, opacity 0.4s ease;
+}
+
+/* The head drops and turns away from the banner it was so pleased with. */
+.sad .head {
+  animation: none;
+  transform: rotate(5.5deg) translateY(3px);
+  transition: transform 0.5s cubic-bezier(0.34, 1.2, 0.6, 1);
+}
+
+/* The arm gives up and the banner sags with it — they are one rig, so the cloth follows. */
+.sad .bannerRig {
+  animation: none;
+  transform: rotate(20deg);
+  transition: transform 0.6s cubic-bezier(0.34, 1.15, 0.6, 1);
+}
+
+/* The legs stop mid-swing rather than snapping to centre — a sudden reset would read as a
+   glitch, a pause reads as deflation. */
+.sad .legNear,
+.sad .legFar {
+  animation-play-state: paused;
+}
+
+/* Status lights stop idling and settle low, the way a machine does when something failed. */
+.sad .tip,
+.sad .chest {
+  animation: none;
+  opacity: 0.4;
+  transition: opacity 0.4s ease;
+}
+
+/* No glint: the light passing across is a flourish, and this is not a moment for one. */
+.sad .glint { animation: none; opacity: 0; }
+
+/* A single shake as the refusal lands, then still. */
+.sad {
+  animation: refused 0.5s ease-in-out 1 both;
+}
+
+@keyframes refused {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-5px); }
+  45%      { transform: translateX(4px); }
+  72%      { transform: translateX(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sad { animation: none; }
+  .sad .smile, .sad .eyes, .sad .head, .sad .bannerRig, .sad .tip, .sad .chest {
+    transition: none;
+  }
+}

@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- tokens.css has named Plus Jakarta Sans as the interface font from the start, but
+         nothing ever fetched it, so every screen fell back to the system face and none of
+         the type matched the design. Weights 400-800 cover everything the app asks for.
+         Fira Code backs --font-mono, used by the ledgers and every figure column. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Big Shoulders Display is the login wordmark alone, never the interface: a narrow
+         industrial signage face with flat, cut terminals that suits fabricated metal and
+         looks nothing like the rounded UI font, which is the point. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Big+Shoulders+Display:wght@600;700;800;900&family=Fira+Code:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <title>erp-client</title>
   </head>
   <body>

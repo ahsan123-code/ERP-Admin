@@ -309,3 +309,11 @@
   .topbar { padding: 0 var(--sp-3); }
   .userChip { padding: 4px; }
 }
+
+/* A saved profile photo fills the same square the initials occupy. */
+.avatarImg {
+  width: 100%; height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
+}

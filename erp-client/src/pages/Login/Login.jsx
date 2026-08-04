@@ -2,7 +2,15 @@ import { useState, useEffect, useRef } from 'react';
 import { User, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import RobotPeek from './RobotPeek';
 import styles from './Login.module.css';
+
+// Matches ADMIN_EMAIL in server/setup-admin-auth.js, which created the account.
+const ADMIN_DOMAIN = 'alliedsteelcenter.com';
+
+// The wordmark, poured rather than printed: each line arrives white-hot and cools to steel.
+// Two lines so the name holds its weight in the column rather than shrinking to fit one.
+const BRAND = ['Allied Steel', 'Center'];
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -27,7 +35,7 @@ export default function Login({ onLogin }) {
     }
   }, [phase]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!username.trim() || !password.trim()) {
@@ -35,14 +43,19 @@ export default function Login({ onLogin }) {
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      if (username === 'admin' && password === 'admin123') {
-        onLogin();
-      } else {
-        setError('Invalid username or password.');
-        setLoading(false);
-      }
-    }, 1200);
+    // Supabase identifies an account by email, while staff are used to typing "admin".
+    // A value with no "@" is treated as the local part of the admin address, so both work.
+    const email = username.includes('@') ? username.trim() : `${username.trim()}@${ADMIN_DOMAIN}`;
+    const { error: authError } = await onLogin(email, password);
+    if (authError) {
+      // Supabase answers "Invalid login credentials" whether it was the address or the
+      // password, and repeating that distinction back would help someone guessing.
+      setError(/invalid login/i.test(authError.message)
+        ? 'Invalid username or password.'
+        : authError.message);
+      setLoading(false);
+    }
+    // On success the auth state change swaps this screen out, so nothing to do here.
   };
 
   return (
@@ -74,11 +87,28 @@ export default function Login({ onLogin }) {
 
         <div className={styles.formCard}>
           <div className={styles.formHead}>
-            <h2 className={styles.formTitle}>Administrator Login</h2>
-            <p className={styles.formSub}>Sign in to access the management portal</p>
+            <h1 className={styles.brand}>
+              {BRAND.map((line, li) => (
+                <span key={li} className={styles.brandLine} style={{ '--line': li }}>
+                  {/* The same word laid over itself, glowing, and fading as the metal
+                      loses its heat. Hidden from screen readers so the name is read once. */}
+                  <span className={styles.heat} aria-hidden="true">{line}</span>
+                  {line}
+                </span>
+              ))}
+            </h1>
+            <p className={styles.formSub}>Admin Panel</p>
           </div>
 
-          <form className={styles.form} onSubmit={handleSubmit}>
+          {/* This wrapper is what the robot measures itself against, so it stands on the top
+              edge of the box rather than being placed against the wordmark above it. */}
+          <div className={styles.boxWrap}>
+            {/* It commiserates when a sign-in is refused, and cheers up again the moment the
+                message clears — which it does on the next attempt. */}
+            <RobotPeek sad={!!error} />
+
+            <div className={styles.formBox}>
+              <form className={styles.form} onSubmit={handleSubmit}>
             <Input
               label="Username"
               placeholder="Enter your username"
@@ -119,9 +149,11 @@ export default function Login({ onLogin }) {
               disabled={loading}
               icon={loading ? null : <LogIn size={16} strokeWidth={1.75} />}
             >
-              {loading ? <span className={styles.spinner} /> : 'Sign In'}
-            </Button>
-          </form>
+                  {loading ? <span className={styles.spinner} /> : 'Sign In'}
+                </Button>
+              </form>
+            </div>
+          </div>
 
         </div>
 

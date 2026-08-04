@@ -240,3 +240,11 @@
     width: var(--sidebar-width) !important;
   }
 }
+
+/* A saved profile photo fills the same square the initials occupy. */
+.profileAvatarImg {
+  width: 100%; height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
+}

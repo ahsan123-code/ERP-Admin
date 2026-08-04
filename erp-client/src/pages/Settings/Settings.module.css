@@ -1,0 +1,97 @@
+.stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+.cardBody { padding: var(--sp-5); }
+
+/* ── Profile ─────────────────────────────────────────────────────────── */
+.profileRow { display: flex; gap: var(--sp-5); align-items: flex-start; }
+
+.avatarWrap { position: relative; flex: 0 0 auto; }
+
+.avatarImg,
+.avatarFallback {
+  width: 96px; height: 96px; border-radius: 50%;
+  border: 2px solid var(--border-default); object-fit: cover; display: block;
+}
+.avatarFallback {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-muted); color: var(--text-secondary);
+  font-size: 30px; font-weight: 600; letter-spacing: 1px;
+}
+
+.avatarBtn {
+  position: absolute; right: -2px; bottom: -2px;
+  width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--blue); color: #fff;
+  border: 2px solid var(--bg-surface); cursor: pointer;
+}
+.avatarBtn:hover:not(:disabled) { filter: brightness(1.1); }
+.avatarBtn:disabled { opacity: 0.5; cursor: default; }
+
+.profileFields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.profileActions { display: flex; gap: var(--sp-2); }
+.hint { font-size: 12px; color: var(--text-tertiary); margin: 0; }
+
+/* ── Fiscal years ────────────────────────────────────────────────────── */
+.addRow {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: 12px 14px; margin-bottom: var(--sp-4);
+  background: var(--bg-muted); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.addText  { font-size: 13px; color: var(--text-secondary); }
+.addDates { color: var(--text-tertiary); margin-left: 6px; }
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th {
+  background: var(--bg-muted); color: var(--text-secondary);
+  padding: 9px 14px; font-size: 11px; font-weight: 600; text-align: left;
+  text-transform: uppercase; letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--border-default);
+}
+.tbl td {
+  padding: 10px 14px; border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary); vertical-align: middle;
+}
+.tbl td strong { margin-right: 8px; }
+.selectedRow td { background: var(--bg-hover); }
+.date  { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.right { text-align: right; }
+.empty { text-align: center; padding: 20px; color: var(--text-secondary); }
+
+.linkBtn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 12px; color: var(--blue);
+}
+.linkBtn:hover:not(:disabled) { text-decoration: underline; }
+.linkBtn:disabled { opacity: 0.5; cursor: default; }
+
+.iconBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: none; border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary); cursor: pointer;
+}
+.iconBtn:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
+.iconBtn:disabled { opacity: 0.35; cursor: default; }
+
+.noteBox {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 14px; margin-top: var(--sp-4);
+  border-radius: var(--radius-md); font-size: 12.5px; line-height: 1.6;
+  background: var(--bg-muted); border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 720px) {
+  .profileRow { flex-direction: column; align-items: center; text-align: center; }
+  .addRow { flex-direction: column; align-items: stretch; }
+}
+
+/* ── Password ────────────────────────────────────────────────────────── */
+.pwGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}

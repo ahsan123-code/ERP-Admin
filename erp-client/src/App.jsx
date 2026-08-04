@@ -7,6 +7,8 @@ import { ThemeProvider } from './context/ThemeContext';
 import { CompanyProvider } from './context/CompanyContext';
 import { CatalogueProvider } from './context/CatalogueContext';
 import { CustomerProvider } from './context/CustomerContext';
+import { FiscalYearProvider } from './context/FiscalYearContext';
+import { AdminProfileProvider } from './context/AdminProfileContext';
 import Login from './pages/Login/Login';
 
 import Dashboard  from './pages/Dashboard/Dashboard';
@@ -16,6 +18,7 @@ import Production  from './pages/Production/Production';
 import Sales       from './pages/Sales/Sales';
 import Invoicing   from './pages/Invoicing/Invoicing';
 import ExpenseAccounts from './pages/ExpenseAccounts/ExpenseAccounts';
+import Settings from './pages/Settings/Settings';
 import Finance     from './pages/Finance/Finance';
 import HR          from './pages/HR/HR';
 import Reports     from './pages/Reports/Reports';
@@ -26,7 +29,12 @@ function PageWrap({ children }) {
 }
 
 function AppRoutes() {
-  const { isLoggedIn, login } = useAuth();
+  const { isLoggedIn, ready, login } = useAuth();
+
+  // Restoring a Supabase session is asynchronous. Rendering the login screen before it
+  // resolves would flash it on every reload for someone already signed in, so nothing is
+  // drawn until the answer is known — it takes a moment, not a visible pause.
+  if (!ready) return null;
 
   if (!isLoggedIn) {
     return <Login onLogin={login} />;
@@ -68,6 +76,8 @@ function AppRoutes() {
               <Route path="reports"   element={<PageWrap><Reports /></PageWrap>} />
               <Route path="reports/*" element={<PageWrap><Reports /></PageWrap>} />
 
+              <Route path="settings" element={<PageWrap><Settings /></PageWrap>} />
+
               <Route path="help"   element={<PageWrap><Help /></PageWrap>} />
               <Route path="help/*" element={<PageWrap><Help /></PageWrap>} />
 
@@ -84,13 +94,17 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <CompanyProvider>
-          <CatalogueProvider>
-            <CustomerProvider>
-              <AppRoutes />
-            </CustomerProvider>
-          </CatalogueProvider>
-        </CompanyProvider>
+        <AdminProfileProvider>
+          <CompanyProvider>
+            <FiscalYearProvider>
+              <CatalogueProvider>
+                <CustomerProvider>
+                  <AppRoutes />
+                </CustomerProvider>
+              </CatalogueProvider>
+            </FiscalYearProvider>
+          </CompanyProvider>
+        </AdminProfileProvider>
       </AuthProvider>
     </ThemeProvider>
   );

@@ -1,11 +1,12 @@
 import { Sun, Moon, Maximize2, Minimize2, LogOut, ChevronDown, Bell, Check, Building2, MapPin, CalendarDays, Menu, HelpCircle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { branches, fiscalYears } from '../../data/masters';
-import { currentUser } from '../../data/shell';
+import { branches } from '../../data/masters';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCompany } from '../../context/CompanyContext';
+import { useFiscalYear } from '../../context/FiscalYearContext';
+import { useAdminProfile } from '../../context/AdminProfileContext';
 import Tooltip from '../ui/Tooltip';
 import styles from './TopBar.module.css';
 
@@ -69,8 +70,9 @@ export default function TopBar({ collapsed, onMenuOpen }) {
   const { logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { companyId, setCompanyId } = useCompany();
+  const { fiscalYears, fiscalYearId, setFiscalYearId } = useFiscalYear();
+  const { name, role, photo, initials } = useAdminProfile();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [fyId,     setFyId]     = useState(fiscalYears[0]?.id ?? 1);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -89,10 +91,14 @@ export default function TopBar({ collapsed, onMenuOpen }) {
           <Menu size={20} />
         </button>
         <div className={styles.userChip}>
-          <div className={styles.avatar}>{currentUser.initials}</div>
+          <div className={styles.avatar}>
+            {photo
+              ? <img src={photo} alt="" className={styles.avatarImg} />
+              : initials}
+          </div>
           <div className={styles.userInfo}>
-            <span className={styles.userName}>{currentUser.name}</span>
-            <span className={styles.userRole}>Administrator</span>
+            <span className={styles.userName}>{name}</span>
+            <span className={styles.userRole}>{role}</span>
           </div>
         </div>
       </div>
@@ -118,8 +124,8 @@ export default function TopBar({ collapsed, onMenuOpen }) {
           label="Fiscal Year"
           icon={CalendarDays}
           options={fiscalYears}
-          value={fyId}
-          onChange={setFyId}
+          value={fiscalYearId}
+          onChange={setFiscalYearId}
         />
       </div>
 
