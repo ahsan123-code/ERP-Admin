@@ -20,8 +20,11 @@ export default function PayrollManageModal({ record, onSave, onClose }) {
   const overtimeAmount = +(form.overtime_hours * form.overtime_rate).toFixed(2);
   const lateAmount     = +(form.late_hours * form.late_rate).toFixed(2);
 
-  const totalDed = form.loan_deduction + form.unpaid_leave_amount + lateAmount;
-  const netPay   = form.gross_salary + overtimeAmount - form.advance_salary - totalDed;
+  // The advance counts as a deduction, the way the salary sheet's Total Deductions
+  // column reads it. It used to be subtracted from net separately and left out of
+  // this sum, so a row with an advance printed the right net against a short total.
+  const totalDed = form.advance_salary + form.loan_deduction + form.unpaid_leave_amount + lateAmount;
+  const netPay   = form.gross_salary + overtimeAmount - totalDed;
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: Number(e.target.value) || 0 }));
 
@@ -105,6 +108,7 @@ export default function PayrollManageModal({ record, onSave, onClose }) {
             <div className={styles.bRow}><span>− Loan Deduction</span><span className={`${styles.mono} ${styles.neg}`}>({formatCurrency(form.loan_deduction)})</span></div>
             <div className={styles.bRow}><span>− Leave Deduction</span><span className={`${styles.mono} ${styles.neg}`}>({formatCurrency(form.unpaid_leave_amount)})</span></div>
             <div className={styles.bRow}><span>− Late ({form.late_hours}h × {formatCurrency(form.late_rate)})</span><span className={`${styles.mono} ${styles.neg}`}>({formatCurrency(lateAmount)})</span></div>
+            <div className={styles.bRow}><span>Total Deductions</span><span className={`${styles.mono} ${styles.neg}`}>{formatCurrency(totalDed)}</span></div>
             <div className={`${styles.bRow} ${styles.netRow}`}>
               <span>Net Pay</span>
               <span className={`${styles.mono} ${netPay >= 0 ? styles.netPos : styles.neg}`}>{formatCurrency(netPay)}</span>

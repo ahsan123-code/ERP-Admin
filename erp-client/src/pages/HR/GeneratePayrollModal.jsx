@@ -10,6 +10,17 @@ import { formatCurrency } from '../../utils/format';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const HOURS_PER_DAY = 8;
+// A month is 30 days for pay purposes regardless of its real length — the client's own
+// salary sheet works this way (a 38,000 salary reads 1,267/day on a 31-day July), and
+// the sheet prints this per-day figure next to the deductions derived from it, so the
+// two have to come from the same divisor or the page does not add up on paper.
+const PAY_DAYS_PER_MONTH = 30;
+
+// Overtime is paid at 4/3 of the ordinary hourly rate, the premium the client's sheet
+// applies: on 25,000 gross the late deduction runs at 104/hour (25,000 / 30 / 8) while
+// overtime earns 139/hour, and the same 1.333 ratio holds on every row of theirs.
+// Deductions stay at the ordinary rate — only earned overtime carries the premium.
+const OVERTIME_MULTIPLIER = 4 / 3;
 
 export default function GeneratePayrollModal({ open, onClose, onGenerated, employees = [], loans = [] }) {
   const toast = useToast();
@@ -18,8 +29,7 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
   const [year, setYear]   = useState(now.getFullYear());
   const [saving, setSaving] = useState(false);
 
-  const monthNo     = MONTHS.indexOf(month) + 1;
-  const daysInMonth = new Date(Number(year), monthNo, 0).getDate();
+  const monthNo = MONTHS.indexOf(month) + 1;
 
   // Pull the selected month's attendance so absent days, late hours and overtime
   // flow into payroll automatically instead of being typed in by hand.
@@ -33,7 +43,21 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
     return m;
   }, [monthAtt]);
 
+  // Who already has a row for this period. Generation used to refuse the whole month once
+  // any row existed, so an employee hired after payroll had been run could not be added
+  // without deleting the month and regenerating — losing every advance typed in by hand.
+  // Now only the employees still missing a row are generated.
+  const { data: existing } = useDb(
+    () => hrDb.getPayrollRecords(month, Number(year)),
+    [month, year]
+  );
+  const alreadyPaid = useMemo(
+    () => new Set((existing || []).map(r => r.employee_id)),
+    [existing]
+  );
+
   const activeEmployees = (employees || []).filter(e => e.status === 'active');
+  const pendingEmployees = activeEmployees.filter(e => !alreadyPaid.has(e.employee_id));
   const activeLoanFor = (empId) => (loans || []).find(l => l.employee_id === empId && l.status === 'active');
 
   // Everything derived for one employee for the selected month.
@@ -43,21 +67,28 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
     const absentDays = rows.filter(a => a.status === 'absent').length;
     const lateHours  = rows.reduce((s, a) => s + (Number(a.late_hours) || 0), 0);
     const otHours    = rows.reduce((s, a) => s + (Number(a.overtime_hours) || 0), 0);
-    const perDay = daysInMonth > 0 ? gross / daysInMonth : 0;
+    const perDay = gross / PAY_DAYS_PER_MONTH;
     const hourly = perDay / HOURS_PER_DAY;
     const unpaidAmount = Math.round(perDay * absentDays);
-    const lateAmount   = Math.round(hourly * lateHours);
-    const otRate       = +hourly.toFixed(2);
+    // Stored even when the employee was never late: the salary sheet prints a
+    // standing rate/hour in the Late Hours block whether or not it was applied.
+    const lateRate     = +hourly.toFixed(2);
+    const lateAmount   = Math.round(lateRate * lateHours);
+    const otRate       = +(hourly * OVERTIME_MULTIPLIER).toFixed(2);
     const otAmount     = Math.round(otRate * otHours);
     const loan    = activeLoanFor(emp.employee_id);
     const loanDed = loan ? (Number(loan.monthly_deduction) || 0) : 0;
-    const totalDed = loanDed + unpaidAmount + lateAmount;
+    // Advance is always 0 at generation — it is entered per row afterwards — but it
+    // belongs in the sum, so this matches the definition PayrollManageModal applies
+    // when the advance is filled in, and the Total Deductions column on the sheet.
+    const advance  = 0;
+    const totalDed = advance + loanDed + unpaidAmount + lateAmount;
     const net = gross + otAmount - totalDed;
-    return { gross, absentDays, lateHours, otHours, unpaidAmount, lateAmount, otRate, otAmount, loan, loanDed, totalDed, net };
+    return { gross, absentDays, lateHours, otHours, unpaidAmount, lateRate, lateAmount, otRate, otAmount, loan, loanDed, advance, totalDed, net };
   };
 
-  // Preview totals
-  const preview      = activeEmployees.map(calcFor);
+  // Preview totals — for the employees actually about to be written, not the whole payroll
+  const preview      = pendingEmployees.map(calcFor);
   const totalGross   = preview.reduce((s, p) => s + p.gross, 0);
   const totalNet     = preview.reduce((s, p) => s + p.net, 0);
   const totalAbsent  = preview.reduce((s, p) => s + p.absentDays, 0);
@@ -69,15 +100,18 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
     if (activeEmployees.length === 0) { toast.error('No active employees to generate payroll for.'); return; }
     setSaving(true);
     try {
-      // Block duplicate generation for the same period
-      const { count, error: countErr } = await hrDb.countPayrollForPeriod(month, Number(year));
-      if (countErr) throw new Error(countErr.message);
-      if (count > 0) {
-        throw new Error(`Payroll for ${month} ${year} already exists (${count} records). Delete those first to regenerate.`);
+      // Re-read rather than trusting the loaded list: it decides what gets written, and
+      // the modal may have been sitting open while another tab generated the same period.
+      const { data: current, error: readErr } = await hrDb.getPayrollRecords(month, Number(year));
+      if (readErr) throw new Error(readErr.message);
+      const paid = new Set((current || []).map(r => r.employee_id));
+      const toGenerate = activeEmployees.filter(e => !paid.has(e.employee_id));
+      if (toGenerate.length === 0) {
+        throw new Error(`Every active employee already has a payroll row for ${month} ${year}. Delete a row to regenerate it.`);
       }
 
       const stamp = String(Date.now()).slice(-6);
-      const records = activeEmployees.map((emp, i) => {
+      const records = toGenerate.map((emp, i) => {
         const c = calcFor(emp);
         const remaining = c.loan ? (Number(c.loan.remaining_balance) || 0) : 0;
         return {
@@ -94,7 +128,9 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
           overtime_rate:       c.otRate,
           overtime_amount:     c.otAmount,
           late_hours:          c.lateHours,
-          advance_salary:      0,
+          late_rate:           c.lateRate,
+          late_amount:         c.lateAmount,
+          advance_salary:      c.advance,
           loan_granted:        c.loan ? (Number(c.loan.loan_amount) || 0) : 0,
           previous_loan:       remaining + c.loanDed,
           loan_deduction:      c.loanDed,
@@ -108,7 +144,12 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
       const { error } = await hrDb.addPayrollBatch(records);
       if (error) throw new Error(error.message);
 
-      toast.success(`Payroll generated for ${records.length} employees — ${month} ${year}.`, 'Payroll Generated');
+      const skipped = activeEmployees.length - records.length;
+      toast.success(
+        `Payroll generated for ${records.length} employee${records.length === 1 ? '' : 's'} — ${month} ${year}.` +
+        (skipped > 0 ? ` ${skipped} already had a row and ${skipped === 1 ? 'was' : 'were'} left untouched.` : ''),
+        'Payroll Generated',
+      );
       onGenerated(month, Number(year));
       onClose();
     } catch (err) {
@@ -123,13 +164,13 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
       open={open}
       onClose={onClose}
       title="Generate Payroll"
-      subtitle="Create payroll records for all active employees for a month"
+      subtitle="Create payroll records for active employees who do not have one yet"
       size="sm"
       footer={
         <div className="factions">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={handleGenerate} disabled={saving}>
-            {saving ? 'Generating…' : `Generate (${activeEmployees.length})`}
+          <Button variant="primary" onClick={handleGenerate} disabled={saving || pendingEmployees.length === 0}>
+            {saving ? 'Generating…' : `Generate (${pendingEmployees.length})`}
           </Button>
         </div>
       }
@@ -143,8 +184,8 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
         <div className="ff" style={{ marginTop: 4 }}>
           <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '12px 14px', fontSize: 13 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Active employees</span>
-              <strong>{activeEmployees.length}</strong>
+              <span style={{ color: 'var(--text-secondary)' }}>To generate · already have a row</span>
+              <strong>{pendingEmployees.length} · {activeEmployees.length - pendingEmployees.length}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span style={{ color: 'var(--text-secondary)' }}>Total gross</span>
@@ -164,7 +205,7 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
             </div>
           </div>
           <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>
-            Absent days, late hours and overtime are pulled from this month's attendance (per-day = gross ÷ {daysInMonth} days). Loan installments are auto-deducted. You can fine-tune any row afterwards, then export or disburse the sheet.
+            Absent days, late hours and overtime are pulled from this month's attendance (per-day = gross ÷ {PAY_DAYS_PER_MONTH} days, per-hour = per-day ÷ {HOURS_PER_DAY}). Loan installments are auto-deducted. Employees who already have a row for this period are skipped, so a new hire can be added without regenerating the month. You can fine-tune any row afterwards, then export or disburse the sheet.
           </p>
         </div>
       </form>

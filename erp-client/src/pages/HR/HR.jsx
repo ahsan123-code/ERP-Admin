@@ -30,7 +30,8 @@ const buildEmpCols = (onDelete) => [
   { key: 'employee_id',  label: 'Emp ID',      width: 110, render: v => <span className={styles.code}>{v}</span> },
   { key: 'name',         label: 'Name',         width: 180 },
   { key: 'designation',  label: 'Designation',  width: 180 },
-  { key: 'department',   label: 'Department',   width: 160 },
+  // No Department column: it holds the same string as Section for every real employee,
+  // and the two forms now write it from Section, so showing both repeated the value.
   { key: 'section',      label: 'Section',      width: 130 },
   { key: 'joining_date', label: 'Joined',       width: 120, render: v => <span className={styles.date}>{v ? formatDate(v) : '—'}</span> },
   { key: 'gross_salary', label: 'Gross Salary', width: 140, align: 'right',

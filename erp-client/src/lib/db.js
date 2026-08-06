@@ -36,17 +36,12 @@ export const hrDb = {
     return q;
   },
 
-  // Resilient update: if the late_rate/late_amount columns haven't been added yet
-  // (optional migration), retry without them. The late deduction still persists via
-  // total_deductions + net_salary, which always exist.
-  updatePayroll: async (payrollId, updates) => {
-    let res = await supabase.from('payroll_records').update(updates).eq('payroll_id', payrollId).select().single();
-    if (res.error && /late_rate|late_amount/i.test(res.error.message || '')) {
-      const { late_rate, late_amount, ...rest } = updates;
-      res = await supabase.from('payroll_records').update(rest).eq('payroll_id', payrollId).select().single();
-    }
-    return res;
-  },
+  // late_rate/late_amount used to be missing from payroll_records, and this dropped them
+  // from the update rather than failing — which meant an edited late rate silently never
+  // saved. migrate-payroll-late-columns.js adds both, so the write goes through whole and
+  // a genuine schema problem surfaces as an error instead of as lost data.
+  updatePayroll: (payrollId, updates) =>
+    supabase.from('payroll_records').update(updates).eq('payroll_id', payrollId).select().single(),
 
   // How many payroll rows already exist for a month/year (used to block duplicate generation).
   countPayrollForPeriod: (month, year) =>
@@ -1513,6 +1508,22 @@ export const mastersDb = {
 
   deleteFiscalYear: (id) =>
     supabase.from('fiscal_years').delete().eq('id', id),
+
+  // Employee sections — the places staff are posted to, and what the salary sheet groups
+  // and tabs by. Editable from Settings so opening a new shop does not need a deploy.
+  getEmployeeSections: () =>
+    supabase.from('employee_sections').select('*').order('name'),
+
+  addEmployeeSection: (name) =>
+    supabase.from('employee_sections').insert([{ name }]).select().single(),
+
+  deleteEmployeeSection: (id) =>
+    supabase.from('employee_sections').delete().eq('id', id),
+
+  // Removing a section must not orphan the staff standing in it — they would drop into the
+  // sheet's "Admins" block. Counted before the delete so the UI can refuse with a reason.
+  countEmployeesInSection: (name) =>
+    supabase.from('employees').select('employee_id', { count: 'exact', head: true }).eq('section', name),
 
   // The single admin_profile row. `maybeSingle` so a database that has not had the table
   // seeded yet returns null instead of erroring the whole Settings page.

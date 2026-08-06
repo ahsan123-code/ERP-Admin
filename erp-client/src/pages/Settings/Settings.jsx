@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { CalendarDays, Plus, Check, Trash2, Camera } from 'lucide-react';
+import { CalendarDays, Plus, Check, Trash2, Camera, Building2 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Input from '../../components/ui/Input';
@@ -10,6 +10,7 @@ import { mastersDb } from '../../lib/db';
 import { useFiscalYear } from '../../context/FiscalYearContext';
 import { useAdminProfile } from '../../context/AdminProfileContext';
 import { useAuth } from '../../context/AuthContext';
+import { useEmployeeSections } from '../../context/EmployeeSectionsContext';
 import styles from './Settings.module.css';
 
 // An avatar never needs to be larger than it is drawn, and the row it is stored in travels
@@ -311,13 +312,125 @@ function PasswordSection() {
   );
 }
 
+function EmployeeSectionsSection() {
+  const toast = useToast();
+  const { sections, reload } = useEmployeeSections();
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const add = async () => {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    if (!clean) { toast.error('Enter a section name.'); return; }
+    if (sections.some(s => s.name.toLowerCase() === clean.toLowerCase())) {
+      toast.error(`"${clean}" already exists.`); return;
+    }
+    setBusy(true);
+    try {
+      const { error } = await mastersDb.addEmployeeSection(clean);
+      if (error) throw new Error(error.message);
+      await reload();
+      setName('');
+      toast.success(`"${clean}" added — it is now selectable on an employee.`, 'Section Added');
+    } catch (err) {
+      toast.error(err.message, 'Could Not Add');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Staff standing in a removed section would fall into the salary sheet's "Admins" block,
+  // so the count is checked first and the removal refused with the number in the way.
+  const remove = async (s) => {
+    setBusy(true);
+    try {
+      const { count, error: countErr } = await mastersDb.countEmployeesInSection(s.name);
+      if (countErr) throw new Error(countErr.message);
+      if (count > 0) {
+        toast.error(
+          `${count} employee${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} still in "${s.name}". ` +
+          'Move them to another section first.',
+          'Section In Use',
+        );
+        return;
+      }
+      if (!window.confirm(`Remove "${s.name}"?\n\nNo employee is using it. Payroll already printed keeps the section name it was generated with.`)) return;
+      const { error } = await mastersDb.deleteEmployeeSection(s.id);
+      if (error) throw new Error(error.message);
+      await reload();
+      toast.success(`"${s.name}" removed.`, 'Section Removed');
+    } catch (err) {
+      toast.error(err.message, 'Could Not Remove');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title="Employee Sections"
+        subtitle="Where staff are posted. The salary sheet groups by section and gives each one its own worksheet tab."
+      />
+      <div className={styles.cardBody}>
+        <div className={styles.addRow}>
+          <Input
+            placeholder="e.g. Shop 58"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          />
+          <Button variant="primary" icon={<Plus size={14} />} disabled={busy} onClick={add}>
+            Add Section
+          </Button>
+        </div>
+
+        <table className={styles.tbl}>
+          <thead>
+            <tr><th>Section</th><th /></tr>
+          </thead>
+          <tbody>
+            {sections.length === 0
+              ? <tr><td colSpan={2} className={styles.empty}>No sections yet.</td></tr>
+              : sections.map(s => (
+                <tr key={s.id}>
+                  <td><strong>{s.name}</strong></td>
+                  <td className={styles.right}>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      disabled={busy}
+                      title={`Remove ${s.name}`}
+                      onClick={() => remove(s)}
+                    >
+                      <Trash2 size={13} strokeWidth={2} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+
+        <div className={styles.noteBox}>
+          <Building2 size={14} strokeWidth={2} />
+          <span>
+            A new section is selectable on an employee immediately. It appears on the salary
+            sheet — as its own block and its own Excel tab — once an employee in it has
+            payroll generated. Staff with no section print together under "Admins".
+          </span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function Settings() {
   return (
     <>
-      <PageHeader title="Settings" subtitle="Profile, fiscal years, and account security" />
+      <PageHeader title="Settings" subtitle="Profile, fiscal years, employee sections, and account security" />
       <div className={styles.stack}>
         <ProfileSection />
         <FiscalYearSection />
+        <EmployeeSectionsSection />
         <PasswordSection />
       </div>
     </>

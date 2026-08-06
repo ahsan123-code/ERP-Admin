@@ -5,16 +5,17 @@ import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { hrDb } from '../../lib/db';
+import { useEmployeeSections } from '../../context/EmployeeSectionsContext';
 
-const SECTIONS = ['Shop 41', 'Workshop', 'Mosque', 'Home', 'Office', 'Admin'];
 const STATUSES = ['active', 'inactive', 'terminated'];
 
 export default function EditEmployeeModal({ employee, onClose, onSave }) {
   const toast = useToast();
+  const { names: sections } = useEmployeeSections();
   const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({
-    name: '', designation: '', department: '', section: '',
+    name: '', designation: '', section: '',
     joining_date: '', gross_salary: '', contact: '', cnic: '', address: '', status: 'active',
   });
 
@@ -23,7 +24,6 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
       setForm({
         name:         employee.name          ?? '',
         designation:  employee.designation   ?? '',
-        department:   employee.department    ?? '',
         section:      employee.section       ?? '',
         joining_date: employee.joining_date  ?? '',
         gross_salary: employee.gross_salary  ?? '',
@@ -39,8 +39,8 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.department || !form.gross_salary) {
-      toast.error('Name, department and gross salary are required.');
+    if (!form.name || !form.gross_salary) {
+      toast.error('Name and gross salary are required.');
       return;
     }
     setSaving(true);
@@ -48,8 +48,12 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
       const updates = {
         name:         form.name,
         designation:  form.designation,
-        department:   form.department,
         section:      form.section || null,
+        // Written from section, which replaced the duplicate department input. Falls back
+        // to whatever the record already held so the sectionless accounts keep their own
+        // department (the two login accounts read "Purchase Deptt.") instead of being
+        // blanked by a form that no longer asks for it.
+        department:   form.section || employee.department || null,
         joining_date: form.joining_date || null,
         gross_salary: parseFloat(form.gross_salary),
         contact:      form.contact || null,
@@ -90,10 +94,14 @@ export default function EditEmployeeModal({ employee, onClose, onSave }) {
           <Input label="Full Name *" value={form.name} onChange={set('name')} required />
         </div>
         <Input label="Designation" placeholder="e.g. Machine Operator" value={form.designation} onChange={set('designation')} />
-        <Input label="Department *" placeholder="e.g. Production" value={form.department} onChange={set('department')} required />
         <SelectField label="Section" value={form.section} onChange={set('section')}>
           <option value="">— Select section —</option>
-          {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          {/* A section already on the record but no longer offered still has to appear,
+              or opening this form would show it blank and silently clear it on save. */}
+          {(sections.includes(form.section) || !form.section
+            ? sections
+            : [form.section, ...sections]
+          ).map(s => <option key={s} value={s}>{s}</option>)}
         </SelectField>
         <Input label="Joining Date" type="date" value={form.joining_date} onChange={set('joining_date')} />
         <Input label="Gross Salary (PKR) *" type="number" min="1" value={form.gross_salary} onChange={set('gross_salary')} required />

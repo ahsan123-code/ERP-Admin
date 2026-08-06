@@ -18,6 +18,10 @@ const NO_SECTION = 'Admins';
 // title, section and empty rows all have to span exactly this many.
 const COL_COUNT = 21;
 
+// Must match GeneratePayrollModal: the sheet prints Gross salary/day beside deductions
+// derived from it, so a different divisor here would not add up on the page.
+const PAY_DAYS_PER_MONTH = 30;
+
 // Every column the sheet prints gets a total, including the rate and hour columns —
 // the client's sheet totals those too (its "Rate/hour" total is the sum of the rates).
 const TOTAL_FIELDS = [
@@ -71,20 +75,32 @@ export default function SalarySheetModal({ records, employees, loans = [], month
   const getDesig      = (empId) => employees.find(e => e.employee_id === empId)?.designation ?? '—';
   const getActiveLoan = (empId) => loans.find(l => l.employee_id === empId && l.status === 'active') ?? null;
 
-  // Each payroll row plus the figures the sheet shows but the table does not store:
-  // the per-day rate and the four loan columns, which come from the loan record.
-  // Derived once here so the xlsx, the Word doc and the totals all read the same
-  // numbers off the same object.
+  // Each payroll row plus the figures the sheet prints but reads from elsewhere: the
+  // per-day rate, and the four loan columns. Derived once here so the xlsx, the Word doc
+  // and the totals all read the same numbers off the same object.
+  //
+  // The loan figures come from the payroll row itself wherever it has them. Payroll
+  // generation snapshots the balances as they stood that month, and the loans table only
+  // knows today's — so reprinting an old sheet off the live table would show the balance
+  // months of installments later, not the one the employee signed for. Rows generated
+  // before those columns were filled fall back to the live loan, which is still better
+  // than printing nothing.
   const rows = records.map((r) => {
-    const loan = getActiveLoan(r.employee_id);
+    const stored = {
+      granted:   Number(r.loan_granted)   || 0,
+      previous:  Number(r.previous_loan)  || 0,
+      remaining: Number(r.remaining_loan) || 0,
+    };
+    const hasSnapshot = stored.granted > 0 || stored.previous > 0 || stored.remaining > 0;
+    const loan = hasSnapshot ? null : getActiveLoan(r.employee_id);
     return {
       ...r,
       designation:    getDesig(r.employee_id),
-      salary_per_day: (r.gross_salary || 0) / 30,
-      has_loan:       !!loan,
-      loan_granted:   loan ? (loan.loan_amount       || 0) : 0,
-      loan_previous:  loan ? (loan.remaining_balance || 0) + (loan.monthly_deduction || 0) : 0,
-      loan_remaining: loan ? (loan.remaining_balance || 0) : 0,
+      salary_per_day: (r.gross_salary || 0) / PAY_DAYS_PER_MONTH,
+      has_loan:       hasSnapshot || !!loan || (Number(r.loan_deduction) || 0) > 0,
+      loan_granted:   hasSnapshot ? stored.granted   : (loan ? (loan.loan_amount       || 0) : 0),
+      loan_previous:  hasSnapshot ? stored.previous  : (loan ? (loan.remaining_balance || 0) + (loan.monthly_deduction || 0) : 0),
+      loan_remaining: hasSnapshot ? stored.remaining : (loan ? (loan.remaining_balance || 0) : 0),
     };
   });
 

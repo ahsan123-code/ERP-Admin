@@ -9,6 +9,7 @@ import { CatalogueProvider } from './context/CatalogueContext';
 import { CustomerProvider } from './context/CustomerContext';
 import { FiscalYearProvider } from './context/FiscalYearContext';
 import { AdminProfileProvider } from './context/AdminProfileContext';
+import { EmployeeSectionsProvider } from './context/EmployeeSectionsContext';
 import Login from './pages/Login/Login';
 
 import Dashboard  from './pages/Dashboard/Dashboard';
@@ -99,7 +100,9 @@ export default function App() {
             <FiscalYearProvider>
               <CatalogueProvider>
                 <CustomerProvider>
-                  <AppRoutes />
+                  <EmployeeSectionsProvider>
+                    <AppRoutes />
+                  </EmployeeSectionsProvider>
                 </CustomerProvider>
               </CatalogueProvider>
             </FiscalYearProvider>
