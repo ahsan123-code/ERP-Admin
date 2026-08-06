@@ -7,6 +7,7 @@ import { useToast } from '../../components/shared/Toast';
 import { formatCurrency } from '../../utils/format';
 import { downloadWordDoc, esc, companyHeader, documentFooter } from '../../utils/wordExport';
 import { useWordPreview } from '../../hooks/useWordPreview';
+import { useEmployeeSections } from '../../context/EmployeeSectionsContext';
 import styles from './SalarySheetModal.module.css';
 
 const COMPANY = { name: 'Allied Steel Center', address: 'Lahore, Punjab, Pakistan' };
@@ -37,17 +38,34 @@ const sumTotals = (rows) => rows.reduce((a, r) => {
   return a;
 }, Object.fromEntries(TOTAL_FIELDS.map(k => [k, 0])));
 
-/** Groups payroll rows by section, first-appearance order, sectionless staff last. */
-const groupBySection = (rows) => {
+/**
+ * Groups payroll rows by section and lays the groups out in the order held in Settings —
+ * shop, workshop, mosque, house — rather than alphabetically.
+ *
+ * `order` is the section names in their configured order. A section on an old payroll row
+ * but no longer in Settings (renamed, or removed after its staff moved on) still has to
+ * print, so anything unrecognised follows the configured ones, alphabetically among itself.
+ * Sectionless staff come last under "Admins" whatever the ordering says.
+ */
+const groupBySection = (rows, order = []) => {
   const groups = new Map();
   rows.forEach((r) => {
     const key = (r.section || '').trim() || NO_SECTION;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   });
-  const admins = groups.get(NO_SECTION);
-  if (admins) { groups.delete(NO_SECTION); groups.set(NO_SECTION, admins); }
-  return groups;
+
+  const rank = new Map(order.map((name, i) => [name, i]));
+  const positionOf = (name) => {
+    if (name === NO_SECTION) return Number.MAX_SAFE_INTEGER;
+    return rank.has(name) ? rank.get(name) : order.length;
+  };
+
+  return new Map([...groups.entries()].sort(([a], [b]) => {
+    const pa = positionOf(a);
+    const pb = positionOf(b);
+    return pa !== pb ? pa - pb : a.localeCompare(b);
+  }));
 };
 
 /**
@@ -71,6 +89,8 @@ export default function SalarySheetModal({ records, employees, loans = [], month
 
   const toast = useToast();
   const { showPreview, previewNode } = useWordPreview();
+  // The running order set in Settings, which the section blocks and xlsx tabs follow.
+  const { names: sectionOrder } = useEmployeeSections();
 
   const getDesig      = (empId) => employees.find(e => e.employee_id === empId)?.designation ?? '—';
   const getActiveLoan = (empId) => loans.find(l => l.employee_id === empId && l.status === 'active') ?? null;
@@ -106,9 +126,9 @@ export default function SalarySheetModal({ records, employees, loans = [], month
 
   const totals = sumTotals(rows);
 
-  // [section, rows] pairs — shared by the xlsx tabs, the Word doc and the
-  // on-screen sheet so all three break at exactly the same places.
-  const sections = [...groupBySection(rows)];
+  // [section, rows] pairs — shared by the xlsx tabs, the Word doc and the on-screen sheet
+  // so all three break, and order, at exactly the same places.
+  const sections = [...groupBySection(rows, sectionOrder)];
 
   /* ─────────────────────────────────────────── XLSX export */
   /**
@@ -309,10 +329,15 @@ export default function SalarySheetModal({ records, employees, loans = [], month
     // With a single section its subtotal already is the grand total.
     const grandTotalRow = sections.length > 1 ? totalRow('Total', totals, 'total-row') : '';
 
-    const sigCell = (label) => `
-      <td width="33%" style="padding-top:34px">
-        <div style="border-top:1px solid #000;padding-top:4px;text-align:center;
-                    font-size:8px;color:#444;width:150px">${label}</div>
+    // Two signatories, one at each margin. The title sits above its own signing space,
+    // closed by the rule. Built as a nested table with the align attribute rather than a
+    // floated or auto-margined div, because Word honours neither.
+    const sigCell = (label, align) => `
+      <td width="50%" style="padding-top:26px">
+        <table width="210" align="${align}" style="border-collapse:collapse">
+          <tr><td style="font-size:10px;font-weight:700;color:#000;padding-bottom:30px">${label}</td></tr>
+          <tr><td style="border-top:1px solid #000;height:1px;font-size:1px">&nbsp;</td></tr>
+        </table>
       </td>`;
 
     return {
@@ -320,12 +345,12 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       title: `Salary Sheet — ${month} ${year}`,
       landscape: true,
       css: `
-        body { font-size: 8px; }
+        body { font-size: 10px; }
         .sheet { width: 100%; }
         .sheet th, .sheet td { border: 1px solid #000; }
         .sheet th { background:#fff; color:#000; font-weight:700; text-align:center;
-                    font-size:7.5px; padding:3px 2px; }
-        .sheet td { padding:4px 3px; text-align:right; font-size:8px; }
+                    font-size:9px; padding:4px 2px; }
+        .sheet td { padding:5px 3px; text-align:right; font-size:10px; }
         .sheet td.sr   { text-align:center; font-weight:700; }
         .sheet td.ctr  { text-align:center; }
         .sheet td.name { text-align:left; font-style:italic; }
@@ -333,9 +358,9 @@ export default function SalarySheetModal({ records, employees, loans = [], month
         .sheet .owed { color:#c00000; }
         .sheet tr.title-row td { font-size:17px; font-weight:700; text-align:center;
                                  padding:7px 4px; letter-spacing:0.5px; }
-        .sheet tr.section-row td { font-size:8.5px; font-weight:700; text-align:left;
+        .sheet tr.section-row td { font-size:10.5px; font-weight:700; text-align:left;
                                    background:#e4e4e4; text-transform:uppercase;
-                                   letter-spacing:0.4px; padding:4px 4px; }
+                                   letter-spacing:0.4px; padding:5px 5px; }
         .sheet tr.subtotal-row td { font-weight:700; background:#f7f7f7; }
         .sheet tr.total-row td { font-weight:700; background:#f0f0f0; border-top:2px solid #000; }
       `,
@@ -378,7 +403,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
           <tbody>${sectionBlocks}${grandTotalRow}</tbody>
         </table>
         <table width="100%">
-          <tr>${sigCell('Prepared By')}${sigCell('Checked By')}${sigCell('Approved By')}</tr>
+          <tr>${sigCell('Account Manager', 'left')}${sigCell('Managing Director', 'right')}</tr>
         </table>
         ${documentFooter(null, COMPANY)}`,
     };
@@ -486,10 +511,10 @@ export default function SalarySheetModal({ records, employees, loans = [], month
               </tbody>
             </table>
 
+            {/* Kept in step with the printed document above, which carries the same two. */}
             <div className="sig-row">
-              <div className="sig-col">Prepared By</div>
-              <div className="sig-col">Checked By</div>
-              <div className="sig-col">Approved By</div>
+              <div className="sig-col">Account Manager</div>
+              <div className="sig-col">Managing Director</div>
             </div>
             <p className="footer">
               {COMPANY.name} &nbsp;·&nbsp; Generated: {new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}

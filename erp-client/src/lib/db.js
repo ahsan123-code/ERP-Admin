@@ -1511,11 +1511,21 @@ export const mastersDb = {
 
   // Employee sections — the places staff are posted to, and what the salary sheet groups
   // and tabs by. Editable from Settings so opening a new shop does not need a deploy.
+  // Ordered by sort_order, which is the order the salary sheet lays its blocks out in —
+  // the office reads it by standing (shop, workshop, mosque, house), not alphabetically.
+  // `name` breaks a tie so the list can never come back in an unstable order.
   getEmployeeSections: () =>
-    supabase.from('employee_sections').select('*').order('name'),
+    supabase.from('employee_sections').select('*').order('sort_order', { nullsFirst: false }).order('name'),
 
-  addEmployeeSection: (name) =>
-    supabase.from('employee_sections').insert([{ name }]).select().single(),
+  // New sections land at the end, where Settings can move them up.
+  addEmployeeSection: async (name) => {
+    const { data: last } = await supabase
+      .from('employee_sections').select('sort_order')
+      .order('sort_order', { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+    const sort_order = (last?.sort_order || 0) + 1;
+    return supabase.from('employee_sections').insert([{ name, sort_order }]).select().single();
+  },
+
 
   deleteEmployeeSection: (id) =>
     supabase.from('employee_sections').delete().eq('id', id),
