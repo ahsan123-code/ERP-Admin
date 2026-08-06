@@ -14,16 +14,24 @@ const COMPANY = { name: 'Allied Steel Center', address: 'Lahore, Punjab, Pakista
 // Employees with no section on their payroll row are the admin staff.
 const NO_SECTION = 'Admins';
 
-const sumTotals = (rows) => rows.reduce((a, r) => ({
-  gross_salary:    a.gross_salary    + (r.gross_salary    || 0),
-  unpaid_leave_amount: a.unpaid_leave_amount + (r.unpaid_leave_amount || 0),
-  advance_salary:  a.advance_salary  + (r.advance_salary  || 0),
-  overtime_amount: a.overtime_amount + (r.overtime_amount || 0),
-  late_amount:     a.late_amount     + (r.late_amount     || 0),
-  loan_deduction:  a.loan_deduction  + (r.loan_deduction  || 0),
-  total_deductions:a.total_deductions+ (r.total_deductions|| 0),
-  net_salary:      a.net_salary      + (r.net_salary      || 0),
-}), { gross_salary: 0, unpaid_leave_amount: 0, advance_salary: 0, overtime_amount: 0, late_amount: 0, loan_deduction: 0, total_deductions: 0, net_salary: 0 });
+// Columns in the printed sheet — Sr. through Stamp. Kept as a constant because the
+// title, section and empty rows all have to span exactly this many.
+const COL_COUNT = 21;
+
+// Every column the sheet prints gets a total, including the rate and hour columns —
+// the client's sheet totals those too (its "Rate/hour" total is the sum of the rates).
+const TOTAL_FIELDS = [
+  'gross_salary', 'salary_per_day', 'unpaid_leave_days', 'unpaid_leave_amount',
+  'late_hours', 'late_rate', 'late_amount',
+  'overtime_hours', 'overtime_rate', 'overtime_amount',
+  'advance_salary', 'loan_granted', 'loan_previous', 'loan_deduction', 'loan_remaining',
+  'total_deductions', 'net_salary',
+];
+
+const sumTotals = (rows) => rows.reduce((a, r) => {
+  TOTAL_FIELDS.forEach(k => { a[k] += (r[k] || 0); });
+  return a;
+}, Object.fromEntries(TOTAL_FIELDS.map(k => [k, 0])));
 
 /** Groups payroll rows by section, first-appearance order, sectionless staff last. */
 const groupBySection = (rows) => {
@@ -63,18 +71,35 @@ export default function SalarySheetModal({ records, employees, loans = [], month
   const getDesig      = (empId) => employees.find(e => e.employee_id === empId)?.designation ?? '—';
   const getActiveLoan = (empId) => loans.find(l => l.employee_id === empId && l.status === 'active') ?? null;
 
-  const totals = sumTotals(records);
+  // Each payroll row plus the figures the sheet shows but the table does not store:
+  // the per-day rate and the four loan columns, which come from the loan record.
+  // Derived once here so the xlsx, the Word doc and the totals all read the same
+  // numbers off the same object.
+  const rows = records.map((r) => {
+    const loan = getActiveLoan(r.employee_id);
+    return {
+      ...r,
+      designation:    getDesig(r.employee_id),
+      salary_per_day: (r.gross_salary || 0) / 30,
+      has_loan:       !!loan,
+      loan_granted:   loan ? (loan.loan_amount       || 0) : 0,
+      loan_previous:  loan ? (loan.remaining_balance || 0) + (loan.monthly_deduction || 0) : 0,
+      loan_remaining: loan ? (loan.remaining_balance || 0) : 0,
+    };
+  });
+
+  const totals = sumTotals(rows);
 
   // [section, rows] pairs — shared by the xlsx tabs, the Word doc and the
   // on-screen sheet so all three break at exactly the same places.
-  const sections = [...groupBySection(records)];
+  const sections = [...groupBySection(rows)];
 
   /* ─────────────────────────────────────────── XLSX export */
   /**
    * One salary-sheet worksheet: title, header, a numbered row per employee
    * (Sr. restarts on every tab) and a TOTAL row for just those rows.
    */
-  const buildSalarySheet = (rows, title) => {
+  const buildSalarySheet = (sheetRows, title) => {
     const aoa = [
       [title],
       ['Sr.', 'Name', 'Section', 'Designation', 'Gross Salary', 'Salary/Day',
@@ -84,19 +109,14 @@ export default function SalarySheetModal({ records, employees, loans = [], month
        'Total Deductions', 'Net Salary', 'Signatures'],
     ];
 
-    rows.forEach((r, i) => {
-      const loan      = getActiveLoan(r.employee_id);
-      const prevLoan  = loan ? loan.remaining_balance + loan.monthly_deduction : 0;
-      const remLoan   = loan ? loan.remaining_balance : 0;
-      const grantedLoan = loan ? loan.loan_amount : 0;
-
+    sheetRows.forEach((r, i) => {
       aoa.push([
         i + 1,
         r.employee_name,
         r.section || NO_SECTION,
-        getDesig(r.employee_id),
+        r.designation,
         r.gross_salary,
-        +(r.gross_salary / 30).toFixed(2),
+        +r.salary_per_day.toFixed(2),
         r.unpaid_leave_days || 0,
         r.unpaid_leave_amount || 0,
         r.overtime_hours || 0,
@@ -106,17 +126,17 @@ export default function SalarySheetModal({ records, employees, loans = [], month
         r.late_rate || 0,
         r.late_amount || 0,
         r.advance_salary || 0,
-        grantedLoan,
-        prevLoan,
+        r.loan_granted,
+        r.loan_previous,
         r.loan_deduction || 0,
-        remLoan,
+        r.loan_remaining,
         r.total_deductions || 0,
         r.net_salary,
         '',
       ]);
     });
 
-    const t = sumTotals(rows);
+    const t = sumTotals(sheetRows);
     aoa.push([
       '', 'TOTAL', '', '',
       t.gross_salary, '', '', '', '', '', t.overtime_amount,
@@ -140,27 +160,25 @@ export default function SalarySheetModal({ records, employees, loans = [], month
     /* Combined sheet first, then one tab per section */
     XLSX.utils.book_append_sheet(
       wb,
-      buildSalarySheet(records, `SALARY SHEET FOR THE MONTH OF ${period}`),
+      buildSalarySheet(rows, `SALARY SHEET FOR THE MONTH OF ${period}`),
       sheetName(`All Sections ${month} ${year}`, usedNames),
     );
 
-    sections.forEach(([section, rows]) => {
+    sections.forEach(([section, group]) => {
       XLSX.utils.book_append_sheet(
         wb,
-        buildSalarySheet(rows, `SALARY SHEET FOR THE MONTH OF ${period} — ${section.toUpperCase()}`),
+        buildSalarySheet(group, `SALARY SHEET FOR THE MONTH OF ${period} — ${section.toUpperCase()}`),
         sheetName(section, usedNames),
       );
     });
 
     /* Salary slips sheet */
     const slipRows = [[`SALARY SLIPS — ${month.toUpperCase()}-${year}`], []];
-    records.forEach((r) => {
-      const loan    = getActiveLoan(r.employee_id);
-      const remLoan = loan ? loan.remaining_balance : 0;
-      slipRows.push([r.employee_name, '', '', getDesig(r.employee_id)]);
+    rows.forEach((r) => {
+      slipRows.push([r.employee_name, '', '', r.designation]);
       slipRows.push([`${month} ${year}`]);
       slipRows.push(['', 'Rate', 'Total Days', 'Amount']);
-      slipRows.push(['Gross Salary', +(r.gross_salary / 30).toFixed(2), 30, r.gross_salary]);
+      slipRows.push(['Gross Salary', +r.salary_per_day.toFixed(2), 30, r.gross_salary]);
       slipRows.push(['Unpaid Leave Deduction', '', r.unpaid_leave_days || 0, r.unpaid_leave_amount || 0]);
       slipRows.push(['Net Salary', '', '', (r.gross_salary - (r.unpaid_leave_amount || 0))]);
       slipRows.push(['Advance', '', '', r.advance_salary || 0]);
@@ -168,7 +186,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       slipRows.push(['Overtime', r.overtime_rate || 0, r.overtime_hours || 0, r.overtime_amount || 0]);
       slipRows.push(['Late Deduction', r.late_rate || 0, r.late_hours || 0, r.late_amount || 0]);
       slipRows.push(['Salary Payable', '', '', r.net_salary]);
-      slipRows.push(['Remaining Loan', '', '', remLoan]);
+      slipRows.push(['Remaining Loan', '', '', r.loan_remaining]);
       slipRows.push([]);
     });
     const ws2 = XLSX.utils.aoa_to_sheet(slipRows);
@@ -195,54 +213,85 @@ export default function SalarySheetModal({ records, employees, loans = [], month
   };
 
   /* ─────────────────────────────────────────── Word */
-  // Rebuilt from `records`/`totals` rather than scraped from the DOM: the on-screen
-  // signature row uses flexbox, which Word would collapse into a single column.
+  // The client's own salary sheet, column for column: a two-tier header that groups
+  // Late Hours / Over time / Loan over their sub-columns, then Signatures and Stamp
+  // left blank to be filled in by hand. Rebuilt from `rows`/`totals` rather than
+  // scraped from the DOM — the on-screen sheet is a different, narrower layout, and
+  // its signature row uses flexbox, which Word collapses into a single column.
   const buildDoc = () => {
-    const money = (v) => (v > 0 ? formatCurrency(v) : '—');
+    // The client's sheet carries no currency prefix and no decimals on money, shows a
+    // dash where a money column is zero, and leaves hour columns blank at zero.
+    const amt  = (v) => (v > 0 ? Math.round(v).toLocaleString('en-PK') : '-');
+    const qty  = (v) => (v > 0 ? Number(v).toLocaleString('en-PK', { maximumFractionDigits: 2 }) : '');
+    // Totals of the rate columns keep their fraction — the client's sheet totals
+    // rates unrounded (its overtime rate total reads 577.78, not 578).
+    const rate = (v) => (v > 0 ? Number(v).toLocaleString('en-PK', { maximumFractionDigits: 2 }) : '-');
+    // Money the employee has taken or still owes prints red on the client's sheet.
+    const owed = (v) => (v > 0 ? `<span class="owed">${Math.round(v).toLocaleString('en-PK')}</span>` : '-');
 
     const dataRow = (r, i) => `
       <tr>
-        <td class="w-center">${i + 1}</td>
-        <td class="lft">${esc(r.employee_name)}</td>
-        <td class="lft">${esc(r.section || NO_SECTION)}</td>
-        <td class="lft">${esc(getDesig(r.employee_id))}</td>
-        <td>${formatCurrency(r.gross_salary)}</td>
-        <td>${money(r.unpaid_leave_amount)}</td>
-        <td>${money(r.overtime_amount)}</td>
-        <td>${money(r.late_amount)}</td>
-        <td>${money(r.advance_salary)}</td>
-        <td>${money(r.loan_deduction)}</td>
-        <td>${formatCurrency(r.total_deductions)}</td>
-        <td><strong>${formatCurrency(r.net_salary)}</strong></td>
-        <td></td>
+        <td class="sr">${i + 1}</td>
+        <td class="name">${esc(r.employee_name)}</td>
+        <td>${amt(r.gross_salary)}</td>
+        <td>${amt(r.salary_per_day)}</td>
+        <td class="ctr">${qty(r.unpaid_leave_days)}</td>
+        <td>${amt(r.unpaid_leave_amount)}</td>
+        <td class="ctr">${qty(r.late_hours)}</td>
+        <td>${amt(r.late_rate)}</td>
+        <td>${amt(r.late_amount)}</td>
+        <td class="ctr">${qty(r.overtime_hours)}</td>
+        <td>${amt(r.overtime_rate)}</td>
+        <td>${amt(r.overtime_amount)}</td>
+        <td>${owed(r.advance_salary)}</td>
+        ${r.has_loan ? `
+        <td>${amt(r.loan_granted)}</td>
+        <td>${owed(r.loan_previous)}</td>
+        <td>${amt(r.loan_deduction)}</td>
+        <td>${owed(r.loan_remaining)}</td>` : '<td></td><td></td><td></td><td></td>'}
+        <td>${amt(r.total_deductions)}</td>
+        <td>${amt(r.net_salary)}</td>
+        <td class="sign"></td>
+        <td class="sign"></td>
       </tr>`;
 
     const totalRow = (label, t, cls) => `
       <tr class="${cls}">
-        <td colspan="4" class="lft">${esc(label)}</td>
-        <td>${formatCurrency(t.gross_salary)}</td>
-        <td>${money(t.unpaid_leave_amount)}</td>
-        <td>${money(t.overtime_amount)}</td>
-        <td>${money(t.late_amount)}</td>
-        <td>${formatCurrency(t.advance_salary)}</td>
-        <td>${formatCurrency(t.loan_deduction)}</td>
-        <td>${formatCurrency(t.total_deductions)}</td>
-        <td>${formatCurrency(t.net_salary)}</td>
         <td></td>
+        <td class="name">${esc(label)}</td>
+        <td>${amt(t.gross_salary)}</td>
+        <td>${amt(t.salary_per_day)}</td>
+        <td class="ctr">${qty(t.unpaid_leave_days)}</td>
+        <td>${amt(t.unpaid_leave_amount)}</td>
+        <td class="ctr">${qty(t.late_hours)}</td>
+        <td>${rate(t.late_rate)}</td>
+        <td>${amt(t.late_amount)}</td>
+        <td class="ctr">${qty(t.overtime_hours)}</td>
+        <td>${rate(t.overtime_rate)}</td>
+        <td>${amt(t.overtime_amount)}</td>
+        <td>${amt(t.advance_salary)}</td>
+        <td>${amt(t.loan_granted)}</td>
+        <td>${amt(t.loan_previous)}</td>
+        <td>${amt(t.loan_deduction)}</td>
+        <td>${amt(t.loan_remaining)}</td>
+        <td>${amt(t.total_deductions)}</td>
+        <td>${amt(t.net_salary)}</td>
+        <td class="sign"></td>
+        <td class="sign"></td>
       </tr>`;
 
     // Mirrors the xlsx tabs: one block per section, each closing with its own
     // subtotal, then a grand total across every section at the very bottom.
-    const rows = sections.map(([section, group]) => `
+    const sectionBlocks = sections.map(([section, group]) => `
       <tr class="section-row">
-        <td colspan="13" class="lft">${esc(section)} — ${group.length} employee${group.length === 1 ? '' : 's'}</td>
+        <td colspan="${COL_COUNT}">${esc(section)} — ${group.length} employee${group.length === 1 ? '' : 's'}</td>
       </tr>
       ${group.map(dataRow).join('')}
       ${totalRow(`${section} Total`, sumTotals(group), 'subtotal-row')}
     `).join('');
 
     // With a single section its subtotal already is the grand total.
-    const grandTotalRow = sections.length > 1 ? totalRow('GRAND TOTAL', totals, 'total-row') : '';
+    const grandTotalRow = sections.length > 1 ? totalRow('Total', totals, 'total-row') : '';
 
     const sigCell = (label) => `
       <td width="33%" style="padding-top:34px">
@@ -255,31 +304,62 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       title: `Salary Sheet — ${month} ${year}`,
       landscape: true,
       css: `
-        body { font-size: 9px; }
+        body { font-size: 8px; }
         .sheet { width: 100%; }
-        .sheet th { background:#1a1a1a; color:#fff; padding:4px 5px; text-align:center;
-                    border:1px solid #333; font-size:8px; }
-        .sheet th.lft { text-align:left; }
-        .sheet td { padding:3px 5px; border:1px solid #ddd; text-align:right; font-size:8.5px; }
-        .sheet td.lft { text-align:left; }
-        .sheet tr.total-row td { font-weight:700; border-top:2px solid #000; background:#f0f0f0; }
-        .sheet tr.section-row td { font-weight:700; background:#e4e4e4; text-transform:uppercase;
-                                   letter-spacing:0.4px; font-size:8.5px; border:1px solid #bbb; }
+        .sheet th, .sheet td { border: 1px solid #000; }
+        .sheet th { background:#fff; color:#000; font-weight:700; text-align:center;
+                    font-size:7.5px; padding:3px 2px; }
+        .sheet td { padding:4px 3px; text-align:right; font-size:8px; }
+        .sheet td.sr   { text-align:center; font-weight:700; }
+        .sheet td.ctr  { text-align:center; }
+        .sheet td.name { text-align:left; font-style:italic; }
+        .sheet td.sign { width:44px; }
+        .sheet .owed { color:#c00000; }
+        .sheet tr.title-row td { font-size:17px; font-weight:700; text-align:center;
+                                 padding:7px 4px; letter-spacing:0.5px; }
+        .sheet tr.section-row td { font-size:8.5px; font-weight:700; text-align:left;
+                                   background:#e4e4e4; text-transform:uppercase;
+                                   letter-spacing:0.4px; padding:4px 4px; }
         .sheet tr.subtotal-row td { font-weight:700; background:#f7f7f7; }
+        .sheet tr.total-row td { font-weight:700; background:#f0f0f0; border-top:2px solid #000; }
       `,
       body: `
-        ${companyHeader(COMPANY, { title: `Salary Sheet — ${month} ${year}` })}
+        ${companyHeader(COMPANY)}
         <table class="sheet">
           <thead>
+            <tr class="title-row">
+              <td colspan="${COL_COUNT}">SALARY SHEET FOR THE MONTH OF ${esc(month.toUpperCase())}-${year}</td>
+            </tr>
             <tr>
-              <th width="26">Sr.</th><th class="lft" width="120">Name</th>
-              <th class="lft" width="80">Section</th><th class="lft" width="100">Designation</th>
-              <th>Gross Salary</th><th>Leave Ded.</th><th>OT Amt</th><th>Late Ded.</th>
-              <th>Advance</th><th>Loan Ded.</th><th>Total Ded.</th><th>Net Salary</th>
-              <th width="60">Signature</th>
+              <th rowspan="2" width="24">Sr.</th>
+              <th rowspan="2" width="104">Name</th>
+              <th rowspan="2" width="52">Gross<br>salary</th>
+              <th rowspan="2" width="48">Gross<br>salary/ day</th>
+              <th rowspan="2" width="40">Unpaid<br>Leaves<br>Days</th>
+              <th rowspan="2" width="50">Unpaid<br>Leaves<br>Amount</th>
+              <th colspan="3">Late Hours</th>
+              <th colspan="3">Over time</th>
+              <th rowspan="2" width="50">Advance<br>Salary</th>
+              <th colspan="4">Loan</th>
+              <th rowspan="2" width="54">Total<br>Deductions</th>
+              <th rowspan="2" width="50">Net Salary</th>
+              <th rowspan="2" width="44">Signatures</th>
+              <th rowspan="2" width="44">Stamp</th>
+            </tr>
+            <tr>
+              <th width="38"><em>total Hours</em></th>
+              <th width="38"><em>Rate/ hour</em></th>
+              <th width="40"><em>total amount</em></th>
+              <th width="34"><em>total Hours</em></th>
+              <th width="38"><em>Rate/ hour</em></th>
+              <th width="40"><em>total overtime</em></th>
+              <th width="46"><em>Granted Loan</em></th>
+              <th width="46"><em>Previous Loan</em></th>
+              <th width="46"><em>Loan Deduction</em></th>
+              <th width="46"><em>Remaining Loan</em></th>
             </tr>
           </thead>
-          <tbody>${rows}${grandTotalRow}</tbody>
+          <tbody>${sectionBlocks}${grandTotalRow}</tbody>
         </table>
         <table width="100%">
           <tr>${sigCell('Prepared By')}${sigCell('Checked By')}${sigCell('Approved By')}</tr>
