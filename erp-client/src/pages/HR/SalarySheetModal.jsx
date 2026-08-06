@@ -344,21 +344,26 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       filename: `Salary Sheet ${month} ${year}`,
       title: `Salary Sheet — ${month} ${year}`,
       landscape: true,
+      // 11px is the ceiling for the cells. Measured at the real printable width — 1032px,
+      // an A4 landscape less the 1.2cm margins, not the wider preview frame — every data
+      // row still sits on one line at 11px; at 11.5px the longest names start breaking in
+      // two and the rows go ragged. Horizontal padding is down to 2px to buy the room,
+      // which is where the extra 21 columns' worth of space comes from.
       css: `
-        body { font-size: 10px; }
+        body { font-size: 11px; }
         .sheet { width: 100%; }
         .sheet th, .sheet td { border: 1px solid #000; }
         .sheet th { background:#fff; color:#000; font-weight:700; text-align:center;
-                    font-size:9px; padding:4px 2px; }
-        .sheet td { padding:5px 3px; text-align:right; font-size:10px; }
+                    font-size:9.5px; padding:4px 2px; }
+        .sheet td { padding:5px 2px; text-align:right; font-size:11px; }
         .sheet td.sr   { text-align:center; font-weight:700; }
         .sheet td.ctr  { text-align:center; }
         .sheet td.name { text-align:left; font-style:italic; }
         .sheet td.sign { width:44px; }
         .sheet .owed { color:#c00000; }
-        .sheet tr.title-row td { font-size:17px; font-weight:700; text-align:center;
+        .sheet tr.title-row td { font-size:18px; font-weight:700; text-align:center;
                                  padding:7px 4px; letter-spacing:0.5px; }
-        .sheet tr.section-row td { font-size:10.5px; font-weight:700; text-align:left;
+        .sheet tr.section-row td { font-size:11.5px; font-weight:700; text-align:left;
                                    background:#e4e4e4; text-transform:uppercase;
                                    letter-spacing:0.4px; padding:5px 5px; }
         .sheet tr.subtotal-row td { font-weight:700; background:#f7f7f7; }
@@ -373,7 +378,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
             </tr>
             <tr>
               <th rowspan="2" width="24">Sr.</th>
-              <th rowspan="2" width="104">Name</th>
+              <th rowspan="2" width="130">Name</th>
               <th rowspan="2" width="52">Gross<br>salary</th>
               <th rowspan="2" width="48">Gross<br>salary/ day</th>
               <th rowspan="2" width="40">Unpaid<br>Leaves<br>Days</th>
