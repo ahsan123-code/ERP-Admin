@@ -46,11 +46,16 @@ const REPORT_CSS = `
 // The ledgers print a step larger than the summary reports — they are read row by row on
 // paper, where 10px is a squint. Passed as the `css` prop so it lands after REPORT_CSS and
 // wins on equal specificity; only the three ledger documents opt in.
+// The meta line carries the two things a reader checks first — whose ledger this is
+// and what period it covers — so it prints larger than the rest of the meta text,
+// with the name itself (the <strong>) a shade larger again. Document-only: the
+// on-screen table never renders .rpt-meta.
 const LEDGER_DOC_CSS = `
   .rpt { font-size:11.5px; }
   .rpt th { font-size:10px; padding:7px 9px; }
   .rpt td { font-size:11.5px; padding:6px 9px; }
-  .rpt-meta { font-size:11px; }
+  .rpt-meta { font-size:14px; margin-bottom:12px; }
+  .rpt-meta strong { font-size:15.5px; }
 `;
 
 // Wraps a report table in the standard letterhead + footer, returning the document
@@ -345,7 +350,6 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
         <td>${esc(shortParticulars(narrationFor(e))) || '—'}</td>
         <td>${join(li => esc(itemMaterial(li)) || '—')}</td>
         <td>${join(li => esc(itemGauge(li))  || '—')}</td>
-        <td>${join(li => esc(itemSize(li))   || '—')}</td>
         <td class="right">${join(li => esc(itemWeight(li)) || '—')}</td>
         <td class="right">${join(li => li.unit_price > 0 ? formatAmount(li.unit_price) : '—')}</td>
         <td class="right">${e.debit  > 0 ? formatAmount(e.debit)  : '—'}</td>
@@ -363,11 +367,11 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
       note: `Opening: ${formatAmount(Math.abs(openBal))}  |  Closing: ${formatAmount(Math.abs(closeBal))}`,
       table: `<table class="rpt">
         <thead><tr><th width="70">Date</th><th>Narration</th><th width="96">Item</th>
-          <th width="58">Gauge</th><th width="42">Size</th><th class="right" width="66">Weight</th>
+          <th width="58">Gauge</th><th class="right" width="66">Weight</th>
           <th class="right" width="72">Rate</th>
           <th class="right" width="92">Debit</th>
           <th class="right" width="92">Credit</th><th class="right" width="106">Balance</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="10" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="9" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
       </table>`,
     });
   };
@@ -732,7 +736,7 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
         <td>${fromDate ? formatDateNumeric(fromDate) : '—'}</td>
         <td>—</td>
         <td><strong>Opening Balance</strong><div class="sub">Brought forward</div></td>
-        <td>—</td><td>—</td><td>—</td><td class="right">—</td><td class="right">—</td>
+        <td>—</td><td>—</td><td class="right">—</td><td class="right">—</td>
         <td class="right">—</td><td class="right">—</td>
         <td class="right"><strong>${drCr(opening)}</strong></td>
       </tr>`;
@@ -747,7 +751,6 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
         <td>${esc(shortParticulars(r.particulars)) || '—'}</td>
         <td>${join(li => esc(itemMaterial(li)) || '—')}</td>
         <td>${join(li => esc(itemGauge(li))  || '—')}</td>
-        <td>${join(li => esc(itemSize(li))   || '—')}</td>
         <td class="right">${join(li => esc(itemWeight(li)) || '—')}</td>
         <td class="right">${join(li => li.unit_price > 0 ? formatAmount(li.unit_price) : '—')}</td>
         <td class="right">${r.debit  > 0 ? formatAmount(r.debit)  : '—'}</td>
@@ -772,16 +775,16 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
       table: `<table class="rpt">
         <thead><tr>
           <th width="62">Date</th><th width="88">Voucher</th><th>Particulars</th>
-          <th width="94">Item</th><th width="56">Gauge</th><th width="40">Size</th>
+          <th width="94">Item</th><th width="56">Gauge</th>
           <th class="right" width="64">Weight</th>
           <th class="right" width="58">Rate</th>
           <th class="right" width="82">Debit</th>
           <th class="right" width="82">Credit</th>
           <th class="right" width="100">Balance</th>
         </tr></thead>
-        <tbody>${openingRow}${body || '<tr><td colspan="11" class="center" style="padding:18px;color:#666">No transactions for selected period</td></tr>'}</tbody>
+        <tbody>${openingRow}${body || '<tr><td colspan="10" class="center" style="padding:18px;color:#666">No transactions for selected period</td></tr>'}</tbody>
         <tfoot><tr>
-          <td colspan="8" class="right"><strong>Totals</strong></td>
+          <td colspan="7" class="right"><strong>Totals</strong></td>
           <td class="right"><strong>${formatAmount(totalDr)}</strong></td>
           <td class="right"><strong>${formatAmount(totalCr)}</strong></td>
           <td class="right"><strong>${drCr(closing)}</strong></td>
@@ -1737,7 +1740,6 @@ function VendorLedger({ vendors, companyId = 1 }) {
         <td>${esc(shortParticulars(e.particulars)) || '—'}</td>
         <td>${join(li => esc(itemMaterial(li)) || '—')}</td>
         <td>${join(li => esc(itemGauge(li))  || '—')}</td>
-        <td>${join(li => esc(itemSize(li))   || '—')}</td>
         <td class="right">${join(li => esc(itemWeight(li)) || '—')}</td>
         <td class="right">${e.debit  > 0 ? formatAmount(e.debit)  : '—'}</td>
         <td class="right">${e.credit > 0 ? formatAmount(e.credit) : '—'}</td>
@@ -1754,12 +1756,12 @@ function VendorLedger({ vendors, companyId = 1 }) {
       note: `Closing Balance: ${formatAmount(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}`,
       table: `<table class="rpt">
         <thead><tr><th width="65">Date</th><th width="85">Voucher</th><th width="60">Type</th>
-          <th>Narration</th><th width="96">Item</th><th width="56">Gauge</th><th width="40">Size</th>
+          <th>Narration</th><th width="96">Item</th><th width="56">Gauge</th>
           <th class="right" width="64">Weight</th>
           <th class="right" width="82">Debit</th><th class="right" width="82">Credit</th>
           <th class="right" width="98">Balance</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="11" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
-        <tfoot><tr><td colspan="8" class="right">Totals</td>
+        <tbody>${rows || '<tr><td colspan="10" class="center" style="padding:18px;color:#666">No entries for selected period</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="7" class="right">Totals</td>
           <td class="right">${formatAmount(totalDr)}</td>
           <td class="right">${formatAmount(totalCr)}</td>
           <td class="right">${formatAmount(Math.abs(closeBal))} ${closeBal >= 0 ? 'Dr' : 'Cr'}</td>

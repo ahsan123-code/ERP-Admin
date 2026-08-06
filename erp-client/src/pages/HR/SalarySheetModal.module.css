@@ -32,3 +32,13 @@
   padding: 24px;
   background: var(--bg-surface);
 }
+
+/* Section grouping on the on-screen sheet. The table carries plain class
+   names (it mirrors the Word markup), so these need :global. */
+.body :global(tr.section-row) td {
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+  background: var(--bg-muted); color: var(--text-primary);
+  padding: 6px 6px;
+}
+.body :global(tr.subtotal-row) td { font-weight: 600; background: var(--bg-muted); }
+.body :global(tr.total-row) td { font-weight: 700; border-top: 2px solid var(--border-strong); }

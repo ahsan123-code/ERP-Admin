@@ -55,5 +55,13 @@ Logo.jpeg
 *.pdf
 CUSTOMER LIST.pdf
 
+# Exports the app generates (salary sheets, ledgers, attendance) — these land
+# wherever the browser downloads to, which is often the repo root.
+*.xlsx
+*.xls
+*.doc
+*.docx
+*.csv
+
 # Local agent/session files
 .claude/

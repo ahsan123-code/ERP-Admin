@@ -1,4 +1,5 @@
 
+import { Fragment } from 'react';
 import { FileDown, Eye, X, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Button from '../../components/ui/Button';
@@ -10,6 +11,49 @@ import styles from './SalarySheetModal.module.css';
 
 const COMPANY = { name: 'Allied Steel Center', address: 'Lahore, Punjab, Pakistan' };
 
+// Employees with no section on their payroll row are the admin staff.
+const NO_SECTION = 'Admins';
+
+const sumTotals = (rows) => rows.reduce((a, r) => ({
+  gross_salary:    a.gross_salary    + (r.gross_salary    || 0),
+  unpaid_leave_amount: a.unpaid_leave_amount + (r.unpaid_leave_amount || 0),
+  advance_salary:  a.advance_salary  + (r.advance_salary  || 0),
+  overtime_amount: a.overtime_amount + (r.overtime_amount || 0),
+  late_amount:     a.late_amount     + (r.late_amount     || 0),
+  loan_deduction:  a.loan_deduction  + (r.loan_deduction  || 0),
+  total_deductions:a.total_deductions+ (r.total_deductions|| 0),
+  net_salary:      a.net_salary      + (r.net_salary      || 0),
+}), { gross_salary: 0, unpaid_leave_amount: 0, advance_salary: 0, overtime_amount: 0, late_amount: 0, loan_deduction: 0, total_deductions: 0, net_salary: 0 });
+
+/** Groups payroll rows by section, first-appearance order, sectionless staff last. */
+const groupBySection = (rows) => {
+  const groups = new Map();
+  rows.forEach((r) => {
+    const key = (r.section || '').trim() || NO_SECTION;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  });
+  const admins = groups.get(NO_SECTION);
+  if (admins) { groups.delete(NO_SECTION); groups.set(NO_SECTION, admins); }
+  return groups;
+};
+
+/**
+ * Excel tab names cap at 31 chars, reject [ ] : * ? / \ and must be unique —
+ * so this cleans the label only; the Section column inside keeps the raw value.
+ */
+const sheetName = (label, used) => {
+  let base = label.replace(/[[\]:*?/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Section';
+  let name = base;
+  let n = 2;
+  while (used.has(name)) {
+    const suffix = ` (${n++})`;
+    name = base.slice(0, 31 - suffix.length) + suffix;
+  }
+  used.add(name);
+  return name;
+};
+
 // loans and employees now passed as props (fetched from Supabase in HR.jsx)
 export default function SalarySheetModal({ records, employees, loans = [], month, year, onClose }) {
 
@@ -19,22 +63,20 @@ export default function SalarySheetModal({ records, employees, loans = [], month
   const getDesig      = (empId) => employees.find(e => e.employee_id === empId)?.designation ?? '—';
   const getActiveLoan = (empId) => loans.find(l => l.employee_id === empId && l.status === 'active') ?? null;
 
-  const totals = records.reduce((a, r) => ({
-    gross_salary:    a.gross_salary    + (r.gross_salary    || 0),
-    advance_salary:  a.advance_salary  + (r.advance_salary  || 0),
-    overtime_amount: a.overtime_amount + (r.overtime_amount || 0),
-    late_amount:     a.late_amount     + (r.late_amount     || 0),
-    loan_deduction:  a.loan_deduction  + (r.loan_deduction  || 0),
-    total_deductions:a.total_deductions+ (r.total_deductions|| 0),
-    net_salary:      a.net_salary      + (r.net_salary      || 0),
-  }), { gross_salary: 0, advance_salary: 0, overtime_amount: 0, late_amount: 0, loan_deduction: 0, total_deductions: 0, net_salary: 0 });
+  const totals = sumTotals(records);
+
+  // [section, rows] pairs — shared by the xlsx tabs, the Word doc and the
+  // on-screen sheet so all three break at exactly the same places.
+  const sections = [...groupBySection(records)];
 
   /* ─────────────────────────────────────────── XLSX export */
-  const handleExportXLSX = () => {
-    const wb = XLSX.utils.book_new();
-
-    const mainRows = [
-      [`SALARY SHEET FOR THE MONTH OF ${month.toUpperCase()}-${year}`],
+  /**
+   * One salary-sheet worksheet: title, header, a numbered row per employee
+   * (Sr. restarts on every tab) and a TOTAL row for just those rows.
+   */
+  const buildSalarySheet = (rows, title) => {
+    const aoa = [
+      [title],
       ['Sr.', 'Name', 'Section', 'Designation', 'Gross Salary', 'Salary/Day',
        'Unpaid Leave Days', 'Leave Amt', 'OT Hrs', 'OT Rate', 'Total OT',
        'Late Hrs', 'Late Rate', 'Late Amt',
@@ -42,16 +84,16 @@ export default function SalarySheetModal({ records, employees, loans = [], month
        'Total Deductions', 'Net Salary', 'Signatures'],
     ];
 
-    records.forEach((r, i) => {
+    rows.forEach((r, i) => {
       const loan      = getActiveLoan(r.employee_id);
       const prevLoan  = loan ? loan.remaining_balance + loan.monthly_deduction : 0;
       const remLoan   = loan ? loan.remaining_balance : 0;
       const grantedLoan = loan ? loan.loan_amount : 0;
 
-      mainRows.push([
+      aoa.push([
         i + 1,
         r.employee_name,
-        r.section || '—',
+        r.section || NO_SECTION,
         getDesig(r.employee_id),
         r.gross_salary,
         +(r.gross_salary / 30).toFixed(2),
@@ -74,19 +116,41 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       ]);
     });
 
-    mainRows.push([
+    const t = sumTotals(rows);
+    aoa.push([
       '', 'TOTAL', '', '',
-      totals.gross_salary, '', '', '', '', '', totals.overtime_amount,
-      '', '', totals.late_amount,
-      totals.advance_salary,
-      '', '', totals.loan_deduction, '',
-      totals.total_deductions,
-      totals.net_salary, '',
+      t.gross_salary, '', '', '', '', '', t.overtime_amount,
+      '', '', t.late_amount,
+      t.advance_salary,
+      '', '', t.loan_deduction, '',
+      t.total_deductions,
+      t.net_salary, '',
     ]);
 
-    const ws1 = XLSX.utils.aoa_to_sheet(mainRows);
-    ws1['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 21 } }];
-    XLSX.utils.book_append_sheet(wb, ws1, `${month} ${year}`);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 21 } }];
+    return ws;
+  };
+
+  const handleExportXLSX = () => {
+    const wb = XLSX.utils.book_new();
+    const usedNames = new Set();
+    const period = `${month.toUpperCase()}-${year}`;
+
+    /* Combined sheet first, then one tab per section */
+    XLSX.utils.book_append_sheet(
+      wb,
+      buildSalarySheet(records, `SALARY SHEET FOR THE MONTH OF ${period}`),
+      sheetName(`All Sections ${month} ${year}`, usedNames),
+    );
+
+    sections.forEach(([section, rows]) => {
+      XLSX.utils.book_append_sheet(
+        wb,
+        buildSalarySheet(rows, `SALARY SHEET FOR THE MONTH OF ${period} — ${section.toUpperCase()}`),
+        sheetName(section, usedNames),
+      );
+    });
 
     /* Salary slips sheet */
     const slipRows = [[`SALARY SLIPS — ${month.toUpperCase()}-${year}`], []];
@@ -108,7 +172,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       slipRows.push([]);
     });
     const ws2 = XLSX.utils.aoa_to_sheet(slipRows);
-    XLSX.utils.book_append_sheet(wb, ws2, `Slip ${month}`);
+    XLSX.utils.book_append_sheet(wb, ws2, sheetName(`Slip ${month}`, usedNames));
 
     /* Loan summary sheet */
     const activeLoans = loans.filter(l => l.status === 'active');
@@ -123,7 +187,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
       ],
     ];
     const ws3 = XLSX.utils.aoa_to_sheet(loanRows);
-    XLSX.utils.book_append_sheet(wb, ws3, 'Loan Summary');
+    XLSX.utils.book_append_sheet(wb, ws3, sheetName('Loan Summary', usedNames));
 
     const filename = `Salary Sheet ${month} ${year}.xlsx`;
     XLSX.writeFile(wb, filename);
@@ -136,11 +200,11 @@ export default function SalarySheetModal({ records, employees, loans = [], month
   const buildDoc = () => {
     const money = (v) => (v > 0 ? formatCurrency(v) : '—');
 
-    const rows = records.map((r, i) => `
+    const dataRow = (r, i) => `
       <tr>
         <td class="w-center">${i + 1}</td>
         <td class="lft">${esc(r.employee_name)}</td>
-        <td class="lft">${esc(r.section || '—')}</td>
+        <td class="lft">${esc(r.section || NO_SECTION)}</td>
         <td class="lft">${esc(getDesig(r.employee_id))}</td>
         <td>${formatCurrency(r.gross_salary)}</td>
         <td>${money(r.unpaid_leave_amount)}</td>
@@ -151,21 +215,34 @@ export default function SalarySheetModal({ records, employees, loans = [], month
         <td>${formatCurrency(r.total_deductions)}</td>
         <td><strong>${formatCurrency(r.net_salary)}</strong></td>
         <td></td>
-      </tr>`).join('');
+      </tr>`;
 
-    const totalRow = `
-      <tr class="total-row">
-        <td colspan="4" class="lft">TOTAL</td>
-        <td>${formatCurrency(totals.gross_salary)}</td>
-        <td>—</td>
-        <td>${money(totals.overtime_amount)}</td>
-        <td>${money(totals.late_amount)}</td>
-        <td>${formatCurrency(totals.advance_salary)}</td>
-        <td>${formatCurrency(totals.loan_deduction)}</td>
-        <td>${formatCurrency(totals.total_deductions)}</td>
-        <td>${formatCurrency(totals.net_salary)}</td>
+    const totalRow = (label, t, cls) => `
+      <tr class="${cls}">
+        <td colspan="4" class="lft">${esc(label)}</td>
+        <td>${formatCurrency(t.gross_salary)}</td>
+        <td>${money(t.unpaid_leave_amount)}</td>
+        <td>${money(t.overtime_amount)}</td>
+        <td>${money(t.late_amount)}</td>
+        <td>${formatCurrency(t.advance_salary)}</td>
+        <td>${formatCurrency(t.loan_deduction)}</td>
+        <td>${formatCurrency(t.total_deductions)}</td>
+        <td>${formatCurrency(t.net_salary)}</td>
         <td></td>
       </tr>`;
+
+    // Mirrors the xlsx tabs: one block per section, each closing with its own
+    // subtotal, then a grand total across every section at the very bottom.
+    const rows = sections.map(([section, group]) => `
+      <tr class="section-row">
+        <td colspan="13" class="lft">${esc(section)} — ${group.length} employee${group.length === 1 ? '' : 's'}</td>
+      </tr>
+      ${group.map(dataRow).join('')}
+      ${totalRow(`${section} Total`, sumTotals(group), 'subtotal-row')}
+    `).join('');
+
+    // With a single section its subtotal already is the grand total.
+    const grandTotalRow = sections.length > 1 ? totalRow('GRAND TOTAL', totals, 'total-row') : '';
 
     const sigCell = (label) => `
       <td width="33%" style="padding-top:34px">
@@ -186,6 +263,9 @@ export default function SalarySheetModal({ records, employees, loans = [], month
         .sheet td { padding:3px 5px; border:1px solid #ddd; text-align:right; font-size:8.5px; }
         .sheet td.lft { text-align:left; }
         .sheet tr.total-row td { font-weight:700; border-top:2px solid #000; background:#f0f0f0; }
+        .sheet tr.section-row td { font-weight:700; background:#e4e4e4; text-transform:uppercase;
+                                   letter-spacing:0.4px; font-size:8.5px; border:1px solid #bbb; }
+        .sheet tr.subtotal-row td { font-weight:700; background:#f7f7f7; }
       `,
       body: `
         ${companyHeader(COMPANY, { title: `Salary Sheet — ${month} ${year}` })}
@@ -199,7 +279,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
               <th width="60">Signature</th>
             </tr>
           </thead>
-          <tbody>${rows}${totalRow}</tbody>
+          <tbody>${rows}${grandTotalRow}</tbody>
         </table>
         <table width="100%">
           <tr>${sigCell('Prepared By')}${sigCell('Checked By')}${sigCell('Approved By')}</tr>
@@ -252,27 +332,52 @@ export default function SalarySheetModal({ records, employees, loans = [], month
                 </tr>
               </thead>
               <tbody>
-                {records.map((r, i) => (
-                  <tr key={r.payroll_id}>
-                    <td className="center">{i + 1}</td>
-                    <td className="left">{r.employee_name}</td>
-                    <td className="left">{r.section || '—'}</td>
-                    <td className="left">{getDesig(r.employee_id)}</td>
-                    <td>{formatCurrency(r.gross_salary)}</td>
-                    <td>{r.unpaid_leave_amount > 0 ? formatCurrency(r.unpaid_leave_amount) : '—'}</td>
-                    <td>{r.overtime_amount > 0 ? formatCurrency(r.overtime_amount) : '—'}</td>
-                    <td>{r.late_amount > 0 ? formatCurrency(r.late_amount) : '—'}</td>
-                    <td>{r.advance_salary > 0 ? formatCurrency(r.advance_salary) : '—'}</td>
-                    <td>{r.loan_deduction > 0 ? formatCurrency(r.loan_deduction) : '—'}</td>
-                    <td>{formatCurrency(r.total_deductions)}</td>
-                    <td><strong>{formatCurrency(r.net_salary)}</strong></td>
-                    <td></td>
-                  </tr>
-                ))}
+                {sections.map(([section, group]) => {
+                  const t = sumTotals(group);
+                  return (
+                    <Fragment key={section}>
+                      <tr className="section-row">
+                        <td colSpan={13} className="left">
+                          {section} — {group.length} employee{group.length === 1 ? '' : 's'}
+                        </td>
+                      </tr>
+                      {group.map((r, i) => (
+                        <tr key={r.payroll_id}>
+                          <td className="center">{i + 1}</td>
+                          <td className="left">{r.employee_name}</td>
+                          <td className="left">{r.section || NO_SECTION}</td>
+                          <td className="left">{getDesig(r.employee_id)}</td>
+                          <td>{formatCurrency(r.gross_salary)}</td>
+                          <td>{r.unpaid_leave_amount > 0 ? formatCurrency(r.unpaid_leave_amount) : '—'}</td>
+                          <td>{r.overtime_amount > 0 ? formatCurrency(r.overtime_amount) : '—'}</td>
+                          <td>{r.late_amount > 0 ? formatCurrency(r.late_amount) : '—'}</td>
+                          <td>{r.advance_salary > 0 ? formatCurrency(r.advance_salary) : '—'}</td>
+                          <td>{r.loan_deduction > 0 ? formatCurrency(r.loan_deduction) : '—'}</td>
+                          <td>{formatCurrency(r.total_deductions)}</td>
+                          <td><strong>{formatCurrency(r.net_salary)}</strong></td>
+                          <td></td>
+                        </tr>
+                      ))}
+                      <tr className="subtotal-row">
+                        <td colSpan={4} className="left">{section} Total</td>
+                        <td>{formatCurrency(t.gross_salary)}</td>
+                        <td>{t.unpaid_leave_amount > 0 ? formatCurrency(t.unpaid_leave_amount) : '—'}</td>
+                        <td>{t.overtime_amount > 0 ? formatCurrency(t.overtime_amount) : '—'}</td>
+                        <td>{t.late_amount > 0 ? formatCurrency(t.late_amount) : '—'}</td>
+                        <td>{formatCurrency(t.advance_salary)}</td>
+                        <td>{formatCurrency(t.loan_deduction)}</td>
+                        <td>{formatCurrency(t.total_deductions)}</td>
+                        <td>{formatCurrency(t.net_salary)}</td>
+                        <td></td>
+                      </tr>
+                    </Fragment>
+                  );
+                })}
+                {sections.length > 1 && (
                 <tr className="total-row">
-                  <td colSpan={4} className="left">TOTAL</td>
+                  <td colSpan={4} className="left">GRAND TOTAL</td>
                   <td>{formatCurrency(totals.gross_salary)}</td>
-                  <td>—</td>
+                  <td>{totals.unpaid_leave_amount > 0 ? formatCurrency(totals.unpaid_leave_amount) : '—'}</td>
                   <td>{totals.overtime_amount > 0 ? formatCurrency(totals.overtime_amount) : '—'}</td>
                   <td>{totals.late_amount > 0 ? formatCurrency(totals.late_amount) : '—'}</td>
                   <td>{formatCurrency(totals.advance_salary)}</td>
@@ -281,6 +386,7 @@ export default function SalarySheetModal({ records, employees, loans = [], month
                   <td>{formatCurrency(totals.net_salary)}</td>
                   <td></td>
                 </tr>
+                )}
               </tbody>
             </table>
 
