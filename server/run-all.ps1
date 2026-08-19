@@ -1,8 +1,12 @@
 # Full automated pipeline — no manual steps
 # 1) Finds latest .bak  2) Restores to SQL Server  3) Exports CSVs  4) Imports to Supabase
 # Run: powershell -ExecutionPolicy Bypass -File run-all.ps1
+#      powershell -ExecutionPolicy Bypass -File run-all.ps1 -BakDir "D:\path\to\baks"
+param(
+  [string]$BakDir = "D:\ERP-admin\DATABASE-BACKUP"
+)
 
-$BAK_DIR    = "D:\ERP-admin\DATABASE-BACKUP"
+$BAK_DIR    = $BakDir
 $SERVER     = "np:\\.\pipe\MSSQL`$SQLEXPRESS\sql\query"
 $DB         = "genxMultiERPLive"
 $SCRIPT_DIR = $PSScriptRoot
@@ -65,8 +69,12 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Export failed"; exit 1 }
 
 # ── STEP 3 — Import CSVs into Supabase ───────────────────────────────────────
 
+# Uses import-all-safe.js, NOT import-all.js. The latter clears its tables with
+# unconditional DELETEs, which wipes company 2's ledger lines (their headers are
+# scoped to company 1 and survive, leaving orphans) and every transaction entered
+# in the ERP app itself rather than in GenX. The safe version upserts instead.
 Write-Step 3 "Importing into Supabase"
-node "$SCRIPT_DIR\import-all.js"
+node "$SCRIPT_DIR\import-all-safe.js"
 if ($LASTEXITCODE -ne 0) { Write-Error "Import failed"; exit 1 }
 
 Write-Host ""
