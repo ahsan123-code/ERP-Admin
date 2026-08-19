@@ -11,3 +11,9 @@ export-*.ps1
 get-*.ps1
 list-*.ps1
 test-*.js
+
+# The one-off scripts above stay out of the repo, but run-all.ps1 is tracked and calls
+# these two on every pipeline run — a clone without them cannot export or import at all.
+# Neither carries a credential: the export uses Windows auth, the import reads DATABASE_URL.
+!export-all.ps1
+!import-all-safe.js
