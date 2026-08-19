@@ -72,6 +72,17 @@ export const hrDb = {
   applyLeave: (record) =>
     supabase.from('leave_requests').insert([record]).select().single(),
 
+  updateLeaveStatus: (leaveId, status) =>
+    supabase.from('leave_requests').update({ status }).eq('leave_id', leaveId).select().single(),
+
+  // Approved leave covering a given day. The daily sheet uses this to pre-select
+  // 'leave' instead of defaulting the employee to 'present' -- payroll deducts a
+  // day's pay for every 'absent' row, so an approved leave marked wrongly costs
+  // the employee money.
+  getApprovedLeaveForDate: (date) =>
+    supabase.from('leave_requests').select('employee_id')
+      .eq('status', 'approved').lte('from_date', date).gte('to_date', date),
+
   getLoans: () =>
     supabase.from('loans').select('*').order('employee_name'),
 

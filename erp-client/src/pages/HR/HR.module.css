@@ -120,3 +120,29 @@
   border-color: var(--primary-border);
   color: var(--primary);
 }
+
+.approveBtn,
+.rejectBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.approveBtn:hover {
+  background: var(--green-muted);
+  border-color: var(--green);
+  color: var(--green);
+}
+.rejectBtn:hover {
+  background: var(--red-muted);
+  border-color: var(--red);
+  color: var(--red);
+}
+.approveBtn:disabled,
+.rejectBtn:disabled { opacity: 0.4; cursor: default; }

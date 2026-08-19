@@ -48,6 +48,7 @@
 .badgeGreen  { background: var(--green-muted);  color: var(--green);  }
 .badgeRed    { background: var(--red-muted);    color: var(--red);    }
 .badgeOrange { background: var(--orange-muted); color: var(--orange); }
+.badgePurple { background: var(--purple-muted); color: var(--purple); }
 
 .dailyHead {
   display: grid;
@@ -105,6 +106,7 @@
 .status_red    { background: var(--red-muted)    !important; border-color: var(--red)    !important; color: var(--red)    !important; }
 .status_orange { background: var(--orange-muted) !important; border-color: var(--orange) !important; color: var(--orange) !important; }
 .status_blue   { background: var(--blue-muted)   !important; border-color: var(--blue)   !important; color: var(--blue)   !important; }
+.status_purple { background: var(--purple-muted) !important; border-color: var(--purple) !important; color: var(--purple) !important; }
 
 /* ── MONTHLY VIEW ──────────────────────────────────────────────────────── */
 .monthlyWrap { display: flex; flex-direction: column; }

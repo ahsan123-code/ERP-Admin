@@ -9,6 +9,7 @@ const STATUS_OPTIONS = [
   { value: 'absent',  label: 'A', title: 'Absent',   color: 'red'    },
   { value: 'late',    label: 'L', title: 'Late',      color: 'orange' },
   { value: 'half',    label: 'H', title: 'Half Day', color: 'blue'   },
+  { value: 'leave',   label: 'LV',title: 'On Leave', color: 'purple' },
 ];
 
 export default function DailyAttendance({ employees }) {
@@ -25,9 +26,16 @@ export default function DailyAttendance({ employees }) {
   useEffect(() => {
     if (!active.length) return;
     setLoading(true);
-    hrDb.getAttendanceForDate(date).then(({ data }) => {
+    Promise.all([
+      hrDb.getAttendanceForDate(date),
+      hrDb.getApprovedLeaveForDate(date),
+    ]).then(([{ data }, { data: onLeave }]) => {
       const map = {};
       active.forEach(e => { map[e.employee_id] = 'present'; });
+      // Approved leave pre-selects 'leave' so nobody on sanctioned leave is saved as
+      // absent -- payroll deducts a day's pay per absent row. An attendance row that
+      // was already marked by hand still wins over the pre-selection.
+      (onLeave || []).forEach(l => { if (map[l.employee_id] !== undefined) map[l.employee_id] = 'leave'; });
       (data || []).forEach(r => { if (map[r.employee_id] !== undefined) map[r.employee_id] = r.status; });
       setStatusMap(map);
       setDirty(false);
@@ -68,6 +76,7 @@ export default function DailyAttendance({ employees }) {
   const presentCount = Object.values(statusMap).filter(s => s === 'present').length;
   const absentCount  = Object.values(statusMap).filter(s => s === 'absent').length;
   const lateCount    = Object.values(statusMap).filter(s => s === 'late').length;
+  const leaveCount   = Object.values(statusMap).filter(s => s === 'leave').length;
 
   return (
     <div className={styles.dailyWrap}>
@@ -86,6 +95,7 @@ export default function DailyAttendance({ employees }) {
           <span className={`${styles.attBadge} ${styles.badgeGreen}`}>Present: {presentCount}</span>
           <span className={`${styles.attBadge} ${styles.badgeRed}`}>Absent: {absentCount}</span>
           <span className={`${styles.attBadge} ${styles.badgeOrange}`}>Late: {lateCount}</span>
+          <span className={`${styles.attBadge} ${styles.badgePurple}`}>On Leave: {leaveCount}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
           <Button variant="secondary" size="sm" onClick={markAllPresent}>Mark All Present</Button>

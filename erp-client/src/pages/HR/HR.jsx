@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, FileDown, Pencil, FileSpreadsheet, Trash2 } from 'lucide-react';
+import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, FileDown, Pencil, FileSpreadsheet, Trash2, Check, X } from 'lucide-react';
 import AddEmployeeModal from './AddEmployeeModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import EditEmployeeModal from './EditEmployeeModal';
@@ -17,6 +17,7 @@ import DisbursePayrollModal from './DisbursePayrollModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import DataTable from '../../components/shared/DataTable';
+import { useToast } from '../../components/shared/Toast';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { useDb } from '../../hooks/useDb';
@@ -51,7 +52,7 @@ const buildEmpCols = (onDelete) => [
 ];
 
 
-const LEAVE_COLS = [
+const buildLeaveCols = (onDecide, busyId) => [
   { key: 'leave_id',      label: 'Leave ID',  width: 120, render: v => <span className={styles.code}>{v}</span> },
   { key: 'employee_name', label: 'Employee',  width: 180 },
   { key: 'leave_type',    label: 'Type',      width: 100 },
@@ -61,6 +62,28 @@ const LEAVE_COLS = [
   { key: 'reason',        label: 'Reason',    width: 180, render: v => <span className={styles.reason}>{v}</span> },
   { key: 'status',        label: 'Status',    width: 110,
     render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+  // Only pending requests can be decided; once approved or rejected the row is settled.
+  { key: '_decide', label: '', width: 80, sortable: false,
+    render: (_, row) => row.status !== 'pending' ? null : (
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          className={styles.approveBtn}
+          disabled={busyId === row.leave_id}
+          onClick={e => { e.stopPropagation(); onDecide(row, 'approved'); }}
+          title="Approve leave"
+        >
+          <Check size={14} strokeWidth={2} />
+        </button>
+        <button
+          className={styles.rejectBtn}
+          disabled={busyId === row.leave_id}
+          onClick={e => { e.stopPropagation(); onDecide(row, 'rejected'); }}
+          title="Reject leave"
+        >
+          <X size={14} strokeWidth={2} />
+        </button>
+      </div>
+    ) },
 ];
 
 const LOAN_COLS = [
@@ -111,6 +134,8 @@ const buildPayCols = (onPrint, onManage) => [
     ) },
 ];
 
+const today = new Date().toISOString().split('T')[0];
+
 const SEG_TO_TAB = {
   '': 'employees', employees: 'employees',
   attendance: 'attendance',
@@ -148,10 +173,13 @@ export default function HR() {
   const [genOpen,      setGenOpen]      = useState(false);
   const [disburseOpen, setDisburseOpen] = useState(false);
 
+  const toast = useToast();
+  const [leaveBusy, setLeaveBusy] = useState(null);
+
   const { companyId } = useCompany();
 
   const { data: employees,     loading: loadEmp,     refetch: refetchEmp }     = useDb(() => hrDb.getEmployees());
-  const { data: attendance,    loading: loadAtt }   = useDb(() => hrDb.getAttendance());
+  const { data: attendance,    loading: loadAtt }   = useDb(() => hrDb.getAttendance(today));
   const { data: leaveRequests, loading: loadLeave, refetch: refetchLeave } = useDb(() => hrDb.getLeaveRequests());
   const { data: payrollRecords,loading: loadPay,     refetch: refetchPay }     = useDb(() => hrDb.getPayrollRecords());
   const { data: loans,         loading: loadLoans,   refetch: refetchLoans }   = useDb(() => hrDb.getLoans());
@@ -189,24 +217,40 @@ export default function HR() {
     refetchEmp();
   };
 
+  const handleLeaveDecision = async (row, status) => {
+    setLeaveBusy(row.leave_id);
+    const { error } = await hrDb.updateLeaveStatus(row.leave_id, status);
+    setLeaveBusy(null);
+    if (error) {
+      toast.error(error.message, 'Update Failed');
+      return;
+    }
+    toast.success(`${row.employee_name}'s leave was ${status}.`, status === 'approved' ? 'Approved' : 'Rejected');
+    refetchLeave();
+  };
+
   const handlePayrollSave = async (updated) => {
     await hrDb.updatePayroll(updated.payroll_id, updated);
     refetchPay();
   };
 
   const EMP_COLS = buildEmpCols(setDeleteEmp);
+  const LEAVE_COLS = buildLeaveCols(handleLeaveDecision, leaveBusy);
   const PAY_COLS = buildPayCols(setPayslipRec, setManageRec);
 
   const totalActive      = employees.filter(e => e.status === 'active').length;
   const presentToday     = attendance.filter(a => a.status === 'present').length;
-  const onLeaveToday     = attendance.filter(a => a.status === 'leave').length;
+  // Leave lives in leave_requests, not attendance -- attendance only ever carries
+  // present/absent/late, so counting a 'leave' status there was always zero.
+  const onLeaveToday     = leaveRequests.filter(l =>
+    l.status === 'approved' && l.from_date <= today && l.to_date >= today).length;
   const payrollProcessed = payrollRecords.filter(p => p.status === 'paid').length;
   const activeLoans      = loans.filter(l => l.status === 'active').length;
 
   const stats = [
     { icon: Users,         label: 'Total Employees',  value: loadEmp  ? '…' : totalActive,      color: 'blue'   },
     { icon: CalendarCheck, label: 'Present Today',    value: loadAtt  ? '…' : presentToday,     color: 'green'  },
-    { icon: Palmtree,      label: 'On Leave',         value: loadAtt  ? '…' : onLeaveToday,     color: 'orange' },
+    { icon: Palmtree,      label: 'On Leave',         value: loadLeave? '…' : onLeaveToday,     color: 'orange' },
     { icon: Banknote,      label: 'Payroll Processed',value: loadPay  ? '…' : payrollProcessed, color: 'purple' },
   ];
 
