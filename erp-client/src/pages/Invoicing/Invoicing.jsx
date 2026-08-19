@@ -126,13 +126,18 @@ export default function Invoicing() {
     return data || [];
   };
 
-  // Line items are fetched on demand, so both actions share one loader and differ
-  // only in what they do with the finished document spec.
+  // Line items and the bill's heading detail are fetched on demand, so both actions share
+  // one loader and differ only in what they do with the finished document spec.
   const withInvoiceDoc = async (row, action, failTitle) => {
     setBusyDocId(row.id);
     try {
-      const items = await fetchInvoiceItems(row);
-      action(buildSalesInvoiceDoc(row, items));
+      const [items, context] = await Promise.all([
+        fetchInvoiceItems(row),
+        salesDb.getInvoicePrintContext({
+          customerName: row.customer_name, soRef: row.so_ref, companyId,
+        }),
+      ]);
+      action(buildSalesInvoiceDoc(row, items, context));
     } catch (err) {
       toast.error(err.message, failTitle);
     } finally {

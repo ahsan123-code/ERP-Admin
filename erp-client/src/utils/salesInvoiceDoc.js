@@ -1,144 +1,209 @@
-import { formatCurrency, formatDate, itemLabel } from './format';
-import { esc, layoutTable, labelValueTable, companyHeader, documentFooter } from './wordExport';
+import { itemLabel } from './format';
+import { esc, layoutTable, documentFooter } from './wordExport';
 
+// The letterhead as the office prints it today, kept verbatim from the issued bill —
+// with NTN and STRN added, since the business is sales-tax registered and the figures
+// belong on the document even though the old print omitted them.
 const COMPANY = {
-  name: 'Allied Steel Center',
-  address: 'Shop No. 41, Steel Sheet Market, Lahore',
+  name: 'Allied Steel Centre',
+  trade: 'Importers & Retailors of All Kinds of Steel Sheets, Coils & General Order Suppliers',
+  address: '46-Steel Sheet Market, Landa Bazar, Lahore.',
+  tel: '37664375, 37650599',
+  mobile: '0321-8481525',
+  email: 'maqsud_ahmad@yahoo.com',
   ntn: '9207491-5',
   strn: '3277876323039',
 };
 
 const CSS = `
-  .items { width: 100%; font-size: 10px; margin-bottom: 14px; }
-  .items th { background: #1a1a1a; color: #fff; font-size: 9px; text-transform: uppercase;
-              padding: 6px 8px; text-align: left; border: 1px solid #1a1a1a; }
-  .items td { padding: 5px 8px; border: 1px solid #ddd; }
-  .totals td { padding: 4px 0; font-size: 11px; border-bottom: 1px solid #eee; }
-  .totals td.grand { font-size: 13px; font-weight: 700; border-top: 2px solid #000; border-bottom: none; padding-top: 7px; }
-  .charge td { padding: 3px 0; font-size: 10px; color: #555; border-bottom: 1px solid #f0f0f0; }
+  .bill th, .bill td { border: 1px solid #000; padding: 3px 6px; font-size: 10px; }
+  .bill th { font-weight: 700; text-align: center; vertical-align: middle; }
+  .bill td.n { border: none; }
+  .box { border: 1px solid #000; }
+  .box .cap { border-bottom: 1px solid #000; text-align: center; font-weight: 700;
+              font-size: 11px; padding: 3px; }
+  .box td { font-size: 10px; padding: 2px 6px; vertical-align: top; }
+  .meta td { font-size: 10px; padding: 2px 0; }
+  .chg td { font-size: 10px; padding: 2px 6px; }
+  .chg td.net { font-weight: 700; color: #c00; border-top: 1px solid #000;
+                border-bottom: 1px solid #000; padding: 3px 6px; }
 `;
 
-const qty = (v) => (v == null ? '' : Number(v).toLocaleString('en-PK'));
+// Figures print bare, as they always have: no currency prefix, grouped thousands, and
+// decimals only where they exist. The rate column is the exception — always two places.
+const num = (v, dp = 0) => {
+  const n = Number(v) || 0;
+  const places = dp > 0 ? dp : (Math.abs(n % 1) > 0.004 ? 2 : 0);
+  return n.toLocaleString('en-PK', { minimumFractionDigits: places, maximumFractionDigits: places });
+};
+const rate = (v) => num(v, 2);
 
-// Size and gauge share one column, matching the customer ledger. Rows imported before
-// these became their own fields kept both baked into the item name, so they read "—"
-// here rather than being parsed back out of free text.
-const spec = (it) => [it.size, it.gauge].filter(Boolean).join(' · ') || '—';
+// "22-Jul-2026", built from the ISO string rather than Date so a plain 'YYYY-MM-DD'
+// cannot slip a day backwards in a timezone behind UTC.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const billDate = (v) => {
+  if (!v) return '';
+  const iso = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}-${MONTHS[+iso[2] - 1]}-${iso[1]}`;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v)
+    : `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+};
 
-// Builds the sales-invoice document spec, shared by the preview and the download.
-// `lineItems` come from so_line_items (by so_ref); when none exist the item table is
-// skipped and only the amount summary is shown.
-export function buildSalesInvoiceDoc(inv, lineItems = []) {
-  const itemsSection = lineItems.length > 0
-    ? `<table class="items">
-        <thead><tr>
-          <th class="w-right" width="28">#</th><th>Item Description</th>
-          <th width="90">Size / Gauge</th>
-          <th class="w-right" width="65">Qty</th><th width="55">Unit</th>
-          <th class="w-right" width="85">Rate</th><th class="w-right" width="95">Amount</th>
-        </tr></thead>
-        <tbody>${lineItems.map((it, i) => {
-          const amount = it.total_price ?? (it.quantity * it.unit_price);
-          return `<tr>
-            <td class="w-right">${i + 1}</td>
-            <td>${esc(itemLabel(it.item_name))}</td>
-            <td>${esc(spec(it))}</td>
-            <td class="w-right">${qty(it.quantity)}</td>
-            <td>${esc(it.unit)}</td>
-            <td class="w-right w-mono">${formatCurrency(it.unit_price)}</td>
-            <td class="w-right w-mono"><strong>${formatCurrency(amount)}</strong></td>
-          </tr>`;
-        }).join('')}</tbody>
-      </table>`
-    : `<div style="padding:10px 14px;background:#fff8f0;border:1px solid #f0c080;margin-bottom:14px;
-                   font-size:10px;color:#c60;text-align:center">
-         <em>Itemised line items not available for this invoice.</em>
-       </div>`;
+// The bill is headed by the invoice number the customer and the office both quote.
+// Our ids carry prefixes ("INV-", "SO-", "DN-") that the printed document never had.
+const stripPrefix = (id) => String(id || '').replace(/^(INV|SO|DN)-/, '');
 
-  const chargeRows = [
-    inv.freight > 0 ? ['Freight', inv.freight] : null,
-    inv.loading_unloading > 0 ? ['Loading / Unloading', inv.loading_unloading] : null,
-    inv.packing > 0 ? ['Packing', inv.packing] : null,
-    inv.toll_tax > 0 ? ['Toll Tax', inv.toll_tax] : null,
-    inv.slitting > 0 ? ['Slitting', inv.slitting] : null,
-  ].filter(Boolean);
+// Charge lines, in the order the office reads them. Every line prints whether or not it
+// carries a figure: the breakdown is checked against the previous bill line by line, so
+// a row that vanishes when it is zero makes the two impossible to compare.
+const chargeLines = (inv) => [
+  [`GST  ${num(inv.gst_rate, 2)} %`, inv.gst_amount],
+  ['Bending',             inv.bending],
+  ['Freight',             inv.freight],
+  ['Loading & Unloading', inv.loading_unloading],
+  ['Cutting',             inv.cutting],
+  ['Labour',              inv.labour],
+  ['Packing',             inv.packing],
+  ['Toll Tax',            inv.toll_tax],
+  ['Slitting',            inv.slitting],
+  ['Other',               inv.other_charges],
+];
 
-  const chargesBlock = chargeRows.length > 0
-    ? `<div style="margin-bottom:14px;padding:10px 14px;background:#f8f8f8;border:1px solid #eee">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#666;
-                    border-bottom:1px solid #ddd;padding-bottom:4px;margin-bottom:6px">Additional Charges</div>
-        <table class="charge" width="100%">${chargeRows.map(([l, v]) =>
-          `<tr><td>${esc(l)}</td><td class="w-right w-mono">${formatCurrency(v)}</td></tr>`).join('')}
-        </table>
-      </div>`
-    : '';
+// Builds the sales-invoice document spec, shared by the preview and the download, laid
+// out to match the "Sale Bill" the office has always issued.
+//
+// `lineItems` come from so_line_items (by so_ref). `context` carries what the invoice row
+// does not itself hold — the customer's address, and the PO number and date agreed at
+// order confirmation. All optional; each line simply prints blank without it.
+export function buildSalesInvoiceDoc(inv, lineItems = [], context = {}) {
+  const totalQty = lineItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  const totalAmt = lineItems.reduce(
+    (s, it) => s + (Number(it.total_price ?? (it.quantity * it.unit_price)) || 0), 0);
 
-  const totalsBlock = `
-    <table class="totals" width="280" align="right">
-      <tr><td style="color:#444">Subtotal</td>
-          <td class="w-right w-mono">${formatCurrency(inv.subtotal || 0)}</td></tr>
-      ${inv.total_charges > 0
-        ? `<tr><td style="color:#444">Additional Charges</td>
-               <td class="w-right w-mono">${formatCurrency(inv.total_charges)}</td></tr>`
-        : ''}
-      <tr><td class="grand">Grand Total</td>
-          <td class="grand w-right w-mono">${formatCurrency(inv.grand_total || 0)}</td></tr>
+  const itemRows = lineItems.map((it, i) => `
+    <tr>
+      <td align="center">${i + 1}</td>
+      <td>${esc(itemLabel(it.item_name))}</td>
+      <td align="right">${it.coils_rolls != null ? num(it.coils_rolls) : ''}</td>
+      <td align="right">${it.no_of_sheets != null ? num(it.no_of_sheets) : ''}</td>
+      <td align="right">${num(it.quantity)}</td>
+      <td align="right">${rate(it.unit_price)}</td>
+      <td align="right">${num(it.total_price ?? (it.quantity * it.unit_price))}</td>
+    </tr>`).join('');
+
+  // With no stored lines the grid would print headed and empty, so the subtotal stands
+  // in for the detail rather than the bill showing a table with nothing under it.
+  const bodyRows = lineItems.length > 0 ? itemRows : `
+    <tr>
+      <td align="center">1</td>
+      <td><em>Itemised detail not recorded for this invoice</em></td>
+      <td></td><td></td><td></td><td></td>
+      <td align="right">${num(inv.subtotal)}</td>
+    </tr>`;
+
+  // The totals ride in a borderless final row of the same table, so they stay under the
+  // Qty and Amount columns however the column widths are rendered.
+  const itemsTable = `
+    <table class="bill" width="100%" style="border-collapse:collapse">
+      <colgroup>
+        <col width="6%"><col width="40%"><col width="9%"><col width="11%">
+        <col width="11%"><col width="10%"><col width="13%">
+      </colgroup>
+      <thead><tr>
+        <th>Sr #</th><th>Particulars</th><th>Coils /<br>Rolls</th>
+        <th>No of<br>Sheets (size)</th><th>Qty (Kg)</th><th>Rate</th><th>Amount</th>
+      </tr></thead>
+      <tbody>
+        ${bodyRows}
+        <tr>
+          <td class="n" colspan="4"></td>
+          <td class="n" align="right">${num(lineItems.length > 0 ? totalQty : 0)}</td>
+          <td class="n"></td>
+          <td class="n" align="right">${num(lineItems.length > 0 ? totalAmt : inv.subtotal)}</td>
+        </tr>
+      </tbody>
     </table>`;
 
-  const headerRight = `
+  const chargesTable = `
+    <table class="chg" width="62%" align="right" style="border-collapse:collapse">
+      <colgroup><col width="60%"><col width="40%"></colgroup>
+      ${chargeLines(inv).map(([label, value]) => `
+        <tr><td>${esc(label)}</td><td align="right">${num(value)}</td></tr>`).join('')}
+      <tr>
+        <td class="net">Net Amount</td>
+        <td class="net" align="right">${num(inv.grand_total)}</td>
+      </tr>
+    </table>`;
+
+  const companyBlock = `
+    <div style="font-size:17px;font-weight:700">${esc(COMPANY.name)}</div>
+    <div style="font-size:9px;line-height:1.5;margin-top:2px">
+      ${esc(COMPANY.trade)}<br>
+      ${esc(COMPANY.address)}<br>
+      Tel : ${esc(COMPANY.tel)} &nbsp; Mob #: ${esc(COMPANY.mobile)}<br>
+      E-Mail: ${esc(COMPANY.email)}<br>
+      NTN: ${esc(COMPANY.ntn)} &nbsp;|&nbsp; STRN: ${esc(COMPANY.strn)}
+    </div>`;
+
+  const printedAt = new Date().toLocaleString('en-GB', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).replace(', ', ',');
+
+  const titleBlock = `
     <div style="text-align:right">
-      <div style="font-size:17px;font-weight:700">SALES INVOICE</div>
-      <div style="display:inline-block;margin-top:4px;padding:2px 10px;background:#e8f5e9;color:#1b5e20;
-                  border:1px solid #a5d6a7;font-size:9px;font-weight:700;text-transform:uppercase">
-        ${esc((inv.status || 'posted').toUpperCase())}
-      </div>
-    </div>`;
-
-  const metaRight = `
-    <div style="text-align:right;font-size:10px;line-height:1.8">
-      <div><span class="w-muted">Date: </span><strong>${formatDate(inv.date)}</strong></div>
-      ${inv.so_ref ? `<div><span class="w-muted">SO Ref: </span><strong>${esc(inv.so_ref)}</strong></div>` : ''}
-      ${inv.dn_ref ? `<div><span class="w-muted">DN Ref: </span><strong>${esc(inv.dn_ref)}</strong></div>` : ''}
-    </div>`;
-
-  const invNoBlock = `
-    <div>
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#666">Invoice No.</div>
-      <div style="font-size:17px;font-weight:700;font-family:'Courier New',monospace">${esc(inv.sale_inv_id)}</div>
+      <div style="font-size:9px">Print Date&nbsp; ${esc(printedAt)}</div>
+      <div style="font-size:19px;font-weight:700;letter-spacing:1px;margin:2px 0 6px">Sale &nbsp;Bill</div>
+      <table class="bill" style="border-collapse:collapse;margin-left:auto">
+        <tr><th width="130">Date</th><th width="150">Invoice No.</th></tr>
+        <tr>
+          <td align="center">${esc(billDate(inv.date))}</td>
+          <td align="center">${esc(stripPrefix(inv.sale_inv_id))}</td>
+        </tr>
+      </table>
     </div>`;
 
   const billTo = `
-    <div>
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#666;
-                  border-bottom:1px solid #ddd;padding-bottom:4px;margin-bottom:6px">Bill To</div>
-      ${labelValueTable([['Customer:', esc(inv.customer_name || '—')]], { labelWidth: 70 })}
-    </div>`;
+    <table class="box" width="100%" style="border-collapse:collapse">
+      <tr><td class="cap" colspan="3">Bill To</td></tr>
+      <tr>
+        <td width="90"><strong>Party Name</strong></td>
+        <td width="10">:</td>
+        <td><strong>${esc(inv.customer_name || '')}</strong></td>
+      </tr>
+      <tr>
+        <td><strong>Party Address</strong></td>
+        <td>:</td>
+        <td>${esc(context.customerAddress || '')}</td>
+      </tr>
+    </table>`;
 
-  const amountSummary = `
-    <div>
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#666;
-                  border-bottom:1px solid #ddd;padding-bottom:4px;margin-bottom:6px">Amount Summary</div>
-      ${labelValueTable([
-        ['Subtotal:', `<span class="w-mono">${formatCurrency(inv.subtotal || 0)}</span>`],
-        ['Extra Charges:', `<span class="w-mono">${formatCurrency(inv.total_charges || 0)}</span>`],
-      ], { labelWidth: 85 })}
-    </div>`;
+  const metaBlock = `
+    <table class="meta" width="100%" style="border-collapse:collapse">
+      ${[
+        ['Book # :',         esc(inv.manual_bill_no || '')],
+        ['Client P.O# :',    esc(context.poNo || '')],
+        ['P.O Date :',       esc(context.poDate ? billDate(context.poDate) : '')],
+        ['Order #:',         esc(stripPrefix(inv.so_ref))],
+        ['Delivery Number:', esc(stripPrefix(inv.dn_ref))],
+      ].map(([label, value]) => `
+        <tr><td>${label}</td><td align="right"><strong>${value}</strong></td></tr>`).join('')}
+    </table>`;
 
   const body = `
-    ${companyHeader(COMPANY, { rightHtml: headerRight })}
-    ${layoutTable([invNoBlock, metaRight])}
+    ${layoutTable([companyBlock, titleBlock], { widths: ['52%', '48%'] })}
+    <div style="height:10px"></div>
+    ${layoutTable([billTo, metaBlock], { widths: ['55%', '45%'] })}
     <div style="height:12px"></div>
-    ${layoutTable([billTo, amountSummary], { widths: ['50%', '50%'] })}
-    <div style="height:12px"></div>
-    ${itemsSection}
-    ${chargesBlock}
-    ${totalsBlock}
+    ${itemsTable}
+    ${chargesTable}
     <div style="clear:both"></div>
-    ${documentFooter('This is a computer generated document and does not require a physical signature.', COMPANY)}`;
+    ${documentFooter('This is a computer generated document and does not require a physical signature.')}`;
 
   return {
-    filename: inv.sale_inv_id || 'invoice',
-    title: `Invoice ${inv.sale_inv_id || ''}`.trim(),
+    filename: stripPrefix(inv.sale_inv_id) || 'invoice',
+    title: `Sale Bill ${stripPrefix(inv.sale_inv_id)}`.trim(),
     css: CSS,
     body,
   };

@@ -12,10 +12,23 @@ import styles from '../Procurement/NewPDNModal.module.css';
 
 const today = new Date().toISOString().split('T')[0];
 
+// The charge fields the printed sale bill breaks out, in the order it lists them.
+const CHARGE_FIELDS = [
+  ['bending',           'Bending (PKR)'],
+  ['freight',           'Freight (PKR)'],
+  ['loading_unloading', 'Loading & Unloading (PKR)'],
+  ['cutting',           'Cutting (PKR)'],
+  ['labour',            'Labour (PKR)'],
+  ['packing',           'Packing (PKR)'],
+  ['toll_tax',          'Toll Tax (PKR)'],
+  ['slitting',          'Slitting (PKR)'],
+  ['other_charges',     'Other Charges (PKR)'],
+];
+
 const EMPTY = {
   delivery_date: today, vehicle_no: '', driver_name: '', driver_mobile: '', dispatched_by: '',
-  sale_type: 'credit',
-  freight: '0', loading_unloading: '0', packing: '0', toll_tax: '0', slitting: '0',
+  sale_type: 'credit', gst_rate: '0',
+  ...Object.fromEntries(CHARGE_FIELDS.map(([k]) => [k, '0'])),
 };
 
 // A "Cash" payment term on the work order means the goods are paid for on the spot;
@@ -46,9 +59,12 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
   );
 
   const subtotal = order?.total_amount ?? 0;
-  const charges = ['freight', 'loading_unloading', 'packing', 'toll_tax', 'slitting']
-    .reduce((sum, k) => sum + (parseFloat(form[k]) || 0), 0);
-  const grandTotal = subtotal + charges;
+  const charges = CHARGE_FIELDS.reduce((sum, [k]) => sum + (parseFloat(form[k]) || 0), 0);
+  // GST is charged on the goods and the services billed with them, which is what the
+  // subtotal and charges together are — not on the goods alone.
+  const gstRate   = parseFloat(form.gst_rate) || 0;
+  const gstAmount = Math.round((subtotal + charges) * gstRate) / 100;
+  const grandTotal = subtotal + charges + gstAmount;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -90,12 +106,10 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
         customer_name:      workOrder.customer_name,
         date:               form.delivery_date,
         subtotal,
-        freight:            parseFloat(form.freight) || 0,
-        loading_unloading:  parseFloat(form.loading_unloading) || 0,
-        packing:            parseFloat(form.packing) || 0,
-        toll_tax:           parseFloat(form.toll_tax) || 0,
-        slitting:           parseFloat(form.slitting) || 0,
+        ...Object.fromEntries(CHARGE_FIELDS.map(([k]) => [k, parseFloat(form[k]) || 0])),
         total_charges:      charges,
+        gst_rate:           gstRate,
+        gst_amount:         gstAmount,
         grand_total:        grandTotal,
         sale_type:          form.sale_type,
         status:             'posted',
@@ -113,8 +127,10 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
             line_no:     l.line_no ?? i + 1,
             item_name:   l.item_name,
             unit:        l.unit  || null,
-            gauge:       l.gauge || null,
-            size:        l.size  || null,
+            gauge:        l.gauge || null,
+            size:         l.size  || null,
+            coils_rolls:  l.coils_rolls  ?? null,
+            no_of_sheets: l.no_of_sheets ?? null,
             quantity:    parseFloat(l.quantity) || 0,
             unit_price:  parseFloat(l.unit_price) || 0,
             total_price: parseFloat(l.total_price) || (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_price) || 0),
@@ -191,11 +207,11 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
         <Input label="Driver Name"      value={form.driver_name}   onChange={set('driver_name')}   placeholder="Driver's name" />
         <Input label="Driver Mobile"    value={form.driver_mobile} onChange={set('driver_mobile')} placeholder="03XX-XXXXXXX" />
 
-        <Input label="Freight (PKR)"           type="number" min="0" value={form.freight}           onChange={set('freight')} />
-        <Input label="Loading/Unloading (PKR)" type="number" min="0" value={form.loading_unloading} onChange={set('loading_unloading')} />
-        <Input label="Packing (PKR)"           type="number" min="0" value={form.packing}           onChange={set('packing')} />
-        <Input label="Toll Tax (PKR)"          type="number" min="0" value={form.toll_tax}          onChange={set('toll_tax')} />
-        <Input label="Slitting (PKR)"          type="number" min="0" value={form.slitting}          onChange={set('slitting')} />
+        {CHARGE_FIELDS.map(([key, label]) => (
+          <Input key={key} label={label} type="number" min="0" value={form[key]} onChange={set(key)} />
+        ))}
+        <Input label="GST (%)" type="number" min="0" max="100" step="0.01"
+               value={form.gst_rate} onChange={set('gst_rate')} />
 
         <div className="ff">
           <span className={styles.itemsLabel}>
@@ -223,6 +239,7 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
         <div className="ff" style={{ display: 'flex', gap: 24, fontSize: 13, background: 'var(--bg-tertiary)', padding: '10px 14px', borderRadius: 'var(--radius-md)' }}>
           <span>Subtotal: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>PKR {subtotal.toLocaleString('en-PK')}</strong></span>
           <span>Charges: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>PKR {charges.toLocaleString('en-PK')}</strong></span>
+          <span>GST: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>PKR {gstAmount.toLocaleString('en-PK')}</strong></span>
           <span>Grand Total: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--primary)' }}>PKR {grandTotal.toLocaleString('en-PK')}</strong></span>
         </div>
       </form>

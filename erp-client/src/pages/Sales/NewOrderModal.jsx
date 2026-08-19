@@ -16,7 +16,8 @@ import styles from '../Procurement/NewPDNModal.module.css';
 const today = new Date().toISOString().split('T')[0];
 
 const EMPTY_ORDER = { customer_id: '', orderDate: today, deliveryDate: '', remarks: '' };
-const EMPTY_DRAFT = { productId: '', code: '', name: '', unit: '', gauge: '', size: '', qty: '', ratePerKg: '' };
+const EMPTY_DRAFT = { productId: '', code: '', name: '', unit: '', gauge: '', size: '',
+                      coils: '', sheets: '', qty: '', ratePerKg: '' };
 
 export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }) {
   const toast = useToast();
@@ -105,8 +106,12 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
           item_name:   it.name,
           quantity:    it.qty,
           unit:        it.unit || 'Kilo Grams',
-          gauge:       it.gauge || null,
-          size:        it.size  || null,
+          gauge:        it.gauge || null,
+          size:         it.size  || null,
+          // Printed on the sale bill under "Coils / Rolls" and "No of Sheets"; blank
+          // where the office does not count them for that item.
+          coils_rolls:  it.coils  === '' ? null : parseFloat(it.coils),
+          no_of_sheets: it.sheets === '' ? null : parseFloat(it.sheets),
           unit_price:  it.rate,
           total_price: it.total_price,
           company_id:  companyId,
@@ -191,7 +196,7 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
 
       <div style={{ marginTop: 20 }}>
         <span className={styles.itemsLabel}>Order Items <span className={styles.req}>*</span></span>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 0.8fr 0.8fr 1fr auto', gap: 10, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 0.7fr 0.7fr 0.8fr 0.8fr 1fr auto', gap: 10, alignItems: 'start' }}>
           <SearchableSelect
             placeholder={productCatalogue.length ? 'Select product...' : 'No items yet — add one via New Item'}
             emptyText="No products"
@@ -199,6 +204,8 @@ export default function NewOrderModal({ open, onClose, onSave, prefillCustomer }
             onChange={handleProductSelect}
             options={productOptions}
           />
+          <Input type="number" min="0" step="1" placeholder="Coils" value={draft.coils} onChange={setD('coils')} />
+          <Input type="number" min="0" step="1" placeholder="Sheets" value={draft.sheets} onChange={setD('sheets')} />
           <Input type="number" min="0.001" step="0.001" placeholder="Qty" value={draft.qty} onChange={setD('qty')} />
           <Input placeholder="Unit" value={draft.unit} onChange={setD('unit')} />
           <Input type="number" min="0" step="0.01" placeholder="Rate" value={draft.ratePerKg} onChange={setD('ratePerKg')} />

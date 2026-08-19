@@ -1012,12 +1012,37 @@ export const salesDb = {
     const all = [];
     for (let i = 0; i < refs.length; i += CHUNK) {
       const { data, error } = await supabase.from('so_line_items')
-        .select('so_id, line_no, item_name, unit, gauge, size, quantity, unit_price, total_price')
+        .select('so_id, line_no, item_name, unit, gauge, size, quantity, unit_price, total_price, coils_rolls, no_of_sheets')
         .in('so_id', refs.slice(i, i + CHUNK));
       if (error) return { data: null, error };
       if (data) all.push(...data);
     }
     return { data: all, error: null };
+  },
+
+  // The parts of a printed sale bill that the invoice row does not itself carry: the
+  // customer's address for the Bill To box, and the PO number agreed at order
+  // confirmation. Both are looked up on demand rather than joined into the invoice list —
+  // that list is 19,000 rows and only ever one of them is printed at a time.
+  //
+  // Neither lookup is essential to the document, so a failure returns what it has and the
+  // corresponding line prints blank instead of the print failing outright.
+  getInvoicePrintContext: async ({ customerName, soRef, companyId = 1 }) => {
+    const [cust, conf] = await Promise.all([
+      customerName
+        ? supabase.from('customers').select('address').eq('name', customerName)
+            .eq('company_id', companyId).limit(1).maybeSingle()
+        : Promise.resolve({ data: null }),
+      soRef
+        ? supabase.from('order_confirmations').select('po_no, confirm_date')
+            .eq('so_ref', soRef).limit(1).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    return {
+      customerAddress: cust?.data?.address || '',
+      poNo: conf?.data?.po_no || '',
+      poDate: conf?.data?.confirm_date || '',
+    };
   },
 
   // Sold-item detail for a new order. `company_id` must be set explicitly on every row:
@@ -1062,14 +1087,25 @@ export const salesDb = {
       { field: 'loading_unloading', code: '10-02-002-000002', name: 'Loading Unloading Charges (Income)' },
       { field: 'packing',           code: '10-02-002-000003', name: 'Packing Charges' },
       { field: 'toll_tax',          code: '10-02-002-000004', name: 'Toll Tax Charges (Income)' },
+      { field: 'other_charges',     code: '10-02-002-000005', name: 'Other Charges (Income)' },
       { field: 'slitting',          code: '10-02-002-000006', name: 'Slitting Charges (Income)' },
+      { field: 'cutting',           code: '10-02-002-000007', name: 'Cutting Charges (Income)' },
+      { field: 'labour',            code: '10-02-002-000008', name: 'Labour Charges (Income)' },
+      { field: 'bending',           code: '10-02-002-000009', name: 'Bending & Chanelling Charges (Income)' },
     ];
+
+    // Output sales tax is money collected for the revenue authority, not earnings, so it
+    // credits the tax creditor rather than an income account.
+    const gstAmount = parseFloat(invoice.gst_amount) || 0;
 
     const creditParts = [
       { code: '10-01-001-000001', name: 'Goods Sales', parent: '10-01-001', amount: subtotal },
       ...CHARGE_ACCOUNTS
         .map(c => ({ ...c, parent: '10-02-002', amount: parseFloat(invoice[c.field]) || 0 }))
         .filter(c => c.amount > 0),
+      ...(gstAmount > 0
+        ? [{ code: '14-01-003-000001', name: 'Taxes', parent: '14-01-003', type: 'Liability', amount: gstAmount }]
+        : []),
     ];
 
     // Anything in grand_total that the named parts don't account for (an ad-hoc charge,
@@ -1083,7 +1119,7 @@ export const salesDb = {
 
     const [arAccount, ...creditAccounts] = await Promise.all([
       financeDb.ensureLedgerAccount({ code: '11-03-001-000001', name: 'Accounts Receivable', type: 'Asset', parent: '11-03-001', companyId }),
-      ...creditParts.map(p => financeDb.ensureLedgerAccount({ code: p.code, name: p.name, type: 'Income', parent: p.parent, companyId })),
+      ...creditParts.map(p => financeDb.ensureLedgerAccount({ code: p.code, name: p.name, type: p.type || 'Income', parent: p.parent, companyId })),
     ]);
     if (!arAccount || creditAccounts.some(a => !a)) {
       throw new Error('Could not resolve the ledger accounts for this invoice.');
