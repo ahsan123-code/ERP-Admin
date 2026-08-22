@@ -35,7 +35,9 @@ Resources/
 videos/
 
 # Loose files at root
-*.png
+# Root-anchored: an unanchored *.png also swallowed erp-client/public, whose favicon
+# and brand mark index.html references by name and the deploy needs on disk.
+/*.png
 *.py
 inovice.png
 Checking.png

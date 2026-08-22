@@ -29,10 +29,20 @@
 .logoMark {
   width: 34px; height: 34px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--primary), #818cf8);
+  /* The tile carries the ASC blue rather than the interface indigo, so the sidebar
+     mark, the browser tab and the printed bill all read as the same brand. */
+  background: linear-gradient(135deg, #0247AE, #2C6FD6);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(99,102,241,0.40);
+  box-shadow: 0 4px 12px rgba(2,71,174,0.40);
+}
+
+/* The wordmark is 2.37:1, so it is sized on width and left to find its own height
+   rather than being squared off inside the tile. */
+.logoImg {
+  width: 22px;
+  height: auto;
+  display: block;
 }
 
 .logoText { flex: 1; min-width: 0; overflow: hidden; }

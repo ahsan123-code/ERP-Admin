@@ -4,7 +4,7 @@ import {
   Receipt, Wallet, UserCheck, ChevronRight,
   BarChart3, TrendingUp,
   PanelLeftClose, PanelLeftOpen,
-  Scale, Coins, Settings as SettingsIcon,
+  Coins, Settings as SettingsIcon,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAdminProfile } from '../../context/AdminProfileContext';
@@ -244,7 +244,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
       <div className={styles.logoSection}>
         {!collapsed && (
           <div className={styles.logoMark}>
-            <Scale size={16} color="#fff" strokeWidth={2} />
+            <img src="/asc-mark.png" alt="Allied Steel Center" className={styles.logoImg} />
           </div>
         )}
         {!collapsed && (
