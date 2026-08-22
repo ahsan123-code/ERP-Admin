@@ -8,50 +8,6 @@
 @media (max-width: 1024px) { .summaryGrid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 480px)  { .summaryGrid { grid-template-columns: 1fr; } }
 
-.pageTabs {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  padding: 6px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.pageTab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
-.pageTabActive { background: var(--primary-muted); color: var(--primary); }
-
-.pageTabBadge {
-  background: var(--bg-muted);
-  color: var(--text-secondary);
-  border-radius: var(--radius-full);
-  padding: 1px 7px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-}
-.pageTabActive .pageTabBadge {
-  background: var(--primary);
-  color: #FFFFFF;
-}
-
 .summaryCard {
   background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
   border: 1px solid var(--border-subtle);

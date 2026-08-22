@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { TrendingUp, Scale, Plus, Landmark, FileCheck, CreditCard, BarChart2, BookOpen, Banknote, ArrowRightLeft, Coins, CalendarDays, Trash2, Check, Ban, Pencil } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { TrendingUp, Scale, Plus, Landmark, Coins, Trash2, Check, Ban, Pencil } from 'lucide-react';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import NewVoucherModal from './NewVoucherModal';
@@ -37,18 +37,6 @@ const AGING_COLS = [
   },
 ];
 
-
-const PAGE_TABS = [
-  { value: 'vouchers', label: 'Vouchers', icon: FileCheck },
-  { value: 'banks', label: 'Bank Accounts', icon: Landmark },
-  { value: 'cheques', label: 'Cheques', icon: CreditCard },
-  { value: 'accounts', label: 'Chart of Accounts', icon: BookOpen },
-  { value: 'aging', label: 'Aging', icon: BarChart2 },
-  { value: 'cash', label: 'Cash Received', icon: Banknote },
-  { value: 'inter-bank', label: 'Inter Bank Transfer', icon: ArrowRightLeft },
-  { value: 'petty', label: 'Petty Cash', icon: Coins },
-  { value: 'daily', label: 'Daily Cash', icon: CalendarDays },
-];
 
 const CR_COLS = [
   { key: 'cr_id', label: 'Ref No.', width: 100, render: v => <span className={styles.code}>{v}</span> },
@@ -99,17 +87,11 @@ const SEG_TO_TAB = {
   bank: 'banks', cheques: 'cheques', accounts: 'accounts', aging: 'aging',
   'cash-received': 'cash', 'inter-bank': 'inter-bank', 'petty-cash': 'petty', 'daily-cash': 'daily',
 };
-const TAB_TO_SEG = {
-  vouchers: 'vouchers', banks: 'bank', cheques: 'cheques', accounts: 'accounts', aging: 'aging',
-  cash: 'cash-received', 'inter-bank': 'inter-bank', petty: 'petty-cash', daily: 'daily-cash',
-};
 
 export default function Finance() {
   const location = useLocation();
-  const navigate = useNavigate();
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'vouchers';
-  const setPageTab = (tab) => navigate(`/finance/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
   const toast = useToast();
   const { companyId } = useCompany();
@@ -498,17 +480,22 @@ export default function Finance() {
         title="Finance"
         subtitle="General ledger, vouchers, bank accounts, cheques, and aging"
         actions={
-          pageTab === 'vouchers' ? (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {pendingCheques > 0 && pageTab !== 'cheques' && (
+              <span className={styles.tabAlert}>{pendingCheques} cheques pending</span>
+            )}
+            {pageTab === 'vouchers' ? (
+            <>
               <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Receipt'); setPrvMode('cash'); setPrvOpen(true); }}>New Receipt</Button>
               <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Payment'); setPrvMode('cash'); setPrvOpen(true); }}>New Payment</Button>
               <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Receipt'); setPrvMode('bank'); setPrvOpen(true); }}>Bank Receipt (BRV)</Button>
               <Button variant="secondary" icon={<Plus size={15} />} onClick={() => { setPrvType('Payment'); setPrvMode('bank'); setPrvOpen(true); }}>Bank Payment (BPV)</Button>
               <Button icon={<Plus size={15} />} onClick={() => { setEditVch(null); setVchOpen(true); }}>New Voucher</Button>
-            </div>
-          ) : (
-            <Button icon={<Plus size={15} />} onClick={() => { setEditVch(null); setVchOpen(true); }}>New Voucher</Button>
-          )
+            </>
+            ) : (
+              <Button icon={<Plus size={15} />} onClick={() => { setEditVch(null); setVchOpen(true); }}>New Voucher</Button>
+            )}
+          </div>
         }
       />
 
@@ -590,22 +577,6 @@ export default function Finance() {
             ))}
           </div>
         </div>
-      </div>
-
-      <div className={styles.pageTabs}>
-        {PAGE_TABS.map(t => (
-          <button
-            key={t.value}
-            className={`${styles.pageTab} ${pageTab === t.value ? styles.pageTabActive : ''}`}
-            onClick={() => setPageTab(t.value)}
-          >
-            <t.icon size={15} strokeWidth={1.75} />
-            {t.label}
-          </button>
-        ))}
-        {pendingCheques > 0 && pageTab !== 'cheques' && (
-          <span className={styles.tabAlert}>{pendingCheques} cheques pending</span>
-        )}
       </div>
 
       {pageTab === 'vouchers' && (

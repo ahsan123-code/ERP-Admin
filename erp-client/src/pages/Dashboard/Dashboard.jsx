@@ -1,10 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  TrendingUp, ShoppingBag, Factory, Package,
-  Users, Warehouse, ShoppingCart,
-  ReceiptText, Landmark, ArrowRight, BarChart3,
-  LayoutDashboard, Boxes, FileBarChart, Navigation, Receipt,
+  TrendingUp, ShoppingBag, Factory, Package, Users, Warehouse, ShoppingCart, ReceiptText,
+  Landmark, ArrowRight,
 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import StatCard from '../../components/shared/StatCard';
@@ -27,15 +25,6 @@ const CHART_RANGES = [
   { value: '6m',  label: '6 Months' },
   { value: '1y',  label: '1 Year'   },
   { value: '3y',  label: '3 Years'  },
-];
-
-const PAGE_TABS = [
-  { value: 'overview',      label: 'Overview',        icon: LayoutDashboard },
-  { value: 'analytics',     label: 'Analytics',       icon: BarChart3       },
-  { value: 'stock',         label: 'Available Stock', icon: Boxes           },
-  { value: 'sales-summary', label: 'Sales Summary',   icon: FileBarChart    },
-  { value: 'tracking',      label: 'Sales Tracking',  icon: Navigation      },
-  { value: 'sales-tax',     label: 'Sales Tax',       icon: Receipt         },
 ];
 
 const SEG_TO_TAB = {
@@ -265,10 +254,6 @@ export default function Dashboard() {
   const navigate  = useNavigate();
   const seg = location.pathname.split('/').filter(Boolean);
   const subView = (seg[0] === 'dashboard' && seg[1]) ? (SEG_TO_TAB[seg[1]] ?? 'overview') : 'overview';
-  const setSubView = (v) => {
-    if (v === 'overview') navigate('/', { replace: true });
-    else navigate(`/dashboard/${v}`, { replace: true });
-  };
 
   const { companyId } = useCompany();
   const [chartRange, setChartRange]     = useState('1y');
@@ -363,19 +348,6 @@ export default function Dashboard() {
         onSave={() => { setShowNewOrder(false); setPrefillCustomer(null); }}
         prefillCustomer={prefillCustomer}
       />
-
-      <div className={styles.pageTabs}>
-        {PAGE_TABS.map(t => (
-          <button
-            key={t.value}
-            className={`${styles.pageTab} ${subView === t.value ? styles.pageTabActive : ''}`}
-            onClick={() => setSubView(t.value)}
-          >
-            <t.icon size={15} strokeWidth={1.75} />
-            {t.label}
-          </button>
-        ))}
-      </div>
 
       {/* ── Overview ─────────────────────────────────────────────── */}
       {subView === 'overview' && (

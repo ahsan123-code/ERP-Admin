@@ -78,36 +78,6 @@
 }
 
 /* ── Page Tabs ────────────────────────────────────────────────────────────── */
-.pageTabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.pageTab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
-.pageTabActive {
-  background: var(--primary-muted);
-  border-color: var(--primary-border, var(--primary));
-  color: var(--primary-text, var(--primary));
-  font-weight: 600;
-}
-
 .totalVal { font-weight: 700; color: var(--text-primary); }
 
 /* ── Row action buttons (Approve PR, Confirm PO) ─────────────────────────── */

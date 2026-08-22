@@ -1,9 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import {
-  Plus, ShoppingCart, Users, ClipboardList, Package, Trash2,
-  FileText, ReceiptText, ArrowDownToLine, CheckCircle2, Loader2,
-} from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Plus, ShoppingCart, Users, ClipboardList, Package, Trash2, CheckCircle2, Loader2 } from 'lucide-react';
 import NewPDNModal                   from './NewPDNModal';
 import ApprovePRModal                from './ApprovePRModal';
 import NewPurchaseOrderModal         from './NewPurchaseOrderModal';
@@ -28,30 +25,13 @@ const SEG_TO_TAB = {
   '': 'pdns', pdns: 'pdns', requisitions: 'requisitions', orders: 'orders',
   gatepass: 'gatepass', grns: 'grns', invoices: 'invoices', vendors: 'vendors',
 };
-const TAB_TO_SEG = {
-  pdns: 'pdns', requisitions: 'requisitions', orders: 'orders',
-  gatepass: 'gatepass', grns: 'grns', invoices: 'invoices', vendors: 'vendors',
-};
-
-const PAGE_TABS = [
-  { value: 'pdns',         label: 'Demand Notes',      icon: ClipboardList  },
-  { value: 'requisitions', label: 'Requisitions',      icon: FileText       },
-  { value: 'orders',       label: 'Purchase Orders',   icon: ShoppingCart   },
-  { value: 'gatepass',     label: 'Gate Pass Inward',  icon: ArrowDownToLine},
-  { value: 'grns',         label: 'GRNs',              icon: Package        },
-  { value: 'invoices',     label: 'Purchase Invoices', icon: ReceiptText    },
-  { value: 'vendors',      label: 'Vendors',           icon: Users          },
-];
-
 export default function Procurement() {
   const location  = useLocation();
-  const navigate  = useNavigate();
   const { companyId } = useCompany();
   const toast = useToast();
 
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'pdns';
-  const setPageTab = (tab) => navigate(`/procurement/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
   // Modal open states
   const [pdnOpen,        setPdnOpen]        = useState(false);
@@ -371,19 +351,6 @@ export default function Procurement() {
               <p className={styles.summaryValue}>{s.value}</p>
             </div>
           </div>
-        ))}
-      </div>
-
-      <div className={styles.pageTabs}>
-        {PAGE_TABS.map(t => (
-          <button
-            key={t.value}
-            className={`${styles.pageTab} ${pageTab === t.value ? styles.pageTabActive : ''}`}
-            onClick={() => setPageTab(t.value)}
-          >
-            <t.icon size={14} strokeWidth={1.75} />
-            {t.label}
-          </button>
         ))}
       </div>
 

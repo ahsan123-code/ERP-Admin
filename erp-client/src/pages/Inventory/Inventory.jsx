@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { Warehouse, Package, TriangleAlert, Plus, Trash2, Pencil } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
@@ -28,21 +28,11 @@ const TABS = [
 const SEG_TO_TAB = {
   '': 'items', items: 'items', warehouse: 'warehouse', alerts: 'alerts',
 };
-const TAB_TO_SEG = { items: 'items', warehouse: 'warehouse', alerts: 'alerts' };
-
-const PAGE_TABS = [
-  { value: 'items',     label: 'Items & Stock',    icon: Package       },
-  { value: 'warehouse', label: 'Warehouse Stock',  icon: Warehouse     },
-  { value: 'alerts',    label: 'Low Stock Alerts', icon: TriangleAlert },
-];
-
 export default function Inventory() {
   const { companyId } = useCompany();
   const location = useLocation();
-  const navigate = useNavigate();
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'items';
-  const setPageTab = (t) => navigate(`/inventory/${TAB_TO_SEG[t] ?? t}`, { replace: true });
 
   const toast = useToast();
   const [tab, setTab] = useState('all');
@@ -164,26 +154,15 @@ export default function Inventory() {
       <PageHeader
         title="Inventory"
         subtitle="Product catalogue, stock levels, batches, and warehouse locations"
-        actions={pageTab === 'items'
-          ? <Button icon={<Plus size={15} />} onClick={() => setInwardOpen(true)}>New Item</Button>
-          : null}
-      />
-
-      <div className={styles.pageTabs}>
-        {PAGE_TABS.map(t => (
-          <button
-            key={t.value}
-            className={`${styles.pageTab} ${pageTab === t.value ? styles.pageTabActive : ''}`}
-            onClick={() => setPageTab(t.value)}
-          >
-            <t.icon size={14} strokeWidth={1.75} />
-            {t.label}
-            {t.value === 'alerts' && lowStockAlerts.length > 0 && (
-              <span className={styles.tabBadge}>{lowStockAlerts.length}</span>
+        actions={
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {lowStockAlerts.length > 0 && <Badge variant="warning">{lowStockAlerts.length} low stock</Badge>}
+            {pageTab === 'items' && (
+              <Button icon={<Plus size={15} />} onClick={() => setInwardOpen(true)}>New Item</Button>
             )}
-          </button>
-        ))}
-      </div>
+          </div>
+        }
+      />
 
       {/* ── Items & Stock ─────────────────────────────────────────────── */}
       {pageTab === 'items' && (

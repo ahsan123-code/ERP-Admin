@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Users, CalendarCheck, Palmtree, Banknote, HandCoins, FileDown, Pencil, FileSpreadsheet, Trash2, Check, X } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import {
+  Plus, Users, CalendarCheck, Palmtree, Banknote, FileDown, Pencil, FileSpreadsheet, Trash2,
+  Check, X,
+} from 'lucide-react';
 import AddEmployeeModal from './AddEmployeeModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import EditEmployeeModal from './EditEmployeeModal';
@@ -143,22 +146,10 @@ const SEG_TO_TAB = {
   loans: 'loans',
   payroll: 'payroll',
 };
-const TAB_TO_SEG = { employees: 'employees', attendance: 'attendance', leave: 'leaves', loans: 'loans', payroll: 'payroll' };
-
-const PAGE_TABS = [
-  { value: 'employees',  label: 'Employees',  icon: Users         },
-  { value: 'attendance', label: 'Attendance', icon: CalendarCheck },
-  { value: 'leave',      label: 'Leave',      icon: Palmtree      },
-  { value: 'payroll',    label: 'Payroll',    icon: Banknote      },
-  { value: 'loans',      label: 'Loans',      icon: HandCoins     },
-];
-
 export default function HR() {
   const location = useLocation();
-  const navigate  = useNavigate();
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'employees';
-  const setPageTab = (tab) => navigate(`/hr/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
   const [empOpen,      setEmpOpen]      = useState(false);
   const [editEmp,      setEditEmp]      = useState(null);
@@ -259,7 +250,12 @@ export default function HR() {
       <PageHeader
         title="HR & Payroll"
         subtitle="Allied Steel Center — employees, attendance, leave, payroll, and loans"
-        actions={<Button icon={<Plus size={15} />} onClick={() => setEmpOpen(true)}>Add Employee</Button>}
+        actions={
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {activeLoans > 0 && <Badge variant="warning">{activeLoans} active loans</Badge>}
+            <Button icon={<Plus size={15} />} onClick={() => setEmpOpen(true)}>Add Employee</Button>
+          </div>
+        }
       />
 
       <div className={styles.summaryGrid}>
@@ -273,22 +269,6 @@ export default function HR() {
               <p className={styles.summaryValue}>{s.value}</p>
             </div>
           </div>
-        ))}
-      </div>
-
-      <div className={styles.pageTabs}>
-        {PAGE_TABS.map(t => (
-          <button
-            key={t.value}
-            className={`${styles.pageTab} ${pageTab === t.value ? styles.pageTabActive : ''}`}
-            onClick={() => setPageTab(t.value)}
-          >
-            <t.icon size={15} strokeWidth={1.75} />
-            {t.label}
-            {t.value === 'loans' && activeLoans > 0 && (
-              <span className={styles.pageTabBadge}>{activeLoans}</span>
-            )}
-          </button>
         ))}
       </div>
 

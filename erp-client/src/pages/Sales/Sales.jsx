@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import {
-  Plus, ShoppingBag, Users, Truck, RotateCcw,
-  ClipboardCheck, Factory, Receipt, KeyRound, Trash2, CheckCircle2, Send,
-} from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Plus, ShoppingBag, Users, Truck, RotateCcw, Trash2, CheckCircle2, Send } from 'lucide-react';
 import NewOrderModal from './NewOrderModal';
 import NewCustomerModal from './NewCustomerModal';
 import ConfirmOrderModal from './ConfirmOrderModal';
@@ -32,23 +29,6 @@ const SEG_TO_TAB = {
   returns: 'returns',
   'gate-pass': 'gate-pass',
 };
-const TAB_TO_SEG = {
-  orders: 'orders', confirmation: 'confirmation', 'work-order': 'work-order',
-  customers: 'customers', deliveries: 'delivery', invoice: 'invoice',
-  returns: 'returns', 'gate-pass': 'gate-pass',
-};
-
-const PAGE_TABS = [
-  { value: 'orders',       label: 'Order Booking',      icon: ShoppingBag    },
-  { value: 'confirmation', label: 'Order Confirmation',  icon: ClipboardCheck },
-  { value: 'work-order',   label: 'Work Orders',         icon: Factory        },
-  { value: 'customers',    label: 'Customers',           icon: Users          },
-  { value: 'deliveries',   label: 'Deliveries',          icon: Truck          },
-  { value: 'invoice',      label: 'Sales Invoice',       icon: Receipt        },
-  { value: 'returns',      label: 'Returns',             icon: RotateCcw      },
-  { value: 'gate-pass',    label: 'Gate Pass',           icon: KeyRound       },
-];
-
 const OC_COLS = [
   { key: 'confirm_id',    label: 'Confirm No.',  width: 120, render: v => <span className={styles.code}>{v}</span> },
   { key: 'so_ref',        label: 'Order Ref.',   width: 110, render: v => <span className={styles.code}>{v}</span> },
@@ -114,10 +94,8 @@ const GP_COLS = [
 
 export default function Sales() {
   const location = useLocation();
-  const navigate  = useNavigate();
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'orders';
-  const setPageTab = (tab) => navigate(`/sales/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
   const { companyId } = useCompany();
   const toast = useToast();
@@ -295,13 +273,6 @@ export default function Sales() {
     return o.status === soTab;
   });
 
-  const tabCounts = {
-    orders: orders.length, confirmation: orderConfirmations.length,
-    'work-order': workOrders.length, customers: customers.length,
-    deliveries: deliveryNotes.length, invoice: salesInvoices.length,
-    returns: salesReturns.length, 'gate-pass': gatePasses.length,
-  };
-
   const stats = [
     { icon: ShoppingBag, label: 'Open Orders',     value: openOrders,      color: 'blue'   },
     { icon: Truck,       label: 'Dispatched',       value: dispatchedCount, color: 'orange' },
@@ -331,23 +302,9 @@ export default function Sales() {
         ))}
       </div>
 
-      <div className={styles.pageTabs}>
-        {PAGE_TABS.map(t => (
-          <button
-            key={t.value}
-            className={`${styles.pageTab} ${pageTab === t.value ? styles.pageTabActive : ''}`}
-            onClick={() => setPageTab(t.value)}
-          >
-            <t.icon size={14} strokeWidth={1.75} />
-            {t.label}
-            <span className={styles.pageTabBadge}>{tabCounts[t.value]}</span>
-          </button>
-        ))}
-      </div>
-
       {pageTab === 'orders' && (
         <Card padding={false}>
-          <CardHeader title="Order Booking" subtitle="All sales orders" />
+          <CardHeader title="Order Booking" subtitle={`${orders.length} sales orders`} />
           <DataTable
             columns={SO_COLS} data={soData} loading={loadOrders} keyField="so_id" searchPlaceholder="Search orders..."
             filterTabs={[
@@ -363,14 +320,14 @@ export default function Sales() {
 
       {pageTab === 'confirmation' && (
         <Card padding={false}>
-          <CardHeader title="Order Confirmation" subtitle="Review and confirm customer orders" />
+          <CardHeader title="Order Confirmation" subtitle={`${orderConfirmations.length} orders to review and confirm`} />
           <DataTable columns={OC_COLS} data={orderConfirmations} loading={loadOC} keyField="confirm_id" searchPlaceholder="Search confirmations..." />
         </Card>
       )}
 
       {pageTab === 'work-order' && (
         <Card padding={false}>
-          <CardHeader title="Work Orders" subtitle="Production work orders linked to confirmed orders" />
+          <CardHeader title="Work Orders" subtitle={`${workOrders.length} work orders linked to confirmed orders`} />
           <DataTable columns={WO_COLS} data={workOrders} loading={loadWO} keyField="wo_id" searchPlaceholder="Search work orders..." />
         </Card>
       )}
@@ -388,28 +345,28 @@ export default function Sales() {
 
       {pageTab === 'deliveries' && (
         <Card padding={false}>
-          <CardHeader title="Delivery Notes" subtitle="Challan and dispatch records" />
+          <CardHeader title="Delivery Notes" subtitle={`${deliveryNotes.length} challan and dispatch records`} />
           <DataTable columns={DN_COLS} data={deliveryNotes} loading={loadDN} keyField="delivery_id" searchPlaceholder="Search deliveries..." />
         </Card>
       )}
 
       {pageTab === 'invoice' && (
         <Card padding={false}>
-          <CardHeader title="Sales Invoice" subtitle="Invoices with freight, loading, packing, toll and slitting charges" />
+          <CardHeader title="Sales Invoice" subtitle={`${salesInvoices.length} invoices with freight, loading, packing, toll and slitting charges`} />
           <DataTable columns={SINV_COLS} data={salesInvoices} loading={loadInv} keyField="sale_inv_id" searchPlaceholder="Search invoices..." />
         </Card>
       )}
 
       {pageTab === 'returns' && (
         <Card padding={false}>
-          <CardHeader title="Sales Returns" subtitle="Customer return and credit notes" />
+          <CardHeader title="Sales Returns" subtitle={`${salesReturns.length} customer return and credit notes`} />
           <DataTable columns={RETURN_COLS} data={salesReturns} loading={loadSR} keyField="return_id" searchPlaceholder="Search returns..." />
         </Card>
       )}
 
       {pageTab === 'gate-pass' && (
         <Card padding={false}>
-          <CardHeader title="Gate Pass" subtitle="Vehicle exit passes for outgoing goods" />
+          <CardHeader title="Gate Pass" subtitle={`${gatePasses.length} vehicle exit passes for outgoing goods`} />
           <DataTable columns={GP_COLS} data={gatePasses} loading={loadGP} keyField="gate_pass_id" searchPlaceholder="Search gate passes..." />
         </Card>
       )}

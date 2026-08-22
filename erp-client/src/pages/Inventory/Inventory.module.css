@@ -212,48 +212,6 @@
 }
 
 /* Page tabs (Items & Stock / Warehouse / Low Stock Alerts) */
-.pageTabs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.pageTab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
-.pageTabActive {
-  background: var(--primary-muted);
-  border-color: var(--primary-border, var(--primary));
-  color: var(--primary-text, var(--primary));
-  font-weight: 600;
-}
-.tabBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--orange, #f59e0b);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-}
-
 /* Set / edit low-stock alert limit — clear inline call-to-action */
 .limitBtn {
   display: inline-flex;

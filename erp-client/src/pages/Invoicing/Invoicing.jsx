@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
-  BadgeCheck, AlertCircle, RefreshCw, ReceiptText, Plus,
-  CloudUpload, Wifi, WifiOff, RotateCcw, FileText, Trash2, FileDown, Eye,
+  BadgeCheck, AlertCircle, RefreshCw, ReceiptText, Plus, CloudUpload, Wifi, WifiOff, FileText,
+  Trash2, FileDown, Eye,
 } from 'lucide-react';
 import { buildSalesInvoiceDoc } from '../../utils/salesInvoiceDoc';
 import { downloadWordDoc } from '../../utils/wordExport';
@@ -23,14 +23,6 @@ import { checkFbrServiceStatus, submitInvoice } from '../../services/fbrApi';
 import styles from './Invoicing.module.css';
 
 const SEG_TO_TAB = { '': 'invoices', list: 'invoices', invoices: 'invoices', fbr: 'fbr', 'sale-return': 'returns' };
-const TAB_TO_SEG = { invoices: 'list', fbr: 'fbr', returns: 'sale-return' };
-
-const PAGE_TABS = [
-  { value: 'invoices', label: 'Sales Invoices', icon: ReceiptText },
-  { value: 'fbr', label: 'FBR Queue', icon: CloudUpload },
-  { value: 'returns', label: 'Sale Returns', icon: RotateCcw },
-];
-
 const CRN_COLS = [
   { key: 'crn_id', label: 'Credit Note No.', width: 130, render: v => <span className={styles.code}>{v}</span> },
   { key: 'sr_ref', label: 'Return Ref.', width: 110, render: v => <span className={styles.code}>{v}</span> },
@@ -74,11 +66,9 @@ const RETRY_COLS = [
 
 export default function Invoicing() {
   const location = useLocation();
-  const navigate = useNavigate();
   const { companyId } = useCompany();
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'invoices';
-  const setPageTab = (tab) => navigate(`/invoicing/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
   const [invOpen, setInvOpen] = useState(false);
   const [serviceStatus, setServiceStatus] = useState(null);
@@ -365,9 +355,12 @@ export default function Invoicing() {
         title="Invoicing"
         subtitle="Sales invoices, FBR e-invoicing queue, and customer returns"
         actions={
-          <Button icon={<Plus size={15} />} onClick={() => setInvOpen(true)}>
-            New FBR Invoice
-          </Button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {fbrFailed > 0 && <Badge variant="danger">{fbrFailed} FBR failed</Badge>}
+            <Button icon={<Plus size={15} />} onClick={() => setInvOpen(true)}>
+              New FBR Invoice
+            </Button>
+          </div>
         }
       />
 
@@ -387,22 +380,6 @@ export default function Invoicing() {
               <p className={styles.summaryValue}>{s.value}</p>
             </div>
           </div>
-        ))}
-      </div>
-
-      <div className={styles.pageTabs}>
-        {PAGE_TABS.map(t => (
-          <button
-            key={t.value}
-            className={`${styles.pageTab} ${pageTab === t.value ? styles.pageTabActive : ''}`}
-            onClick={() => setPageTab(t.value)}
-          >
-            <t.icon size={15} strokeWidth={1.75} />
-            {t.label}
-            {t.value === 'fbr' && fbrFailed > 0 && (
-              <span className={styles.pageTabBadge}>{fbrFailed}</span>
-            )}
-          </button>
         ))}
       </div>
 

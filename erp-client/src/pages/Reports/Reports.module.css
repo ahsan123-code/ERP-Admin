@@ -1,21 +1,5 @@
 .page { display: flex; flex-direction: column; gap: var(--sp-5); }
 
-.pageTabs {
-  display: flex; align-items: center; gap: var(--sp-1);
-  background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg); padding: 6px;
-  flex-wrap: wrap;
-}
-.pageTab {
-  display: flex; align-items: center; gap: 7px;
-  padding: 8px 16px; border-radius: var(--radius-md);
-  border: none; background: transparent;
-  color: var(--text-secondary); font-size: 13.5px; font-weight: 500;
-  cursor: pointer; transition: all var(--transition-fast); white-space: nowrap;
-}
-.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
-.pageTabActive { background: var(--primary-muted); color: var(--primary); }
-
 .cardBody { padding: var(--sp-5); }
 
 /* Ledger */
@@ -39,7 +23,6 @@
 @media (max-width: 768px) {
   .filterRow { flex-direction: column; align-items: stretch; }
   .select, .dateInput { min-width: 100%; width: 100%; }
-  .pageTabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
   .reconBank { min-width: 100%; }
 }
 

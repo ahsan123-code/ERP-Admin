@@ -1,10 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import {
-  BookOpen, Scale, TrendingDown, TrendingUp, BarChart3,
-  FileDown, Eye, Users, Globe, Package, FileText, BadgeCheck, Truck, Landmark,
-  ClipboardList, CalendarDays, Store, BookUser, Trash2,
-} from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { FileDown, Eye, Trash2 } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Button from '../../components/ui/Button';
@@ -85,35 +81,6 @@ const SEG_TO_TAB = {
   'cust-balance': 'cust-balance', 'day-book': 'day-book', 'vendor-balance': 'vendor-balance',
   'vendor-ledger': 'vendor-ledger',
 };
-const TAB_TO_SEG = {
-  ledger: 'ledger', trial: 'trial', receivables: 'receivables',
-  payables: 'payables', income: 'income',
-  'customer-ledger': 'customer-ledger', region: 'region',
-  'sold-items': 'sold-items', 'invoice-summary': 'invoice-summary',
-  gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
-  'cust-balance': 'cust-balance', 'day-book': 'day-book', 'vendor-balance': 'vendor-balance',
-  'vendor-ledger': 'vendor-ledger',
-};
-
-const PAGE_TABS = [
-  { value: 'ledger',          label: 'Ledger',              icon: BookOpen    },
-  { value: 'trial',           label: 'Trial Balance',       icon: Scale       },
-  { value: 'receivables',     label: 'Receivables',         icon: TrendingUp  },
-  { value: 'payables',        label: 'Payables',            icon: TrendingDown},
-  { value: 'income',          label: 'Income Statement',    icon: BarChart3   },
-  { value: 'customer-ledger', label: 'Customer Ledger',     icon: Users       },
-  { value: 'vendor-ledger',   label: 'Vendor Ledger',       icon: BookUser    },
-  { value: 'region',          label: 'Region Wise Sales',   icon: Globe       },
-  { value: 'sold-items',      label: 'Sold Items',          icon: Package     },
-  { value: 'invoice-summary', label: 'Invoice Summary',     icon: FileText    },
-  { value: 'gst',             label: 'Order Wise GST',      icon: BadgeCheck  },
-  { value: 'challan',         label: 'Delivery Challan',    icon: Truck         },
-  { value: 'bank-recon',      label: 'Bank Reconciliation', icon: Landmark      },
-  { value: 'cust-balance',    label: 'Customer Balance',    icon: ClipboardList  },
-  { value: 'vendor-balance',  label: 'Vendor Balance',      icon: Store          },
-  { value: 'day-book',        label: 'Daily Day Book',      icon: CalendarDays   },
-];
-
 // Legacy sales vouchers carry their invoice number inside the narration:
 //   "Sales-28-Sep-2020-0157-L-…"  ->  INV-SA-20-09-0157
 // That is the only reliable link from a ledger line back to its invoice, and so to
@@ -1883,10 +1850,8 @@ function VendorLedger({ vendors, companyId = 1 }) {
 /* ── Main component ─────────────────────────────────────────────────── */
 export default function Reports() {
   const location = useLocation();
-  const navigate  = useNavigate();
   const seg = location.pathname.split('/').filter(Boolean).pop() || '';
   const pageTab = SEG_TO_TAB[seg] ?? 'ledger';
-  const setPageTab = (tab) => navigate(`/reports/${TAB_TO_SEG[tab] ?? tab}`, { replace: true });
 
   const { companyId } = useCompany();
   const { data: chartOfAccounts }      = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
@@ -1907,18 +1872,6 @@ export default function Reports() {
     <div className={`${styles.page} page-enter`}>
       <PageHeader title="Reports" subtitle="Ledger, aging, sales, GST, and financial statements" />
 
-      <div className={styles.pageTabs}>
-        {PAGE_TABS.map(t => (
-          <button
-            key={t.value}
-            className={`${styles.pageTab} ${pageTab === t.value ? styles.pageTabActive : ''}`}
-            onClick={() => setPageTab(t.value)}
-          >
-            <t.icon size={15} strokeWidth={1.75} />
-            {t.label}
-          </button>
-        ))}
-      </div>
 
       {pageTab === 'ledger' && (
         <Card padding={false}>

@@ -310,21 +310,6 @@
 }
 
 /* Page tabs */
-.pageTabs {
-  display: flex; align-items: center; gap: var(--sp-1);
-  background: var(--bg-surface); border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg); padding: 6px; flex-wrap: wrap;
-}
-.pageTab {
-  display: flex; align-items: center; gap: 7px;
-  padding: 8px 16px; border-radius: var(--radius-md);
-  border: none; background: transparent;
-  color: var(--text-secondary); font-size: 13.5px; font-weight: 500;
-  cursor: pointer; transition: all var(--transition-fast); white-space: nowrap;
-}
-.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
-.pageTabActive { background: var(--primary-muted); color: var(--primary); }
-
 /* Stock summary strip */
 .stockSummary {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4);

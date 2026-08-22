@@ -33,43 +33,6 @@
 .summaryLabel { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
 .summaryValue { font-size: 26px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); line-height: 1; }
 
-.pageTabs {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  padding: 6px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.pageTab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-}
-.pageTab:hover { background: var(--bg-hover); color: var(--text-primary); }
-.pageTabActive { background: var(--primary-muted); color: var(--primary); }
-.pageTabBadge {
-  background: var(--orange);
-  color: #FFFFFF;
-  border-radius: var(--radius-full);
-  padding: 1px 7px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
 .tableInner { padding: var(--sp-5); }
 .code     { font-family: var(--font-mono); font-size: 12px; color: var(--blue); }
 .mono     { font-family: var(--font-mono); }
