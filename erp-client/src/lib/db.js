@@ -2,6 +2,71 @@
 // Every function returns { data, error } from Supabase.
 import { supabase } from './supabase';
 
+// Supabase caps one select at 1,000 rows, and PostgREST puts an .in() list in the query
+// string where the gateway stops at roughly 8 KB. Both force long reads to be split.
+// Splitting is unavoidable; awaiting each piece in turn is not, and that is what made the
+// ledger slow — 61 chunks fetched one after another took 15.9s where eight in flight take
+// 2.6s. Beyond about eight there is nothing left to win and the browser starts queueing.
+const POOL = 8;
+
+async function mapPool(items, fn, limit = POOL) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) { const i = next++; out[i] = await fn(items[i]); }
+    })
+  );
+  return out;
+}
+
+// Slice an id list by the size it will occupy in the URL rather than by a count, because
+// the safe count depends on how long the ids are: 400 voucher_ids encode to 5.5 KB, but
+// 400 so_ids reach 10.6 KB and the request never arrives. Budget leaves room for the rest
+// of the query string.
+const URL_BUDGET = 6000;
+function sliceByLength(ids) {
+  const out = [];
+  let cur = [], len = 0;
+  for (const id of ids) {
+    const w = encodeURIComponent(String(id)).length + 1;
+    if (cur.length && len + w > URL_BUDGET) { out.push(cur); cur = []; len = 0; }
+    cur.push(id); len += w;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+// One .in() query per slice, all in flight together, concatenated in order.
+//
+// Each slice is paged, because the 1,000-row ceiling applies per request and not per id:
+// a slice of 430 voucher_ids can pull well over a thousand voucher_lines, and the reply
+// is truncated at 1,000 with no error to say so. The old fixed CHUNK=150 only avoided
+// this by being small enough to usually stay under — a voucher with many lines could
+// have silently lost rows. `build` returns a fresh query each call so range() can move.
+async function inChunks(ids, build) {
+  const PAGE = 1000;
+  const results = await mapPool(sliceByLength(ids), async (slice) => {
+    const rows = [];
+    for (let from = 0; ; from += PAGE) {
+      // A tiebreak on the primary key, or paging is not deterministic: ordering by
+      // line_no alone leaves hundreds of rows tied on line_no 1, and Postgres is free
+      // to return ties in a different order per page, which both skips and repeats rows.
+      const { data, error } = await build(slice).order('id').range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      rows.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: rows, error: null };
+  });
+  const all = [];
+  for (const { data, error } of results) {
+    if (error) return { data: null, error };
+    if (data) all.push(...data);
+  }
+  return { data: all, error: null };
+}
+
 // ── HR ────────────────────────────────────────────────────────────────────
 
 export const hrDb = {
@@ -585,22 +650,35 @@ export const financeDb = {
   // balance would be wrong.
   // companyId is required: account names repeat across branches (both have a
   // "Cash in Hand"), so without it a ledger silently mixes Shop #41 and Shop #58.
+  // Paging one-at-a-time meant nine of the ten requests for a 9,000-row account were
+  // spent discovering there was more to come. Asking for the exact count alongside the
+  // first page says up front how many remain, so they go out together: 4.7s to 1.5s.
   getVouchersByAccount: async (accountName, fromDate, toDate, companyId = 1) => {
     const PAGE = 1000;
-    const all = [];
-    for (let from = 0; ; from += PAGE) {
+    const page = (from, withCount) => {
       let q = supabase.from('vouchers')
-        .select('id, voucher_id, voucher_type, date, narration, debit, credit, reference')
+        .select('id, voucher_id, voucher_type, date, narration, debit, credit, reference',
+                withCount ? { count: 'exact' } : undefined)
         .eq('account_name', accountName)
         .eq('company_id', companyId)
         .order('date').order('id')
         .range(from, from + PAGE - 1);
       if (fromDate) q = q.gte('date', fromDate);
       if (toDate) q = q.lte('date', toDate);
-      const { data, error } = await q;
-      if (error) return { data: null, error };
-      all.push(...(data || []));
-      if (!data || data.length < PAGE) break;
+      return q;
+    };
+
+    const { data: first, error, count } = await page(0, true);
+    if (error) return { data: null, error };
+    const all = [...(first || [])];
+    if (count == null || count <= PAGE) return { data: all, error: null };
+
+    const offsets = [];
+    for (let from = PAGE; from < count; from += PAGE) offsets.push(from);
+    const rest = await mapPool(offsets, (from) => page(from, false));
+    for (const r of rest) {
+      if (r.error) return { data: null, error: r.error };
+      all.push(...(r.data || []));
     }
     return { data: all, error: null };
   },
@@ -698,18 +776,11 @@ export const financeDb = {
   getVoucherLineNarrations: async (voucherIds = [], companyId = 1) => {
     const ids = [...new Set((voucherIds || []).filter(Boolean))];
     if (ids.length === 0) return { data: [], error: null };
-    const CHUNK = 150;
-    const all = [];
-    for (let i = 0; i < ids.length; i += CHUNK) {
-      const { data, error } = await supabase.from('voucher_lines')
-        .select('voucher_id, line_no, account_code, account_title, narration, debit, credit')
-        .eq('company_id', companyId)
-        .in('voucher_id', ids.slice(i, i + CHUNK))
-        .order('line_no');
-      if (error) return { data: null, error };
-      if (data) all.push(...data);
-    }
-    return { data: all, error: null };
+    return inChunks(ids, (slice) => supabase.from('voucher_lines')
+      .select('voucher_id, line_no, account_code, account_title, narration, debit, credit')
+      .eq('company_id', companyId)
+      .in('voucher_id', slice)
+      .order('line_no'));
   },
 };
 
@@ -990,16 +1061,9 @@ export const salesDb = {
   getSalesOrderRefs: async (invoiceIds = []) => {
     const ids = [...new Set((invoiceIds || []).filter(Boolean))];
     if (ids.length === 0) return { data: [], error: null };
-    const CHUNK = 150;
-    const all = [];
-    for (let i = 0; i < ids.length; i += CHUNK) {
-      const { data, error } = await supabase.from('sales_invoices')
-        .select('sale_inv_id, so_ref')
-        .in('sale_inv_id', ids.slice(i, i + CHUNK));
-      if (error) return { data: null, error };
-      if (data) all.push(...data);
-    }
-    return { data: all, error: null };
+    return inChunks(ids, (slice) => supabase.from('sales_invoices')
+      .select('sale_inv_id, so_ref')
+      .in('sale_inv_id', slice));
   },
 
   // Sold-item detail for a set of sales orders (so_line_items.so_id == invoice.so_ref).
@@ -1008,16 +1072,9 @@ export const salesDb = {
   getSoLineItems: async (soRefs = []) => {
     const refs = [...new Set((soRefs || []).filter(Boolean))];
     if (refs.length === 0) return { data: [], error: null };
-    const CHUNK = 150;
-    const all = [];
-    for (let i = 0; i < refs.length; i += CHUNK) {
-      const { data, error } = await supabase.from('so_line_items')
-        .select('so_id, line_no, item_name, unit, gauge, size, quantity, unit_price, total_price, coils_rolls, no_of_sheets')
-        .in('so_id', refs.slice(i, i + CHUNK));
-      if (error) return { data: null, error };
-      if (data) all.push(...data);
-    }
-    return { data: all, error: null };
+    return inChunks(refs, (slice) => supabase.from('so_line_items')
+      .select('so_id, line_no, item_name, unit, gauge, size, quantity, unit_price, total_price, coils_rolls, no_of_sheets')
+      .in('so_id', slice));
   },
 
   // The parts of a printed sale bill that the invoice row does not itself carry: the
