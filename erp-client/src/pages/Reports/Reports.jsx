@@ -181,7 +181,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const [toDate,   setTo]      = useState('');
   const [deletingId, setDeletingId] = useState(null);
 
-  const { data: rawVouchers, refetch: refetchVouchers, loading: loadingVouchers } = useDb(
+  const { data: rawVouchers, refetch: refetchVouchers, settled: vouchersSettled } = useDb(
     () => account
       ? financeDb.getVouchersByAccount(account, fromDate, toDate, companyId)
       : Promise.resolve({ data: [], error: null }),
@@ -193,7 +193,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const voucherIds = useMemo(
     () => (rawVouchers || []).map(v => v.voucher_id).filter(Boolean), [rawVouchers]);
   const voucherIdKey = voucherIds.join(',');
-  const { data: lineNotes, loading: loadingNotes } = useDb(
+  const { data: lineNotes, settled: notesSettled } = useDb(
     () => financeDb.getVoucherLineNarrations(voucherIds, companyId),
     [voucherIdKey, companyId]);
 
@@ -227,7 +227,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rawVouchers, narrationByVoucher]);
   const invoiceIdKey = invoiceIds.join(',');
-  const { data: invoicesForRefs, loading: loadingRefs } = useDb(
+  const { data: invoicesForRefs, settled: refsSettled } = useDb(
     () => salesDb.getSalesOrderRefs(invoiceIds), [invoiceIdKey]);
 
   const orderRefByInvoice = useMemo(() => {
@@ -240,15 +240,21 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     () => [...new Set(invoiceIds.map(r => orderRefByInvoice[r]).filter(Boolean))],
     [invoiceIds, orderRefByInvoice]);
   const neededKey = neededSoRefs.join(',');
-  const { data: ledgerLineItems, loading: loadingItems } = useDb(
+  const { data: ledgerLineItems, settled: itemsSettled } = useDb(
     () => salesDb.getSoLineItems(neededSoRefs), [neededKey]);
 
   // The ledger fills from a chain of four queries: the vouchers, the line narrations
   // behind them, the invoices those name, and finally the order lines that carry
-  // Item/Gauge/Size/Weight/Rate. Gating on the first alone is what showed here - rows
-  // arrived with those columns blank and filled in a moment later, and an account still
-  // fetching its vouchers read "No entries for selected period", which is not true yet.
-  const loading = loadingVouchers || loadingNotes || loadingRefs || loadingItems;
+  // Item/Gauge/Size/Weight/Rate. Gating on the first alone left rows on screen with
+  // those columns blank, and showed "No entries for selected period" for an account
+  // still fetching.
+  //
+  // Gating on all four loading flags was worse: each link's deps only change once the
+  // link before it lands, and its effect runs after that render commits, so every hand
+  // over painted one frame with all four flags false. The skeleton fell away and came
+  // back five times per account. `settled` compares the deps the data was fetched for
+  // against the deps being asked for now, so the gap reads as still-loading.
+  const loading = !(vouchersSettled && notesSettled && refsSettled && itemsSettled);
 
   const itemsForVoucher = useMemo(() => {
     const bySo = {};
