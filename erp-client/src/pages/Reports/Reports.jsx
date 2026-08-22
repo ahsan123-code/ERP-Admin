@@ -214,7 +214,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const [toDate,   setTo]      = useState('');
   const [deletingId, setDeletingId] = useState(null);
 
-  const { data: rawVouchers, refetch: refetchVouchers } = useDb(
+  const { data: rawVouchers, refetch: refetchVouchers, loading: loadingVouchers } = useDb(
     () => account
       ? financeDb.getVouchersByAccount(account, fromDate, toDate, companyId)
       : Promise.resolve({ data: [], error: null }),
@@ -226,7 +226,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const voucherIds = useMemo(
     () => (rawVouchers || []).map(v => v.voucher_id).filter(Boolean), [rawVouchers]);
   const voucherIdKey = voucherIds.join(',');
-  const { data: lineNotes } = useDb(
+  const { data: lineNotes, loading: loadingNotes } = useDb(
     () => financeDb.getVoucherLineNarrations(voucherIds, companyId),
     [voucherIdKey, companyId]);
 
@@ -260,7 +260,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rawVouchers, narrationByVoucher]);
   const invoiceIdKey = invoiceIds.join(',');
-  const { data: invoicesForRefs } = useDb(
+  const { data: invoicesForRefs, loading: loadingRefs } = useDb(
     () => salesDb.getSalesOrderRefs(invoiceIds), [invoiceIdKey]);
 
   const orderRefByInvoice = useMemo(() => {
@@ -273,8 +273,15 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     () => [...new Set(invoiceIds.map(r => orderRefByInvoice[r]).filter(Boolean))],
     [invoiceIds, orderRefByInvoice]);
   const neededKey = neededSoRefs.join(',');
-  const { data: ledgerLineItems } = useDb(
+  const { data: ledgerLineItems, loading: loadingItems } = useDb(
     () => salesDb.getSoLineItems(neededSoRefs), [neededKey]);
+
+  // The ledger fills from a chain of four queries: the vouchers, the line narrations
+  // behind them, the invoices those name, and finally the order lines that carry
+  // Item/Gauge/Size/Weight/Rate. Gating on the first alone is what showed here - rows
+  // arrived with those columns blank and filled in a moment later, and an account still
+  // fetching its vouchers read "No entries for selected period", which is not true yet.
+  const loading = loadingVouchers || loadingNotes || loadingRefs || loadingItems;
 
   const itemsForVoucher = useMemo(() => {
     const bySo = {};
@@ -397,10 +404,10 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
           <label className={styles.filterLabel}>To</label>
           <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
         </div>
-        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!account}>
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!account || loading}>
           Preview
         </Button>
-        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload} disabled={!account}>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload} disabled={!account || loading}>
           Download Word
         </Button>
         {previewNode}
@@ -426,7 +433,15 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
               </tr>
             </thead>
             <tbody>
-              {entries.length === 0
+              {loading
+                ? Array.from({ length: 8 }, (_, i) => (
+                    <tr key={`sk${i}`}>
+                      {Array.from({ length: 12 }, (_, c) => (
+                        <td key={c}><Skeleton width={['70%','55%','85%','60%','45%','40%','50%','50%','65%','65%','75%','40%'][c]} /></td>
+                      ))}
+                    </tr>
+                  ))
+                : entries.length === 0
                 ? <tr><td colSpan={12} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
                 : entries.map((e, i) => {
                   const items = itemsForVoucher(e);
