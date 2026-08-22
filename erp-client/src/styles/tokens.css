@@ -15,6 +15,13 @@
   --bg-tertiary:  #F0F1F5;
   --bg-elevated:  #FFFFFF;
 
+  /* ── Skeleton ── */
+  /* These used to borrow --bg-tertiary, which is #F0F1F5 against a white surface and
+     so faint it read as nothing at all. The sheen sweeps towards the surface colour,
+     which means near-white here and barely-there white on the dark theme below. */
+  --skeleton-base:  #D7DCE5;
+  --skeleton-sheen: rgba(255, 255, 255, 0.7);
+
   /* ── Borders ── */
   --border-subtle:  #EAECF0;
   --border-default: #DFE1E8;
@@ -168,6 +175,9 @@
   --bg-secondary: #131929;
   --bg-tertiary:  #1C2338;
   --bg-elevated:  #1C2338;
+
+  --skeleton-base:  #2A3450;
+  --skeleton-sheen: rgba(255, 255, 255, 0.08);
 
   --border-subtle:  #1C2338;
   --border-default: #252E47;
