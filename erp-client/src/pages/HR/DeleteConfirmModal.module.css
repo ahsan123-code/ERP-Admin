@@ -17,6 +17,9 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  /* color-mix() fallback for Chrome 109 on Windows 7. The halo then matches the
+     icon background, reading as one wider circle rather than a tinted ring. */
+  box-shadow: 0 0 0 8px var(--red-muted);
   box-shadow: 0 0 0 8px color-mix(in srgb, var(--red) 8%, transparent);
 }
 

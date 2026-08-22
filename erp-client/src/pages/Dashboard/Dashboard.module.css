@@ -208,6 +208,9 @@
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
+  /* Chrome 109, the newest build Windows 7 runs, has no color-mix() and keeps the
+     first declaration. --module-muted is set alongside --module-accent on the card. */
+  background: var(--module-muted);
   background: color-mix(in srgb, var(--module-accent) 12%, transparent);
   color: var(--module-accent);
   display: flex;

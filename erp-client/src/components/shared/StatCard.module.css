@@ -18,6 +18,10 @@
   position: absolute;
   top: 0; right: 0;
   width: 90px; height: 90px;
+  /* Chrome 109 is the newest build Windows 7 can run and it has no color-mix(), so it
+     drops the second declaration and keeps the first. --bg is the accent's own -muted
+     token, which is the hue this wash tints towards anyway. */
+  background: radial-gradient(circle at 100% 0%, var(--bg) 0%, transparent 70%);
   background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 70%);
   border-radius: 0 var(--radius-lg) 0 100%;
   pointer-events: none;
@@ -37,6 +41,9 @@
   color: var(--accent);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  /* color-mix() fallback for Chrome 109 — see the note on .card::before. At 1px the
+     neutral border token is all but indistinguishable from the tinted ring. */
+  box-shadow: 0 0 0 1px var(--border-subtle);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
