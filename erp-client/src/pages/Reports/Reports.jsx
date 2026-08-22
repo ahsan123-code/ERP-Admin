@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { FileDown, Eye, Trash2 } from 'lucide-react';
+import { FileDown, Eye, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Button from '../../components/ui/Button';
@@ -160,6 +160,10 @@ function ItemLines({ items, render, mono = true, align }) {
   ));
 }
 
+// About what a printed ledger page holds, and small enough that an account with
+// thousands of entries lays out instantly.
+const LEDGER_PAGE_SIZE = 100;
+
 /* ── Account Ledger ─────────────────────────────────────────────────── */
 function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const printRef = useRef();
@@ -180,6 +184,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const [fromDate, setFrom]    = useState('');
   const [toDate,   setTo]      = useState('');
   const [deletingId, setDeletingId] = useState(null);
+  const [page, setPage] = useState(1);
 
   const { data: rawVouchers, refetch: refetchVouchers, settled: vouchersSettled } = useDb(
     () => account
@@ -315,6 +320,14 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const openBal  = entries[0]?.balance ?? 0;
   const closeBal = entries[entries.length - 1]?.balance ?? 0;
 
+  // Only the rendering is paged. Every row already carries the balance running from the
+  // first entry, so a slice shows the same figure it would on one long page, and the
+  // footer, the opening and closing balances and the Word export all still read the whole
+  // set. An account with 9,000 vouchers was laying out about 108,000 table cells at once.
+  const pageCount = Math.max(1, Math.ceil(entries.length / LEDGER_PAGE_SIZE));
+  const safePage  = Math.min(page, pageCount);
+  const visible   = entries.slice((safePage - 1) * LEDGER_PAGE_SIZE, safePage * LEDGER_PAGE_SIZE);
+
   const { showPreview, previewNode } = useWordPreview();
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
   const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
@@ -365,17 +378,17 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
             placeholder={`Search account (${accountList.length})…`}
             emptyText="No matching accounts"
             value={account}
-            onChange={setAccount}
+            onChange={(v) => { setAccount(v); setPage(1); }}
             options={accountList.map(name => ({ value: name, label: name }))}
           />
         </div>
         <div className={styles.filterGroup}>
           <label className={styles.filterLabel}>From</label>
-          <input className={styles.dateInput} type="date" value={fromDate} onChange={e => setFrom(e.target.value)} />
+          <input className={styles.dateInput} type="date" value={fromDate} onChange={e => { setFrom(e.target.value); setPage(1); }} />
         </div>
         <div className={styles.filterGroup}>
           <label className={styles.filterLabel}>To</label>
-          <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
+          <input className={styles.dateInput} type="date" value={toDate} onChange={e => { setTo(e.target.value); setPage(1); }} />
         </div>
         <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!account || loading}>
           Preview
@@ -416,7 +429,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
                   ))
                 : entries.length === 0
                 ? <tr><td colSpan={12} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
-                : entries.map((e, i) => {
+                : visible.map((e, i) => {
                   const items = itemsForVoucher(e);
                   const note = narrationFor(e);
                   return (
@@ -463,6 +476,24 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
                 })}
             </tbody>
           </table>
+          {pageCount > 1 && (
+            <div className={styles.ledgerPager}>
+              <span className={styles.pageInfo}>
+                Showing {((safePage - 1) * LEDGER_PAGE_SIZE) + 1}–{Math.min(safePage * LEDGER_PAGE_SIZE, entries.length)} of {entries.length}
+              </span>
+              <div className={styles.pageButtons}>
+                <button className={styles.pageBtn} disabled={safePage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                  <ChevronLeft size={15} />
+                </button>
+                <span className={styles.pageNum}>{safePage} / {pageCount}</span>
+                <button className={styles.pageBtn} disabled={safePage >= pageCount}
+                  onClick={() => setPage(p => Math.min(pageCount, p + 1))} aria-label="Next page">
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+          )}
           {entries.length > 0 && (
             <div style={{ display:'flex', justifyContent:'flex-end', padding:'12px 0', gap:24, fontSize:12, color:'var(--text-secondary)' }}>
               <span>Opening: <strong>{formatAmount(Math.abs(openBal))}</strong></span>
@@ -604,6 +635,7 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
   const [customer, setCustomer] = useState('');
   const [fromDate, setFrom] = useState('');
   const [toDate,   setTo]   = useState('');
+  const [page, setPage] = useState(1);
 
   useEffect(() => { setCustomer(c => c || customerNames[0] || ''); }, [customerNames]);
 
@@ -702,6 +734,13 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
     return acc;
   }, []), [entries, itemsBySo, soRefByInvoice, opening]);
 
+  // Paged for rendering only. The balance on each row was carried from the brought
+  // forward figure when `rows` was built, so a slice reads the same as one long page,
+  // and the totals below still sum the whole period.
+  const pageCount = Math.max(1, Math.ceil(rows.length / LEDGER_PAGE_SIZE));
+  const safePage  = Math.min(page, pageCount);
+  const visible   = rows.slice((safePage - 1) * LEDGER_PAGE_SIZE, safePage * LEDGER_PAGE_SIZE);
+
   const totalDr = rows.reduce((s, r) => s + r.debit, 0);
   const totalCr = rows.reduce((s, r) => s + r.credit, 0);
   const closing = rows.length ? rows[rows.length - 1].balance : opening;
@@ -790,17 +829,17 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
             placeholder={`Search customer (${customerNames.length})…`}
             emptyText="No matching customers"
             value={customer}
-            onChange={setCustomer}
+            onChange={(v) => { setCustomer(v); setPage(1); }}
             options={customerNames.map(name => ({ value: name, label: name }))}
           />
         </div>
         <div className={styles.filterGroup}>
           <label className={styles.filterLabel}>From</label>
-          <input className={styles.dateInput} type="date" value={fromDate} onChange={e => setFrom(e.target.value)} />
+          <input className={styles.dateInput} type="date" value={fromDate} onChange={e => { setFrom(e.target.value); setPage(1); }} />
         </div>
         <div className={styles.filterGroup}>
           <label className={styles.filterLabel}>To</label>
-          <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
+          <input className={styles.dateInput} type="date" value={toDate} onChange={e => { setTo(e.target.value); setPage(1); }} />
         </div>
         <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!customer || loading}>
           Preview
@@ -848,7 +887,7 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
               ))
             ) : (
               <>
-                {opening !== 0 && (
+                {opening !== 0 && safePage === 1 && (
                   <tr className={styles.totalRow}>
                     <td className={styles.date}>{fromDate ? formatDateNumeric(fromDate) : '—'}</td>
                     <td><span className={styles.nil}>—</span></td>
@@ -862,7 +901,7 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
 
                 {rows.length === 0
                   ? <tr><td colSpan={11} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>No transactions for selected period</td></tr>
-                  : rows.map((r, i) => {
+                  : visible.map((r, i) => {
                     const age = agDays(r.date);
                     const ageTone = age > 60 ? 'error' : age > 30 ? 'warning' : 'neutral';
                     return (
@@ -916,6 +955,24 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
             )}
           </tbody>
         </table>
+          {pageCount > 1 && (
+            <div className={styles.ledgerPager}>
+              <span className={styles.pageInfo}>
+                Showing {((safePage - 1) * LEDGER_PAGE_SIZE) + 1}–{Math.min(safePage * LEDGER_PAGE_SIZE, rows.length)} of {rows.length}
+              </span>
+              <div className={styles.pageButtons}>
+                <button className={styles.pageBtn} disabled={safePage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                  <ChevronLeft size={15} />
+                </button>
+                <span className={styles.pageNum}>{safePage} / {pageCount}</span>
+                <button className={styles.pageBtn} disabled={safePage >= pageCount}
+                  onClick={() => setPage(p => Math.min(pageCount, p + 1))} aria-label="Next page">
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+          )}
       </div>
     </div>
   );
@@ -1618,6 +1675,7 @@ function VendorLedger({ vendors, companyId = 1 }) {
   const [vendor,   setVendor] = useState('');
   const [fromDate, setFrom]   = useState('');
   const [toDate,   setTo]     = useState('');
+  const [page, setPage] = useState(1);
 
   // Ledger first. A vendor with no creditor line still has voucher-header activity worth
   // showing, so those fall back to the header query rather than reading as an empty ledger.
@@ -1711,6 +1769,12 @@ function VendorLedger({ vendors, companyId = 1 }) {
   const totalCr  = entries.reduce((s, e) => s + (parseFloat(e.credit) || 0), 0);
   const closeBal = entries[entries.length - 1]?.balance ?? 0;
 
+  // Paged for rendering only — the running balance is already on each row, and the
+  // totals underneath still read the whole set.
+  const pageCount = Math.max(1, Math.ceil(entries.length / LEDGER_PAGE_SIZE));
+  const safePage  = Math.min(page, pageCount);
+  const visible   = entries.slice((safePage - 1) * LEDGER_PAGE_SIZE, safePage * LEDGER_PAGE_SIZE);
+
   const { showPreview, previewNode } = useWordPreview();
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
   const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
@@ -1767,17 +1831,17 @@ function VendorLedger({ vendors, companyId = 1 }) {
             placeholder={`Search vendor (${vendorList.length})…`}
             emptyText="No matching vendors"
             value={vendor}
-            onChange={setVendor}
+            onChange={(v) => { setVendor(v); setPage(1); }}
             options={vendorList.map(name => ({ value: name, label: name }))}
           />
         </div>
         <div className={styles.filterGroup}>
           <label className={styles.filterLabel}>From</label>
-          <input className={styles.dateInput} type="date" value={fromDate} onChange={e => setFrom(e.target.value)} />
+          <input className={styles.dateInput} type="date" value={fromDate} onChange={e => { setFrom(e.target.value); setPage(1); }} />
         </div>
         <div className={styles.filterGroup}>
           <label className={styles.filterLabel}>To</label>
-          <input className={styles.dateInput} type="date" value={toDate} onChange={e => setTo(e.target.value)} />
+          <input className={styles.dateInput} type="date" value={toDate} onChange={e => { setTo(e.target.value); setPage(1); }} />
         </div>
         <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} disabled={!vendor}>
           Preview
@@ -1808,7 +1872,7 @@ function VendorLedger({ vendors, companyId = 1 }) {
             <tbody>
               {entries.length === 0
                 ? <tr><td colSpan={11} style={{ textAlign:'center', padding:'20px', color:'var(--text-secondary)' }}>No entries for selected period</td></tr>
-                : entries.map((e, i) => {
+                : visible.map((e, i) => {
                   const items = itemsFor(e);
                   return (
                   <tr key={e.id ?? i}>
@@ -1839,6 +1903,24 @@ function VendorLedger({ vendors, companyId = 1 }) {
                 })}
             </tbody>
           </table>
+          {pageCount > 1 && (
+            <div className={styles.ledgerPager}>
+              <span className={styles.pageInfo}>
+                Showing {((safePage - 1) * LEDGER_PAGE_SIZE) + 1}–{Math.min(safePage * LEDGER_PAGE_SIZE, entries.length)} of {entries.length}
+              </span>
+              <div className={styles.pageButtons}>
+                <button className={styles.pageBtn} disabled={safePage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                  <ChevronLeft size={15} />
+                </button>
+                <span className={styles.pageNum}>{safePage} / {pageCount}</span>
+                <button className={styles.pageBtn} disabled={safePage >= pageCount}
+                  onClick={() => setPage(p => Math.min(pageCount, p + 1))} aria-label="Next page">
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
+          )}
           {entries.length > 0 && (
             <div style={{ display:'flex', justifyContent:'flex-end', padding:'12px 0', gap:24, fontSize:12, color:'var(--text-secondary)' }}>
               <span>Total Debit: <strong>{formatAmount(totalDr)}</strong></span>

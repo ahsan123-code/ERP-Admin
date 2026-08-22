@@ -2,6 +2,35 @@
 
 .cardBody { padding: var(--sp-5); }
 
+/* Ledger pager. Matches DataTable's, which the other report tables get for free —
+   the ledger draws its own table because of the item sub-lines, so it needs its own. */
+.ledgerPager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.pageInfo { font-size: 12px; color: var(--text-muted); }
+.pageButtons { display: flex; align-items: center; gap: var(--sp-2); }
+.pageBtn {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.pageBtn:hover:not(:disabled) {
+  background: var(--primary-muted);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.pageBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+.pageNum { font-size: 12px; color: var(--text-secondary); padding: 0 6px; font-family: var(--font-mono); }
+
 /* Ledger */
 .ledgerWrap { display: flex; flex-direction: column; gap: var(--sp-4); }
 .filterRow {
