@@ -13,7 +13,12 @@ list-*.ps1
 test-*.js
 
 # The one-off scripts above stay out of the repo, but run-all.ps1 is tracked and calls
-# these two on every pipeline run — a clone without them cannot export or import at all.
-# Neither carries a credential: the export uses Windows auth, the import reads DATABASE_URL.
+# these four on every pipeline run — a clone without them cannot export or import at all.
+# None carries a credential: the exports use Windows auth, the imports read DATABASE_URL.
+#
+# Shop #41 is GenX CompanyId 1 -> company_id 1; Shop #58 is GenX CompanyId 3 -> company_id 2.
+# Both halves have to be tracked or the pipeline silently imports only one shop.
 !export-all.ps1
 !import-all-safe.js
+!export-company3.ps1
+!import-company2-safe.js
