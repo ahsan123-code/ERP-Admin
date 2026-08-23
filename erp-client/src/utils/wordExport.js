@@ -75,13 +75,26 @@ export function buildWordHtml({ title = 'Document', css = '', body = '', landsca
   </w:WordDocument>
 </xml><![endif]-->
 <style>
-  @page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 1.2cm; }
+  /* Word ignores the CSS standard @page { size: A4 landscape }. Its HTML importer only
+     reads a NAMED page style carrying mso-page-orientation, applied to a div through the
+     page property. Without all three it silently lays the document out portrait, and
+     anything wider than A4 portrait's printable 703px is cut off at the margin — which is
+     what happened to the salary sheet, whose 21 columns come to 1020px.
+
+     The size is given explicitly rather than as the A4 keyword because Word wants the
+     page's own dimensions, width first, and does not swap them for the orientation. */
+  @page Section1 {
+    size: ${landscape ? '29.7cm 21cm' : '21cm 29.7cm'};
+    mso-page-orientation: ${landscape ? 'landscape' : 'portrait'};
+    margin: 1.2cm;
+  }
+  div.Section1 { page: Section1; }
   ${WORD_BASE_CSS}
   ${css}
   ${screenCss}
 </style>
 </head>
-<body>${body}</body>
+<body><div class="Section1">${body}</div></body>
 </html>`;
 }
 
