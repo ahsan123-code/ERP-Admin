@@ -1,0 +1,4 @@
+node_modules/
+logs/
+# Carries FBR_ENV for this machine; install.ps1 creates it from .env.example.
+.env

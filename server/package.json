@@ -1,22 +1,19 @@
 {
-  "name": "erp-server",
+  "name": "erp-data-tools",
   "version": "1.0.0",
-  "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "import": "node import-all-safe.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",
     "axios": "^1.7.2",
-    "cors": "^2.8.5",
     "csv-parse": "^6.2.1",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
     "mssql": "^12.5.4",
     "pg": "^8.20.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
-  }
+  },
+  "description": "Migration, export and import tooling for the ERP database. The FBR agent moved to ../fbr-agent."
 }
