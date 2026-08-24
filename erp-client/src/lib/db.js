@@ -251,8 +251,11 @@ export const financeDb = {
   // lines: [{ account, debit, credit, narration }]
   updateJournalVoucher: async ({ groupId, date, companyId = 1, lines, reference }) => {
     // 1. Reverse every existing leg's balance impact (real account_code from voucher_lines).
+    // Scoped to the company for the same reason deleteVoucherGroup is: a bare LIKE on
+    // the id reaches every branch, and step 2 below deletes whatever this matched.
     const { data: oldLines } = await supabase
       .from('voucher_lines').select('account_code, debit, credit')
+      .eq('company_id', companyId)
       .like('voucher_id', `${groupId}-%`);
     await Promise.all((oldLines || []).map(async (l) => {
       const { data: acct } = await supabase
@@ -262,8 +265,8 @@ export const financeDb = {
     }));
     // 2. Remove the old rows.
     await Promise.all([
-      supabase.from('voucher_lines').delete().like('voucher_id', `${groupId}-%`),
-      supabase.from('vouchers').delete().like('voucher_id', `${groupId}-%`),
+      supabase.from('voucher_lines').delete().eq('company_id', companyId).like('voucher_id', `${groupId}-%`),
+      supabase.from('vouchers').delete().eq('company_id', companyId).like('voucher_id', `${groupId}-%`),
     ]);
     // 3. Re-post the edited legs under the same group id.
     await financeDb.postJournalEntry({
@@ -282,9 +285,14 @@ export const financeDb = {
   // balance by reading the legs back from voucher_lines (which carry the real account_code,
   // unlike the display name on the voucher row), then removes the legs. Also clears the
   // inter_bank_transfers summary if this group happens to be a transfer.
+  // Every statement here is scoped to the company. It was not, and a LIKE on the id
+  // alone reached across branches: with groupId "VCH" it matched all 49,511 GenX
+  // vouchers in the database at once. The caller decides what a group is, but this is
+  // the floor — no delete from this function can leave the company it was called for.
   deleteVoucherGroup: async (groupId, companyId = 1) => {
     const { data: lines } = await supabase
       .from('voucher_lines').select('account_code, debit, credit')
+      .eq('company_id', companyId)
       .like('voucher_id', `${groupId}-%`);
     // Reverse every leg's balance in parallel (each leg is a distinct account).
     await Promise.all((lines || []).map(async (l) => {
@@ -295,9 +303,9 @@ export const financeDb = {
     }));
     // Then remove the rows (independent tables) together.
     await Promise.all([
-      supabase.from('voucher_lines').delete().like('voucher_id', `${groupId}-%`),
+      supabase.from('voucher_lines').delete().eq('company_id', companyId).like('voucher_id', `${groupId}-%`),
       supabase.from('inter_bank_transfers').delete().eq('ibt_id', groupId),
-      supabase.from('vouchers').delete().like('voucher_id', `${groupId}-%`),
+      supabase.from('vouchers').delete().eq('company_id', companyId).like('voucher_id', `${groupId}-%`),
     ]);
     return { error: null };
   },
@@ -554,9 +562,13 @@ export const financeDb = {
   // Reverses an inter-bank transfer: unwinds both banks' balances (read back from
   // voucher_lines so we don't depend on what was stored on the summary row), removes
   // the journal legs, then deletes the summary row.
+  // Company-scoped like the other two. An ibtId carries its own number so the blast
+  // radius was never the shop's whole ledger, but nothing should delete voucher rows
+  // on an id pattern alone.
   deleteInterBankTransfer: async (ibtId, companyId = 1) => {
     const { data: lines } = await supabase
       .from('voucher_lines').select('account_code, debit, credit')
+      .eq('company_id', companyId)
       .like('voucher_id', `${ibtId}-%`);
     await Promise.all((lines || []).map(async (l) => {
       const { data: acct } = await supabase
@@ -565,8 +577,8 @@ export const financeDb = {
       if (acct) await financeDb.applyVoucherToBalances(acct, -(l.debit || 0), -(l.credit || 0));
     }));
     await Promise.all([
-      supabase.from('voucher_lines').delete().like('voucher_id', `${ibtId}-%`),
-      supabase.from('vouchers').delete().eq('reference', ibtId),
+      supabase.from('voucher_lines').delete().eq('company_id', companyId).like('voucher_id', `${ibtId}-%`),
+      supabase.from('vouchers').delete().eq('company_id', companyId).eq('reference', ibtId),
       supabase.from('inter_bank_transfers').delete().eq('ibt_id', ibtId),
     ]);
     return { error: null };

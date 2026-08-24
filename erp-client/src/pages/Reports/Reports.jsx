@@ -288,7 +288,13 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     if (!window.confirm(`Delete voucher "${row.voucher_id}" from the ledger? This cannot be undone.`)) return;
     setDeletingId(row.id);
     try {
-      const isGrouped = /-\d+$/.test(row.voucher_id || '');
+      // A group is an app-created voucher split across legs — PV-511140-1, PV-511140-2.
+      // The test used to be /-\d+$/, which every GenX id also passes: VCH-12345 became
+      // group "VCH" and C3-VCH-12345 became "C3-VCH", and the LIKE in deleteVoucherGroup
+      // then matched the whole shop's ledger. That is how Shop #58 lost 7,606 vouchers
+      // and 24,898 lines to a single click. Requiring the leg to follow a number of its
+      // own admits every app id (CHQ/INV/PBILL/PC/PV/RV-N-N) and no GenX id.
+      const isGrouped = /^[A-Za-z]+-\d+-\d+$/.test(row.voucher_id || '');
       if (isGrouped) {
         const groupId = row.voucher_id.replace(/-\d+$/, '');
         const { error } = await financeDb.deleteVoucherGroup(groupId, companyId);
