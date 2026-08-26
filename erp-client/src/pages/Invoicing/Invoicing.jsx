@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   BadgeCheck, AlertCircle, RefreshCw, ReceiptText, Plus, CloudUpload, Wifi, WifiOff, FileText,
-  Trash2, FileDown, Eye,
+  Trash2, FileDown, Eye, Pencil,
 } from 'lucide-react';
 import { buildSalesInvoiceDoc } from '../../utils/salesInvoiceDoc';
 import { downloadWordDoc } from '../../utils/wordExport';
 import { useWordPreview } from '../../hooks/useWordPreview';
 import NewInvoiceModal from './NewInvoiceModal';
+import BookNoModal from './BookNoModal';
 import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import DataTable from '../../components/shared/DataTable';
@@ -78,6 +79,7 @@ export default function Invoicing() {
   const [deletingSalesId, setDeletingSalesId] = useState(null);
   const [deletingFbrId, setDeletingFbrId] = useState(null);
   const [busyDocId, setBusyDocId] = useState(null);
+  const [bookInv, setBookInv] = useState(null);
   const toast = useToast();
   const { showPreview, previewNode } = useWordPreview();
 
@@ -105,6 +107,12 @@ export default function Invoicing() {
     } finally {
       setDeletingSalesId(null);
     }
+  };
+
+  // Patch the edited bill in place rather than refetching: the list is 24k rows and
+  // the only thing that changed is one cell.
+  const handleBookSaved = (updated) => {
+    setSalesInvoiceList(prev => prev.map(i => (i.id === updated.id ? { ...i, ...updated } : i)));
   };
 
   // Fetches the invoice's itemised lines (from the linked sales order) so the
@@ -224,6 +232,22 @@ export default function Invoicing() {
     {
       key: 'sale_inv_id', label: 'Invoice No.', width: 130,
       render: v => <span className={styles.code}>{v}</span>
+    },
+    {
+      // Click to set or correct it — the number is written in the bill book at the
+      // counter and is often not known when the order is dispatched.
+      key: 'manual_bill_no', label: 'Book #', width: 110,
+      render: (v, row) => (
+        <button
+          type="button"
+          className={`${styles.bookCell} ${v ? '' : styles.bookCellEmpty}`}
+          onClick={e => { e.stopPropagation(); setBookInv(row); }}
+          title={v ? `Edit Book # on ${row.sale_inv_id}` : `Add a Book # to ${row.sale_inv_id}`}
+        >
+          {v || 'Add'}
+          <Pencil size={11} strokeWidth={2} className={styles.bookCellIcon} />
+        </button>
+      ),
     },
     { key: 'customer_name', label: 'Customer', width: 200 },
     {
@@ -453,6 +477,9 @@ export default function Invoicing() {
       )}
 
       <NewInvoiceModal open={invOpen} onClose={() => setInvOpen(false)} onSave={(inv) => setFbrInvoiceList(prev => [inv, ...prev])} />
+      {bookInv && (
+        <BookNoModal key={bookInv.id} invoice={bookInv} onClose={() => setBookInv(null)} onSaved={handleBookSaved} />
+      )}
       {previewNode}
     </div>
   );

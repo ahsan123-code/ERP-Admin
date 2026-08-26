@@ -68,10 +68,30 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
     ? (bankAccounts || []).map(b => ({ value: `bank:${b.account_id}`, label: `${b.bank_name} — ${b.account_no}` }))
     : CASH_POCKETS.map(p => ({ value: `cash:${p.code}`, label: p.name }));
 
-  // Party dropdown = customers + vendors (type decides the control account: AR vs AP)
+  // Expense heads a payment can be made straight to — group 12 of the chart, the same
+  // set petty cash and the disburse screens draw on. Not everything paid out settles a
+  // customer or vendor balance: rent, utilities, freight and repairs are paid to an
+  // expense account directly, and with only parties in this list the only way to record
+  // one was to raise it as petty cash or key a manual journal.
+  //
+  // Payments only. On a receipt, money coming in against an expense head would be a
+  // refund — a different entry that belongs with income accounts, not this list.
+  const expenseAccounts = isReceipt
+    ? []
+    : (chartOfAccounts || []).filter(a => a.account_code?.slice(0, 2) === '12');
+
+  // Party dropdown = customers + vendors + (on payments) expense accounts. The prefix on
+  // each value decides what the line posts against: AR sub-ledger, AP control, or the
+  // expense account itself.
   const partyOptions = [
     ...(customers || []).map(c => ({ value: `cust:${c.id}`, label: c.name, hint: 'Customer' })),
     ...(vendors || []).map(v => ({ value: `vend:${v.id}`, label: v.name, hint: 'Vendor' })),
+    ...expenseAccounts.map(a => ({
+      value: `exp:${a.account_id}`,
+      label: a.account_name,
+      hint: 'Expense',
+      search: a.account_code,
+    })),
   ];
 
   const selectedPocket = pocketOptions.find(o => o.value === form.pocket);
@@ -135,14 +155,25 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
       // customer it settles. AR stays the fallback for a customer with no code of its own.
       // Vendors keep the control account: there is no per-vendor sub-ledger to post to.
       const parties = await Promise.all(filledLines.map(async (l) => {
-        const isVendor = l.party.startsWith('vend:');
-        const customer = isVendor
+        const isVendor  = l.party.startsWith('vend:');
+        const isExpense = l.party.startsWith('exp:');
+        // An expense line posts to the expense account itself — it is already in the
+        // chart, so there is nothing to resolve or create.
+        const expenseAccount = isExpense
+          ? (chartOfAccounts || []).find(a => a.account_id === l.party.slice(4))
+          : null;
+        if (isExpense && !expenseAccount) {
+          throw new Error(`Could not resolve the expense account for "${partyOptions.find(o => o.value === l.party)?.label ?? l.party}".`);
+        }
+        const customer = (isVendor || isExpense)
           ? null
           : (customers || []).find(c => `cust:${c.id}` === l.party) || null;
         return {
-          controlAccount: isVendor
-            ? apAccount
-            : await financeDb.customerLedgerAccount({ customer, companyId, fallback: arAccount }),
+          controlAccount: isExpense
+            ? expenseAccount
+            : isVendor
+              ? apAccount
+              : await financeDb.customerLedgerAccount({ customer, companyId, fallback: arAccount }),
           name: partyOptions.find(o => o.value === l.party).label,
           amount: l.amountNum,
           narration: l.narration.trim() || null,
@@ -237,11 +268,13 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
         </div>
         <div className="ff">
           <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
-            {isReceipt ? 'Received From' : 'Paid To'} — add a line per party
+            {isReceipt
+              ? 'Received From — add a line per party'
+              : `Paid To — add a line per party or expense head (${expenseAccounts.length} expense accounts available)`}
           </label>
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: 8, padding: '0 2px 6px', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-            <span>Party</span><span>Narration</span>
+            <span>{isReceipt ? 'Party' : 'Party / Expense Account'}</span><span>Narration</span>
             <span style={{ textAlign: 'right' }}>Amount</span>
             <span />
           </div>
@@ -249,8 +282,8 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <SearchableSelect
-                placeholder="Search customer or vendor…"
-                emptyText="No parties found"
+                placeholder={isReceipt ? 'Search customer or vendor…' : 'Search customer, vendor or expense account…'}
+                emptyText={isReceipt ? 'No parties found' : 'No parties or expense accounts found'}
                 value={l.party}
                 onChange={(val) => setLine(i, 'party', val)}
                 options={partyOptions}

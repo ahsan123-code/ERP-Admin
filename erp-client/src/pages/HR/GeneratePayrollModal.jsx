@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { hrDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
+import { isAdvance, isLoan, monthlyRecovery } from '../../data/hr';
 import { formatCurrency } from '../../utils/format';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -58,7 +59,13 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
 
   const activeEmployees = (employees || []).filter(e => e.status === 'active');
   const pendingEmployees = activeEmployees.filter(e => !alreadyPaid.has(e.employee_id));
-  const activeLoanFor = (empId) => (loans || []).find(l => l.employee_id === empId && l.status === 'active');
+  const activeLoanFor = (empId) =>
+    (loans || []).find(l => l.employee_id === empId && l.status === 'active' && isLoan(l));
+
+  // Advances are summed rather than taken one at a time the way loans are: an employee can
+  // easily draw two small advances inside one month, and both are owed out of that salary.
+  const activeAdvancesFor = (empId) =>
+    (loans || []).filter(l => l.employee_id === empId && l.status === 'active' && isAdvance(l));
 
   // Everything derived for one employee for the selected month.
   const calcFor = (emp) => {
@@ -78,13 +85,14 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
     const otAmount     = Math.round(otRate * otHours);
     const loan    = activeLoanFor(emp.employee_id);
     const loanDed = loan ? (Number(loan.monthly_deduction) || 0) : 0;
-    // Advance is always 0 at generation — it is entered per row afterwards — but it
-    // belongs in the sum, so this matches the definition PayrollManageModal applies
-    // when the advance is filled in, and the Total Deductions column on the sheet.
-    const advance  = 0;
+    // Advances outstanding on this employee come off this salary. It used to be fixed at 0
+    // here and typed into each row by hand afterwards; recovering it from the advance record
+    // is what makes the Loans & Advances tab feed payroll instead of only reporting it.
+    const advances = activeAdvancesFor(emp.employee_id);
+    const advance  = advances.reduce((s, a) => s + monthlyRecovery(a), 0);
     const totalDed = advance + loanDed + unpaidAmount + lateAmount;
     const net = gross + otAmount - totalDed;
-    return { gross, absentDays, lateHours, otHours, unpaidAmount, lateRate, lateAmount, otRate, otAmount, loan, loanDed, advance, totalDed, net };
+    return { gross, absentDays, lateHours, otHours, unpaidAmount, lateRate, lateAmount, otRate, otAmount, loan, loanDed, advances, advance, totalDed, net };
   };
 
   // Preview totals — for the employees actually about to be written, not the whole payroll
@@ -94,6 +102,7 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
   const totalAbsent  = preview.reduce((s, p) => s + p.absentDays, 0);
   const totalOt      = preview.reduce((s, p) => s + p.otHours, 0);
   const totalDeducts = preview.reduce((s, p) => s + p.totalDed, 0);
+  const totalAdvance = preview.reduce((s, p) => s + p.advance, 0);
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -111,8 +120,9 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
       }
 
       const stamp = String(Date.now()).slice(-6);
+      const calcs = toGenerate.map(calcFor);
       const records = toGenerate.map((emp, i) => {
-        const c = calcFor(emp);
+        const c = calcs[i];
         const remaining = c.loan ? (Number(c.loan.remaining_balance) || 0) : 0;
         return {
           payroll_id:          `PAY-${stamp}-${String(i + 1).padStart(3, '0')}`,
@@ -144,12 +154,41 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
       const { error } = await hrDb.addPayrollBatch(records);
       if (error) throw new Error(error.message);
 
-      const skipped = activeEmployees.length - records.length;
+      // Write the recovery back onto the advances now that the salary rows carrying it
+      // exist. Without this the same advance would be deducted again every month, because
+      // its balance would sit there untouched — the reason it happens here and not on
+      // disburse is that generation is the step that decides the figure, and it refuses to
+      // write a second row for a period it has already covered, so it cannot run twice.
+      const advanceUpdates = calcs.flatMap(c =>
+        (c.advances || []).map((a) => {
+          const taken     = monthlyRecovery(a);
+          const remaining = Math.max(0, (Number(a.remaining_balance) || 0) - taken);
+          return hrDb.updateLoan(a.loan_id, {
+            remaining_balance: remaining,
+            paid_installments: (Number(a.paid_installments) || 0) + (taken > 0 ? 1 : 0),
+            status:            remaining <= 0 ? 'completed' : 'active',
+          });
+        }),
+      );
+      const settled = await Promise.all(advanceUpdates);
+      const failed  = settled.filter(r => r?.error).length;
+
+      const skipped   = activeEmployees.length - records.length;
+      const recovered = calcs.reduce((s, c) => s + c.advance, 0);
       toast.success(
         `Payroll generated for ${records.length} employee${records.length === 1 ? '' : 's'} — ${month} ${year}.` +
+        (recovered > 0 ? ` ${formatCurrency(recovered)} of advances recovered.` : '') +
         (skipped > 0 ? ` ${skipped} already had a row and ${skipped === 1 ? 'was' : 'were'} left untouched.` : ''),
         'Payroll Generated',
       );
+      // The payroll itself is written either way — say so rather than failing the whole run,
+      // but do not let a stale advance balance pass silently, since it deducts again next month.
+      if (failed > 0) {
+        toast.error(
+          `${failed} advance balance${failed === 1 ? '' : 's'} could not be updated. Correct ${failed === 1 ? 'it' : 'them'} on the Loans & Advances tab before generating next month.`,
+          'Advance Not Recovered',
+        );
+      }
       onGenerated(month, Number(year));
       onClose();
     } catch (err) {
@@ -195,8 +234,14 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
               <span style={{ color: 'var(--text-secondary)' }}>Absent days · Overtime hrs (from attendance)</span>
               <strong style={{ fontFamily: 'var(--font-mono)' }}>{totalAbsent} · {totalOt}</strong>
             </div>
+            {totalAdvance > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Advances recovered this run</span>
+                <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--orange)' }}>{formatCurrency(totalAdvance)}</strong>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Total deductions (loan + absent + late)</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Total deductions (advance + loan + absent + late)</span>
               <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--orange)' }}>{formatCurrency(totalDeducts)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -205,7 +250,7 @@ export default function GeneratePayrollModal({ open, onClose, onGenerated, emplo
             </div>
           </div>
           <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8 }}>
-            Absent days, late hours and overtime are pulled from this month's attendance (per-day = gross ÷ {PAY_DAYS_PER_MONTH} days, per-hour = per-day ÷ {HOURS_PER_DAY}). Loan installments are auto-deducted. Employees who already have a row for this period are skipped, so a new hire can be added without regenerating the month. You can fine-tune any row afterwards, then export or disburse the sheet.
+            Absent days, late hours and overtime are pulled from this month's attendance (per-day = gross ÷ {PAY_DAYS_PER_MONTH} days, per-hour = per-day ÷ {HOURS_PER_DAY}). Loan installments and outstanding advances are auto-deducted, and generating writes the recovered advance off its balance — an advance that is fully recovered closes itself. Employees who already have a row for this period are skipped, so a new hire can be added without regenerating the month. You can fine-tune any row afterwards, then export or disburse the sheet.
           </p>
         </div>
       </form>

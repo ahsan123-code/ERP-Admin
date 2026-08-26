@@ -55,6 +55,9 @@ const DN_COLS = [
 
 const SINV_COLS = [
   { key: 'sale_inv_id',   label: 'Invoice No.', width: 120, render: v => <span className={styles.code}>{v}</span> },
+  // The bill book number entered at dispatch. Read-only here — it is edited on
+  // Invoicing → Sale Bills, where the print actions for the same bill live.
+  { key: 'manual_bill_no', label: 'Book #',     width: 100, render: v => v ? <span className={styles.mono}>{v}</span> : '—' },
   { key: 'customer_name', label: 'Customer',    width: 220 },
   { key: 'date',          label: 'Date',        width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
   { key: 'subtotal',      label: 'Subtotal',    width: 140, align: 'right', render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },

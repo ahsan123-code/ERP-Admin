@@ -15,6 +15,7 @@ import { useCustomers } from '../../context/CustomerContext';
 import { formatDate, formatDateNumeric, formatCurrency, formatAmount,
   itemMaterial, itemGauge, itemSize, itemWeight } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
+import { accountGroupLabel, splitBalance } from '../../utils/accounts';
 import { downloadWordDoc, esc, companyHeader, documentFooter } from '../../utils/wordExport';
 import { useWordPreview } from '../../hooks/useWordPreview';
 import styles from './Reports.module.css';
@@ -515,35 +516,89 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
 
 /* ── Trial Balance ──────────────────────────────────────────────────── */
 function TrialBalance({ chartOfAccounts }) {
-  const debitAccts  = chartOfAccounts.filter(a => ['Asset', 'Expense'].includes(a.account_type));
-  const creditAccts = chartOfAccounts.filter(a => ['Liability', 'Equity', 'Revenue', 'Capital', 'Income'].includes(a.account_type));
-  const totalDr = debitAccts.reduce((s, a) => s + (a.balance || 0), 0);
-  const totalCr = creditAccts.reduce((s, a) => s + (a.balance || 0), 0);
+  // A trial balance lists what the accounts hold. An account with no balance holds
+  // nothing, and 1,606 of company 1's 1,801 accounts are in that state — the chart
+  // carries the full code structure whether or not a branch ever posts to a given head,
+  // so the report was thousands of empty rows with the ~195 real ones scattered through
+  // them. They stay reachable behind the toggle rather than being dropped outright.
+  const [showEmpty, setShowEmpty] = useState(false);
+
+  const rows = useMemo(() => (chartOfAccounts || []).map(a => ({
+    key:     a.account_id ?? a.id,
+    code:    a.account_code,
+    name:    a.account_name,
+    type:    accountGroupLabel(a.account_code, a.account_type),
+    balance: Number(a.balance) || 0,
+    ...splitBalance(a.account_code, a.balance),
+  })), [chartOfAccounts]);
+
+  const emptyCount = rows.filter(r => r.balance === 0).length;
+  const visible    = showEmpty ? rows : rows.filter(r => r.balance !== 0);
+
+  // Totalled from the rows on screen, so the figures at the bottom are the figures
+  // above them. They were previously summed from a different filter than the table
+  // rendered, which is why the total read 691,400 Dr against 1,801 printed rows.
+  const totalDr = visible.reduce((s, r) => s + r.debit, 0);
+  const totalCr = visible.reduce((s, r) => s + r.credit, 0);
+  const diff    = totalDr - totalCr;
 
   return (
-    <div className={styles.reportTable}>
-      <table className={styles.tbl}>
-        <thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th className={styles.right}>Debit (Dr)</th><th className={styles.right}>Credit (Cr)</th></tr></thead>
-        <tbody>
-          {chartOfAccounts.map(a => {
-            const isDr = ['Asset', 'Expense'].includes(a.account_type);
-            return (
-              <tr key={a.account_id ?? a.id}>
-                <td className={styles.code}>{a.account_code}</td>
-                <td>{a.account_name}</td>
-                <td className={styles.type}>{a.account_type}</td>
-                <td className={styles.right}>{isDr  ? <span className={styles.mono}>{formatCurrency(a.balance)}</span> : <span className={styles.nil}>—</span>}</td>
-                <td className={styles.right}>{!isDr ? <span className={styles.mono}>{formatCurrency(a.balance)}</span> : <span className={styles.nil}>—</span>}</td>
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 0 12px', flexWrap: 'wrap' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={showEmpty}
+            onChange={e => setShowEmpty(e.target.checked)}
+            style={{ width: 15, height: 15, cursor: 'pointer' }}
+          />
+          Show accounts with no balance ({emptyCount})
+        </label>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+          {visible.length} of {rows.length} accounts
+        </span>
+      </div>
+
+      <div className={styles.reportTable}>
+        <table className={styles.tbl}>
+          <thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th className={styles.right}>Debit (Dr)</th><th className={styles.right}>Credit (Cr)</th></tr></thead>
+          <tbody>
+            {visible.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                No accounts carry a balance.
+              </td></tr>
+            ) : visible.map(r => (
+              <tr key={r.key}>
+                <td className={styles.code}>{r.code}</td>
+                <td>{r.name}</td>
+                <td className={styles.type}>{r.type}</td>
+                <td className={styles.right}>{r.debit  ? <span className={styles.mono}>{formatCurrency(r.debit)}</span>  : <span className={styles.nil}>—</span>}</td>
+                <td className={styles.right}>{r.credit ? <span className={styles.mono}>{formatCurrency(r.credit)}</span> : <span className={styles.nil}>—</span>}</td>
               </tr>
-            );
-          })}
-          <tr className={styles.totalRow}>
-            <td colSpan={3}><strong>Total</strong></td>
-            <td className={styles.right}><strong className={styles.mono}>{formatCurrency(totalDr)}</strong></td>
-            <td className={styles.right}><strong className={styles.mono}>{formatCurrency(totalCr)}</strong></td>
-          </tr>
-        </tbody>
-      </table>
+            ))}
+            <tr className={styles.totalRow}>
+              <td colSpan={3}><strong>Total</strong></td>
+              <td className={styles.right}><strong className={styles.mono}>{formatCurrency(totalDr)}</strong></td>
+              <td className={styles.right}><strong className={styles.mono}>{formatCurrency(totalCr)}</strong></td>
+            </tr>
+            {/* A trial balance that does not balance is the one thing this report exists
+                to reveal, so the gap is stated rather than left for the reader to subtract. */}
+            {Math.abs(diff) > 0.005 && (
+              <tr className={styles.totalRow}>
+                <td colSpan={3}>
+                  <strong style={{ color: 'var(--red)' }}>Out of balance</strong>
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 8 }}>
+                    debits and credits do not agree — the stored balances need review
+                  </span>
+                </td>
+                <td className={styles.right} colSpan={2}>
+                  <strong className={styles.mono} style={{ color: 'var(--red)' }}>{formatCurrency(Math.abs(diff))}</strong>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1975,7 +2030,10 @@ export default function Reports() {
       )}
       {pageTab === 'trial' && (
         <Card padding={false}>
-          <CardHeader title="Trial Balance" subtitle={`${chartOfAccounts.length} accounts`} />
+          <CardHeader
+            title="Trial Balance"
+            subtitle={`${chartOfAccounts.filter(a => (Number(a.balance) || 0) !== 0).length} accounts carrying a balance, of ${chartOfAccounts.length} in the chart`}
+          />
           <div className={styles.cardBody}><TrialBalance chartOfAccounts={chartOfAccounts} /></div>
         </Card>
       )}

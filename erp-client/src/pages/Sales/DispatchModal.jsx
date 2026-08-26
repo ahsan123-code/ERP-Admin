@@ -27,9 +27,17 @@ const CHARGE_FIELDS = [
 
 const EMPTY = {
   delivery_date: today, vehicle_no: '', driver_name: '', driver_mobile: '', dispatched_by: '',
-  sale_type: 'credit', gst_rate: '0',
+  sale_type: 'credit', gst_rate: '0', manual_bill_no: '',
   ...Object.fromEntries(CHARGE_FIELDS.map(([k]) => [k, '0'])),
 };
+
+// The number written on the physical bill book, printed on the sale bill as "Book #".
+// 19,503 of the 24,021 imported invoices carry one and the client still writes them, but
+// nothing in the app ever set it, so every bill raised here printed that line blank.
+// It stays optional: the second branch's 4,491 invoices have none at all. The numbers
+// repeat across books over the years — 5,797 distinct values across 19,503 rows — so it
+// is free text with no uniqueness check, which would fire constantly on legitimate reuse.
+const MANUAL_BILL_NO_MAX = 20;
 
 // A "Cash" payment term on the work order means the goods are paid for on the spot;
 // anything else (Net 7/15/30…) is a credit sale.
@@ -105,6 +113,7 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
         so_ref:             workOrder.so_ref,
         customer_name:      workOrder.customer_name,
         date:               form.delivery_date,
+        manual_bill_no:     form.manual_bill_no.trim() || null,
         subtotal,
         ...Object.fromEntries(CHARGE_FIELDS.map(([k]) => [k, parseFloat(form[k]) || 0])),
         total_charges:      charges,
@@ -200,6 +209,15 @@ export default function DispatchModal({ open, onClose, workOrder, order, onSave 
           <option value="cash">Cash Sale</option>
           <option value="credit">Credit Sale</option>
         </SelectField>
+
+        <Input
+          label="Manual Bill No. (Book #)"
+          value={form.manual_bill_no}
+          onChange={set('manual_bill_no')}
+          placeholder="e.g. 48-2"
+          maxLength={MANUAL_BILL_NO_MAX}
+          hint="From the physical bill book — prints on the sale bill. Leave blank if unused; you can fill it in later from Invoicing."
+        />
 
         <Input label="Dispatched By" value={form.dispatched_by} onChange={set('dispatched_by')} placeholder="Name / employee" />
 

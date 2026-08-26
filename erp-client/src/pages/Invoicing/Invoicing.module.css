@@ -262,3 +262,44 @@
   font-size: 0.85rem;
   color: var(--red, #ef4444);
 }
+/* ── Book # cell ─────────────────────────────────────────────────────────────
+   The whole cell is the edit control: a bill raised without its book number
+   shows an empty slot that invites filling in, rather than a dash that looks
+   like there is nothing to enter. */
+.bookCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.bookCell:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-subtle);
+}
+
+.bookCellEmpty {
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-style: italic;
+}
+
+.bookCellIcon {
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+:global(tr:hover) .bookCellIcon,
+.bookCell:hover .bookCellIcon {
+  opacity: 0.65;
+}

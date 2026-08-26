@@ -8,6 +8,7 @@ import { formatCurrency } from '../../utils/format';
 import { downloadWordDoc, esc, companyHeader, documentFooter } from '../../utils/wordExport';
 import { useWordPreview } from '../../hooks/useWordPreview';
 import { useEmployeeSections } from '../../context/EmployeeSectionsContext';
+import { isAdvance, isLoan } from '../../data/hr';
 import styles from './SalarySheetModal.module.css';
 
 const COMPANY = { name: 'Allied Steel Center', address: 'Lahore, Punjab, Pakistan' };
@@ -93,7 +94,10 @@ export default function SalarySheetModal({ records, employees, loans = [], month
   const { names: sectionOrder } = useEmployeeSections();
 
   const getDesig      = (empId) => employees.find(e => e.employee_id === empId)?.designation ?? '—';
-  const getActiveLoan = (empId) => loans.find(l => l.employee_id === empId && l.status === 'active') ?? null;
+  // Only proper loans — an advance lives in the same table but prints in the sheet's own
+  // Advance Salary column, so letting one through here would repeat it in the Loan block.
+  const getActiveLoan = (empId) =>
+    loans.find(l => l.employee_id === empId && l.status === 'active' && isLoan(l)) ?? null;
 
   // Each payroll row plus the figures the sheet prints but reads from elsewhere: the
   // per-day rate, and the four loan columns. Derived once here so the xlsx, the Word doc
@@ -228,17 +232,25 @@ export default function SalarySheetModal({ records, employees, loans = [], month
     const ws2 = XLSX.utils.aoa_to_sheet(slipRows);
     XLSX.utils.book_append_sheet(wb, ws2, sheetName(`Slip ${month}`, usedNames));
 
-    /* Loan summary sheet */
-    const activeLoans = loans.filter(l => l.status === 'active');
-    const loanRows = [
-      [`LOAN SUMMARY — ${month.toUpperCase()}-${year}`], [],
-      ['SR#', 'Name', 'Loan Amount', 'Monthly Deduction', 'Remaining Balance'],
-      ...activeLoans.map((l, i) => [i + 1, l.employee_name, l.loan_amount, l.monthly_deduction, l.remaining_balance]),
+    /* Loan summary sheet — loans and advances listed under their own headings, since
+       they recover on different terms and the sheet's Loan block only covers the first. */
+    const active   = loans.filter(l => l.status === 'active');
+    const block = (heading, rows, amountLabel, perMonthLabel) => [
+      [heading], [],
+      ['SR#', 'Name', amountLabel, perMonthLabel, 'Remaining Balance'],
+      ...(rows.length
+        ? rows.map((l, i) => [i + 1, l.employee_name, l.loan_amount, l.monthly_deduction, l.remaining_balance])
+        : [['', 'None outstanding', '', '', '']]),
       ['', 'TOTAL',
-        activeLoans.reduce((s, l) => s + (l.loan_amount || 0), 0),
-        activeLoans.reduce((s, l) => s + (l.monthly_deduction || 0), 0),
-        activeLoans.reduce((s, l) => s + (l.remaining_balance || 0), 0),
+        rows.reduce((s, l) => s + (Number(l.loan_amount) || 0), 0),
+        rows.reduce((s, l) => s + (Number(l.monthly_deduction) || 0), 0),
+        rows.reduce((s, l) => s + (Number(l.remaining_balance) || 0), 0),
       ],
+    ];
+    const loanRows = [
+      ...block(`LOAN SUMMARY — ${month.toUpperCase()}-${year}`, active.filter(isLoan), 'Loan Amount', 'Monthly Deduction'),
+      [], [],
+      ...block(`ADVANCE SUMMARY — ${month.toUpperCase()}-${year}`, active.filter(isAdvance), 'Advance Amount', 'Recovery / Month'),
     ];
     const ws3 = XLSX.utils.aoa_to_sheet(loanRows);
     XLSX.utils.book_append_sheet(wb, ws3, sheetName('Loan Summary', usedNames));

@@ -1,0 +1,67 @@
+/* Chips for the selected options, above the search control. The base field, control,
+   panel and option styles are shared with SearchableSelect.module.css. */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--primary-dim, var(--border-default));
+  border-radius: 999px;
+  background: var(--primary-muted);
+  color: var(--primary-text, var(--primary));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.chipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.chipRemove:hover {
+  opacity: 1;
+  background: var(--primary-dim, rgba(0, 0, 0, 0.12));
+}
+
+/* Count of selections, so the control still says how many are picked once the
+   chip list is scrolled out of view on a long form. */
+.count {
+  flex-shrink: 0;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--primary-muted);
+  color: var(--primary-text, var(--primary));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}

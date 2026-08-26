@@ -5,6 +5,7 @@ import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { hrDb } from '../../lib/db';
+import { LOAN_TYPES } from '../../data/hr';
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -36,6 +37,7 @@ export default function AddLoanModal({ open, onClose, onSave, employees }) {
       const deduction = parseFloat(form.monthly_deduction);
       const installments = form.total_installments ? parseInt(form.total_installments) : Math.ceil(amount / deduction);
       const record = {
+        type:               LOAN_TYPES.LOAN,
         loan_id:            'LN-' + String(Date.now()).slice(-6),
         employee_id:        form.employee_id,
         employee_name:      selectedEmp?.name ?? '',
@@ -66,7 +68,7 @@ export default function AddLoanModal({ open, onClose, onSave, employees }) {
       open={open}
       onClose={onClose}
       title="Add Loan"
-      subtitle="Disburse a new loan or advance to an employee"
+      subtitle="Disburse a new loan, repaid by monthly installment"
       size="sm"
       footer={
         <div className="factions">

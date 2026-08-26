@@ -524,12 +524,14 @@ export const HELP_SECTIONS = [
         steps: [
           'Sales invoices are created automatically during the Dispatch step (Sales & CRM → Deliveries → click Dispatch on a confirmed order).',
           'During dispatch you enter the freight, loading/unloading, packing, toll tax, and slitting charges — these become the invoice charges.',
+          'Also on the dispatch form, enter the Manual Bill No. (Book #) — the number written on the physical bill book. It prints on the sale bill as "Book #". Leave it blank if you do not have it yet.',
           'Once dispatched, the invoice appears immediately in Invoicing → Sales Invoices tab.',
           'Go to Invoicing → Sales Invoices to view, search, and print any invoice.',
           'Click "Print" on an invoice row to open the print view — shows company header, customer, SO/DN reference, charge breakdown, and grand total.',
         ],
         tips: [
           'You do not create sales invoices manually in the Invoicing module — they come from the dispatch action here in Sales & CRM.',
+          'If the Book # was not to hand at dispatch, click the Book # cell on any row in Invoicing → Sales Invoices to fill it in or correct it afterwards.',
           'For FBR tax submission (e-invoicing), use Invoicing → FBR Queue → New FBR Invoice separately.',
         ],
       },
@@ -628,6 +630,11 @@ export const HELP_SECTIONS = [
           'Select the account(s), enter debit/credit amounts, date, and a narration.',
           'Save — the voucher posts to the relevant account ledgers, visible under Reports → Ledger Report.',
         ],
+        tips: [
+          'Payment vouchers (PV and BPV) can be paid to an expense account as well as to a customer or vendor. In the "Paid To" picker, search by account name or code — expense heads are tagged "Expense" in the list.',
+          'Use this for anything paid out that does not settle a party balance: rent, utilities, freight, repairs. The voucher debits the expense head and credits the cash or bank it was paid from.',
+          'One voucher can mix parties and expense heads across its lines — each line posts against its own account, and the cash/bank side carries their total.',
+        ],
       },
       {
         id: 'bank-accounts',
@@ -694,8 +701,16 @@ export const HELP_SECTIONS = [
         what: 'Tracks small day-to-day cash expenses paid out of a petty cash float.',
         steps: [
           'Go to Finance → Petty Cash.',
-          'Click "New Entry" (top-right) to log an expense — description, amount, and date.',
+          'Click "New Entry" (top-right) to log an expense — date, category, and description.',
+          'In "Expense Accounts", pick every account the payment should be charged to. You can select several: type to search, click to tick, and click a ticked account (or its chip) again to remove it.',
+          'Enter what each selected account was charged in "Amount Per Account". The total for the entry is the sum of those amounts.',
+          'Choose whether it was paid from Cash In Hand or a bank account, then post it.',
           'Use the running total to know how much of the petty cash float remains.',
+        ],
+        tips: [
+          'One slip often covers more than one expense head — split it across accounts here instead of keying the same description in twice.',
+          'The voucher debits each expense account for its own amount and credits the cash or bank once for the total, so every account shows the right figure in Reports → Ledger.',
+          'The Expense Accounts column in the list names the head an entry was charged to, or the first one plus a count when it was split.',
         ],
       },
       {
@@ -907,12 +922,13 @@ export const HELP_SECTIONS = [
       {
         id: 'loans',
         title: 'Loans & Advances',
-        what: 'Tracks employee loans/advances and their repayment, which feed into payroll deductions.',
+        what: 'Tracks employee loans and salary advances and their recovery, which feed into payroll deductions. A loan is repaid by monthly installment; an advance is salary paid before payday and taken back out of the coming salary.',
         steps: [
-          'Go to HR & Payroll → Loans.',
-          'Click "Add Loan" (top-right) to record a new loan — employee, amount, and repayment terms.',
-          'Click the edit icon on a row to adjust a loan\'s details (e.g. remaining balance after a repayment).',
-          'Active loans are automatically considered when Payroll is processed.',
+          'Go to HR & Payroll → Loans & Advances. Use the All / Loans / Advances buttons to narrow the list.',
+          'Click "Add Loan" to record a new loan — employee, amount, and the monthly installment.',
+          'Click "Add Advance" to record salary paid in advance — employee, amount, and the date paid. Leave "Recover Per Month" blank to take the whole amount off the next salary, or set a figure to spread it over several months.',
+          'Click any row to adjust it (e.g. the remaining balance after a repayment), or to close it off by setting its status.',
+          'Generating Payroll deducts active loan installments as Loan Deduction and outstanding advances as Advance Salary, then writes the recovered amount off the advance — an advance with nothing left closes itself.',
         ],
       },
     ],

@@ -11,6 +11,7 @@ import DailyAttendance from './DailyAttendance';
 import MonthlyAttendance from './MonthlyAttendance';
 import NewLeaveModal from './NewLeaveModal';
 import AddLoanModal from './AddLoanModal';
+import AddAdvanceModal from './AddAdvanceModal';
 import EditLoanModal from './EditLoanModal';
 import PayslipModal from './PayslipModal';
 import PayrollManageModal from './PayrollManageModal';
@@ -26,6 +27,7 @@ import Button from '../../components/ui/Button';
 import { useDb } from '../../hooks/useDb';
 import { hrDb, financeDb } from '../../lib/db';
 import { useCompany } from '../../context/CompanyContext';
+import { isAdvance, LOAN_TYPES } from '../../data/hr';
 import { formatDate, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
 import styles from './HR.module.css';
@@ -89,25 +91,38 @@ const buildLeaveCols = (onDecide, busyId) => [
     ) },
 ];
 
+// One table for both kinds of credit, so the labels stay neutral: an advance's
+// loan_amount is the advance, and its monthly_deduction is what comes off the coming
+// salary — calling either column "Loan" would misread half the rows.
 const LOAN_COLS = [
-  { key: 'loan_id',          label: 'Loan ID',          width: 110, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'loan_id',          label: 'Ref',               width: 110, render: v => <span className={styles.code}>{v}</span> },
+  { key: 'type',             label: 'Type',              width: 100,
+    render: (_, row) => (
+      <Badge variant={isAdvance(row) ? 'cyan' : 'purple'}>{isAdvance(row) ? 'Advance' : 'Loan'}</Badge>
+    ) },
   { key: 'employee_name',    label: 'Employee',          width: 180 },
-  { key: 'loan_amount',      label: 'Loan Amount',       width: 140, align: 'right',
+  { key: 'loan_amount',      label: 'Amount',            width: 140, align: 'right',
     render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
   { key: 'disbursed_date',   label: 'Disbursed',         width: 120, render: v => <span className={styles.date}>{v ? formatDate(v) : '—'}</span> },
-  { key: 'monthly_deduction',label: 'Monthly Deduction', width: 155, align: 'right',
+  { key: 'monthly_deduction',label: 'Per Month',         width: 155, align: 'right',
     render: v => <span className={`${styles.mono} ${styles.negative}`}>{formatCurrency(v)}</span> },
   { key: 'remaining_balance',label: 'Balance',           width: 140, align: 'right',
     render: v => <span className={`${styles.mono} ${v > 0 ? styles.debitVal : styles.positive}`}>{formatCurrency(v)}</span> },
   { key: 'paid_installments',label: 'Progress',          width: 120,
-    render: (v, row) => (
-      <div className={styles.progress}>
-        <div className={styles.progressBar}>
-          <div className={styles.progressFill} style={{ width: `${(v / row.total_installments) * 100}%` }} />
+    render: (v, row) => {
+      // total_installments is 0 on nothing real, but a stray 0 would divide to NaN and
+      // render an invalid width, so the bar reads empty rather than breaking the row.
+      const total = Number(row.total_installments) || 0;
+      const pct   = total > 0 ? Math.min(100, (v / total) * 100) : 0;
+      return (
+        <div className={styles.progress}>
+          <div className={styles.progressBar}>
+            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+          </div>
+          <span className={styles.progressText}>{v}/{total || '—'}</span>
         </div>
-        <span className={styles.progressText}>{v}/{row.total_installments}</span>
-      </div>
-    ) },
+      );
+    } },
   { key: 'status', label: 'Status', width: 100,
     render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
 ];
@@ -157,7 +172,9 @@ export default function HR() {
   const [attSubTab,    setAttSubTab]    = useState('daily');
   const [leaveOpen,    setLeaveOpen]    = useState(false);
   const [loanOpen,     setLoanOpen]     = useState(false);
+  const [advanceOpen,  setAdvanceOpen]  = useState(false);
   const [editLoan,     setEditLoan]     = useState(null);
+  const [creditFilter, setCreditFilter] = useState('all');
   const [payslipRec,   setPayslipRec]   = useState(null);
   const [manageRec,    setManageRec]    = useState(null);
   const [sheetOpen,    setSheetOpen]    = useState(false);
@@ -236,7 +253,13 @@ export default function HR() {
   const onLeaveToday     = leaveRequests.filter(l =>
     l.status === 'approved' && l.from_date <= today && l.to_date >= today).length;
   const payrollProcessed = payrollRecords.filter(p => p.status === 'paid').length;
-  const activeLoans      = loans.filter(l => l.status === 'active').length;
+  const activeCredit     = loans.filter(l => l.status === 'active');
+  const activeLoans      = activeCredit.filter(l => !isAdvance(l)).length;
+  const activeAdvances   = activeCredit.filter(isAdvance).length;
+
+  const visibleCredit = creditFilter === 'all'
+    ? loans
+    : loans.filter(l => (creditFilter === LOAN_TYPES.ADVANCE ? isAdvance(l) : !isAdvance(l)));
 
   const stats = [
     { icon: Users,         label: 'Total Employees',  value: loadEmp  ? '…' : totalActive,      color: 'blue'   },
@@ -249,10 +272,11 @@ export default function HR() {
     <div className={`${styles.page} page-enter`}>
       <PageHeader
         title="HR & Payroll"
-        subtitle="Allied Steel Center — employees, attendance, leave, payroll, and loans"
+        subtitle="Allied Steel Center — employees, attendance, leave, payroll, loans and advances"
         actions={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {activeLoans > 0 && <Badge variant="warning">{activeLoans} active loans</Badge>}
+            {activeLoans    > 0 && <Badge variant="warning">{activeLoans} active loan{activeLoans === 1 ? '' : 's'}</Badge>}
+            {activeAdvances > 0 && <Badge variant="cyan">{activeAdvances} open advance{activeAdvances === 1 ? '' : 's'}</Badge>}
             <Button icon={<Plus size={15} />} onClick={() => setEmpOpen(true)}>Add Employee</Button>
           </div>
         }
@@ -349,10 +373,22 @@ export default function HR() {
         <Card padding={false}>
           <CardHeader
             title="Loans & Advances"
-            subtitle={loadLoans ? 'Loading…' : `${activeLoans} active loans — click any row to edit`}
-            actions={<Button icon={<Plus size={15} />} size="sm" onClick={() => setLoanOpen(true)}>Add Loan</Button>}
+            subtitle={loadLoans
+              ? 'Loading…'
+              : `${activeLoans} active loan${activeLoans === 1 ? '' : 's'} · ${activeAdvances} open advance${activeAdvances === 1 ? '' : 's'} — click any row to edit`}
+            actions={
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Button variant={creditFilter === 'all' ? 'primary' : 'secondary'} size="sm" onClick={() => setCreditFilter('all')}>All</Button>
+                  <Button variant={creditFilter === LOAN_TYPES.LOAN ? 'primary' : 'secondary'} size="sm" onClick={() => setCreditFilter(LOAN_TYPES.LOAN)}>Loans</Button>
+                  <Button variant={creditFilter === LOAN_TYPES.ADVANCE ? 'primary' : 'secondary'} size="sm" onClick={() => setCreditFilter(LOAN_TYPES.ADVANCE)}>Advances</Button>
+                </div>
+                <Button icon={<Plus size={15} />} size="sm" onClick={() => setLoanOpen(true)}>Add Loan</Button>
+                <Button icon={<Plus size={15} />} size="sm" variant="secondary" onClick={() => setAdvanceOpen(true)}>Add Advance</Button>
+              </div>
+            }
           />
-          <DataTable columns={LOAN_COLS} data={loans} loading={loadLoans} keyField="loan_id" searchPlaceholder="Search loans..." onRowClick={setEditLoan} />
+          <DataTable columns={LOAN_COLS} data={visibleCredit} loading={loadLoans} keyField="loan_id" searchPlaceholder="Search loans and advances..." onRowClick={setEditLoan} />
         </Card>
       )}
 
@@ -361,16 +397,19 @@ export default function HR() {
       <DeleteConfirmModal employee={deleteEmp} onClose={() => setDeleteEmp(null)} onConfirm={handleDeleteConfirm} />
       <NewLeaveModal open={leaveOpen} onClose={() => setLeaveOpen(false)} onSave={() => refetchLeave()} employees={employees} />
       <AddLoanModal open={loanOpen} onClose={() => setLoanOpen(false)} onSave={() => refetchLoans()} employees={employees} />
+      <AddAdvanceModal open={advanceOpen} onClose={() => setAdvanceOpen(false)} onSave={() => refetchLoans()} employees={employees} />
       <EditLoanModal loan={editLoan} onClose={() => setEditLoan(null)} onSave={() => refetchLoans()} />
       {payslipRec && <PayslipModal record={payslipRec} onClose={() => setPayslipRec(null)} />}
       {manageRec  && <PayrollManageModal record={manageRec} onSave={handlePayrollSave} onClose={() => setManageRec(null)} />}
       {sheetOpen  && <SalarySheetModal records={sheetRecords} employees={employees} loans={loans} month={selMonth} year={selYear} onClose={() => setSheetOpen(false)} />}
+      {/* Generating recovers outstanding advances against their balances, so the
+          Loans & Advances tab is stale the moment it finishes — hence refetchLoans. */}
       <GeneratePayrollModal
         open={genOpen}
         employees={employees}
         loans={loans}
         onClose={() => setGenOpen(false)}
-        onGenerated={(m, y) => { refetchPay(); setPeriod(`${m} ${y}`); }}
+        onGenerated={(m, y) => { refetchPay(); refetchLoans(); setPeriod(`${m} ${y}`); }}
       />
       <DisbursePayrollModal
         open={disburseOpen}

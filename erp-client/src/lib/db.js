@@ -1,6 +1,7 @@
 // Central DB query layer — all Supabase queries go here.
 // Every function returns { data, error } from Supabase.
 import { supabase } from './supabase';
+import { isCreditNormal } from '../utils/accounts';
 
 // Supabase caps one select at 1,000 rows, and PostgREST puts an .in() list in the query
 // string where the gateway stops at roughly 8 KB. Both force long reads to be split.
@@ -315,9 +316,9 @@ export const financeDb = {
   // Pass negative debit/credit to reverse a deleted voucher's effect.
   applyVoucherToBalances: async (account, debit, credit) => {
     if (!account) return;
-    const prefix = account.account_code?.slice(0, 2);
-    const isCreditNormal = ['10', '13', '14'].includes(prefix); // Income, Owner Equity, Liability
-    const delta = isCreditNormal ? (credit - debit) : (debit - credit);
+    // Same classifier the Trial Balance reads, so the report cannot disagree with the
+    // rule that maintains the balances it reports on.
+    const delta = isCreditNormal(account.account_code) ? (credit - debit) : (debit - credit);
     await supabase.from('chart_of_accounts')
       .update({ balance: (account.balance || 0) + delta })
       .eq('account_id', account.account_id);
@@ -587,18 +588,79 @@ export const financeDb = {
   getPettyCash: () =>
     supabase.from('petty_cash').select('*').order('date', { ascending: false }),
 
-  addPettyCash: async (pc, { sourceAccount, expenseAccount, companyId }) => {
+  getPettyCashLines: (pcId) =>
+    supabase.from('petty_cash_lines').select('*').eq('pc_id', pcId).order('line_no'),
+
+  // Lines for a set of entries, so the list can show what each entry was charged to
+  // without a query per row. Chunked like the other bulk readers to stay inside
+  // Supabase's URL length limit.
+  getPettyCashLinesBulk: async (pcIds = []) => {
+    const ids = [...new Set((pcIds || []).filter(Boolean))];
+    if (ids.length === 0) return { data: [], error: null };
+    const CHUNK = 150;
+    const all = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const { data, error } = await supabase
+        .from('petty_cash_lines')
+        .select('pc_id, line_no, expense_account_id, account_name, amount')
+        .in('pc_id', ids.slice(i, i + CHUNK))
+        .order('line_no');
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+    }
+    return { data: all, error: null };
+  },
+
+  // One payment, split across one or more expense heads. `lines` is
+  // [{ account, amount }] — the voucher debits each head for its own share and
+  // credits the source once for the total, so the entry balances however many
+  // heads it touches.
+  //
+  // The voucher is posted before the row is written, as it always was. A failure
+  // there throws and no petty_cash row appears, which is the safe way round: an
+  // entry that never reached the ledger is worse than one that was never recorded.
+  addPettyCash: async (pc, { sourceAccount, lines, companyId }) => {
+    const splits = (lines || []).filter(l => l.account && (parseFloat(l.amount) || 0) > 0);
+    if (splits.length === 0) throw new Error('A petty cash entry needs at least one expense account with an amount.');
+
+    // Trust the split, not the caller's total: the credit leg has to equal the sum of
+    // the debits exactly or the voucher posts lopsided.
+    const total = splits.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
     const voucherId = 'PC-' + String(Date.now()).slice(-6);
     await financeDb.postJournalEntry({
       voucherId, voucherType: 'Payment', date: pc.date, companyId,
       legs: [
-        { account: expenseAccount, debit: pc.amount, credit: 0 },
-        { account: sourceAccount, debit: 0, credit: pc.amount },
+        ...splits.map(l => ({ account: l.account, debit: parseFloat(l.amount) || 0, credit: 0 })),
+        { account: sourceAccount, debit: 0, credit: total },
       ],
       narration: pc.description,
       reference: pc.pc_id,
     });
-    return supabase.from('petty_cash').insert([pc]).select().single();
+
+    const { data, error } = await supabase
+      .from('petty_cash')
+      .insert([{
+        ...pc,
+        amount: total,
+        // Kept in step with the split's first head so anything still reading this
+        // single column off the parent row reads one of the entry's real accounts.
+        expense_account_id: splits[0].account.account_id,
+      }])
+      .select()
+      .single();
+    if (error) return { data, error };
+
+    const { error: lineError } = await supabase.from('petty_cash_lines').insert(
+      splits.map((l, i) => ({
+        pc_id:              pc.pc_id,
+        line_no:            i + 1,
+        expense_account_id: l.account.account_id,
+        account_name:       l.account.account_name,
+        amount:             parseFloat(l.amount) || 0,
+        company_id:         companyId,
+      })),
+    );
+    return { data, error: null, lineError: lineError || null };
   },
 
   getDailyCash: (companyId = 1) =>
@@ -1122,6 +1184,13 @@ export const salesDb = {
 
   addSalesInvoice: (inv) =>
     supabase.from('sales_invoices').insert([inv]).select().single(),
+
+  // Correcting a bill after it was raised. Keyed on the integer id rather than
+  // sale_inv_id to match deleteSalesInvoice, and deliberately narrow in practice:
+  // the only field the UI edits this way is manual_bill_no, the number off the
+  // physical bill book, which is often not to hand at the moment of dispatch.
+  updateSalesInvoice: (id, updates) =>
+    supabase.from('sales_invoices').update(updates).eq('id', id).select().single(),
 
   // What a dispatched invoice actually billed. Copied from the order's
   // so_line_items at dispatch so the invoice keeps the sold detail even if the

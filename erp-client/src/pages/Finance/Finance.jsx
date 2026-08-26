@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { TrendingUp, Scale, Plus, Landmark, Coins, Trash2, Check, Ban, Pencil } from 'lucide-react';
 import Button from '../../components/ui/Button';
@@ -55,16 +55,38 @@ const CR_COLS = [
   },
 ];
 
-const PC_COLS = [
+// `linesByEntry` maps pc_id to the entry's expense split. An entry charged to a single
+// head reads as that head's name; one split across several names them all, so the list
+// says what the money went on without opening anything.
+const buildPcCols = (linesByEntry) => [
   { key: 'pc_id', label: 'Ref No.', width: 100, render: v => <span className={styles.code}>{v}</span> },
   { key: 'date', label: 'Date', width: 110, render: v => <span className={styles.date}>{formatDate(v)}</span> },
-  { key: 'description', label: 'Description', width: 250 },
+  { key: 'description', label: 'Description', width: 230 },
   { key: 'category', label: 'Category', width: 110 },
+  {
+    key: '_accounts', label: 'Expense Accounts', width: 240, sortable: false,
+    render: (_, row) => {
+      const lines = linesByEntry[row.pc_id] || [];
+      if (lines.length === 0) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+      const names = lines.map(l => l.account_name || l.expense_account_id).filter(Boolean);
+      return (
+        <span
+          title={lines.map(l => `${l.account_name || l.expense_account_id}: ${formatCurrency(l.amount)}`).join('\n')}
+          style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {names[0]}
+          {names.length > 1 && (
+            <span style={{ color: 'var(--text-tertiary)' }}> +{names.length - 1} more</span>
+          )}
+        </span>
+      );
+    },
+  },
   {
     key: 'amount', label: 'Amount', width: 130, align: 'right',
     render: v => <span className={`${styles.mono} ${styles.debit}`}>{formatCurrency(v)}</span>
   },
-  { key: 'approved_by', label: 'Approved By', width: 140 },
+  { key: 'approved_by', label: 'Approved By', width: 130 },
   {
     key: 'status', label: 'Status', width: 100,
     render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; }
@@ -120,6 +142,19 @@ export default function Finance() {
   const { data: cashReceived, loading: loadCash, refetch: refetchCash } = useDb(() => financeDb.getCashReceived());
   const { data: interBankTransfers, loading: loadIBT, refetch: refetchIBT } = useDb(() => financeDb.getInterBankTransfers());
   const { data: pettyCash, loading: loadPetty, refetch: refetchPetty } = useDb(() => financeDb.getPettyCash());
+
+  // The expense split behind each entry. Keyed on the loaded ids and memoised so the
+  // fetch reruns when the entry list changes, not on every render.
+  const pettyIdsKey = useMemo(() => (pettyCash || []).map(p => p.pc_id).join(','), [pettyCash]);
+  const { data: pettyLines, refetch: refetchPettyLines } = useDb(
+    () => financeDb.getPettyCashLinesBulk(pettyIdsKey ? pettyIdsKey.split(',') : []),
+    [pettyIdsKey],
+  );
+  const pettyLinesByEntry = useMemo(() => {
+    const map = {};
+    (pettyLines || []).forEach(l => { (map[l.pc_id] ||= []).push(l); });
+    return map;
+  }, [pettyLines]);
   const { data: dailyCash, loading: loadDailyCash, refetch: refetchDailyCash } = useDb(() => financeDb.getDailyCash(companyId), [companyId]);
 
   const [voucherList, setVoucherList] = useState([]);
@@ -379,6 +414,7 @@ export default function Finance() {
 
   const handleSavePettyCash = () => {
     refetchPetty();
+    refetchPettyLines();
     refreshLedger();
   };
 
@@ -674,7 +710,7 @@ export default function Finance() {
             subtitle={`${pettyCash.length} petty cash entries`}
             actions={<Button icon={<Plus size={15} />} onClick={() => setPcOpen(true)}>New Entry</Button>}
           />
-          <DataTable columns={PC_COLS} data={pettyCash} loading={loadPetty} keyField="pc_id" searchPlaceholder="Search petty cash..." />
+          <DataTable columns={buildPcCols(pettyLinesByEntry)} data={pettyCash} loading={loadPetty} keyField="pc_id" searchPlaceholder="Search petty cash..." />
         </Card>
       )}
 
