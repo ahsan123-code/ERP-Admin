@@ -842,6 +842,33 @@ export const financeDb = {
     return { data: totals, error: null };
   },
 
+  // Parties that trade in both directions — we sell to them and buy from them. Returns
+  // one row per linked party with the receivable and payable sides kept separate, plus
+  // the net for information. The two sides are NOT merged in the ledger: a receivable is
+  // an asset and a payable a liability, and offsetting them would understate both.
+  // Keyed by party_id, and also by lower-cased name so the customer and vendor reports
+  // can flag a row without carrying the id around. See server/migrate-party-links.js.
+  getPartyPositions: async (companyId = 1) => {
+    const { data, error } = await supabase.from('party_positions')
+      .select('party_id, name, receivable, payable, net_position, txn_count')
+      .eq('company_id', companyId);
+    if (error) return { data: null, error };
+    const rows = (data || []).map(r => ({
+      party_id:     r.party_id,
+      name:         r.name,
+      receivable:   parseFloat(r.receivable)   || 0,
+      payable:      parseFloat(r.payable)      || 0,
+      net_position: parseFloat(r.net_position) || 0,
+      txn_count:    Number(r.txn_count)        || 0,
+    }));
+    const byId = {}, byName = {};
+    rows.forEach(r => {
+      byId[r.party_id] = r;
+      byName[(r.name || '').trim().toLowerCase()] = r;
+    });
+    return { data: { rows, byId, byName }, error: null };
+  },
+
   // The real free-text remark for a set of vouchers. vouchers.narration is a
   // placeholder from the source system — the literal word "Remarks" on most sales
   // vouchers, a voucher-type label on the rest — while the note the user actually
@@ -949,7 +976,9 @@ export const salesDb = {
       // account_code links the customer to their sub-ledger account, which is where
       // the Customer Current Balance report reads the real position from. Leaving it
       // out of this list silently falls the report back to invoice totals.
-      .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance, opening_balance, opening_balance_date, account_code')
+      // party_id is set where this customer is also a vendor, so the balance report can
+      // flag the row instead of the same person reading as two unrelated accounts.
+      .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance, opening_balance, opening_balance_date, account_code, party_id')
       .eq('company_id', companyId)
       .order('id', { ascending: false }),
 

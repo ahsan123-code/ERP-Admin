@@ -120,6 +120,7 @@ const NAV = [
           { path: '/reports/vendor-ledger',   label: 'Vendor Ledger' },
           { path: '/reports/cust-balance',    label: 'Customer Balance' },
           { path: '/reports/vendor-balance',  label: 'Vendor Balance' },
+          { path: '/reports/party-positions', label: 'Party Net Position' },
           { path: '/reports/day-book',        label: 'Daily Day Book' },
         ],
       },

@@ -80,7 +80,7 @@ const SEG_TO_TAB = {
   'sold-items': 'sold-items', 'invoice-summary': 'invoice-summary',
   gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
   'cust-balance': 'cust-balance', 'day-book': 'day-book', 'vendor-balance': 'vendor-balance',
-  'vendor-ledger': 'vendor-ledger',
+  'vendor-ledger': 'vendor-ledger', 'party-positions': 'party-positions',
 };
 // Legacy sales vouchers carry their invoice number inside the narration:
 //   "Sales-28-Sep-2020-0157-L-…"  ->  INV-SA-20-09-0157
@@ -1241,6 +1241,15 @@ function BankReconciliation({ bankAccounts, paymentReconciliation }) {
 }
 
 /* ── Customer Current Balance ────────────────────────────────────────── */
+// Marks a row whose party trades in the other direction too. Deliberately a note on the
+// name and not an adjustment to the balance — the two sides stay on their own accounts.
+const partyTagStyle = {
+  display: 'inline-block', marginLeft: 8, padding: '1px 6px', borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--border-subtle)', background: 'var(--bg-tertiary)',
+  color: 'var(--text-secondary)', fontSize: 10, fontWeight: 600, verticalAlign: 'middle',
+  whiteSpace: 'nowrap',
+};
+
 function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, companyId = 1 }) {
   const [search, setSearch] = useState('');
 
@@ -1249,6 +1258,9 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
   // ignores the voucher history where most movement sits, so both branches were wrong.
   const { data: ledgerBalances, loading: balancesLoading } = useDb(
     () => financeDb.getCustomerLedgerBalances(companyId), [companyId]);
+
+  // Customers who are also vendors. Flagged rather than merged — see PartyNetPosition.
+  const { data: parties } = useDb(() => financeDb.getPartyPositions(companyId), [companyId]);
 
   const report = useMemo(() => {
     if (!customers || balancesLoading) return [];
@@ -1289,11 +1301,17 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
         ? ledger
         : (totalInvoiced > 0 ? derivedBalance : (parseFloat(c.outstanding_balance) || 0));
 
+      // The same person's vendor side, when they have one. Shown as a note on the row so
+      // the reader knows the account continues elsewhere, never folded into `balance`.
+      const party = c.party_id ? parties?.byId?.[c.party_id] : undefined;
+
       return {
         customer_id:          c.customer_id,
         name:                 c.name,
         contact:              c.contact,
         balance,
+        also_vendor:          !!party,
+        party_payable:        party?.payable || 0,
         opening_balance:      opening,
         total_invoiced:       totalInvoiced,
         total_paid:           totalPaid,
@@ -1303,8 +1321,11 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
         last_invoice_date:    lastInv?.date        || null,
         last_invoice_amount:  parseFloat(lastInv?.grand_total) || 0,
       };
-    }).filter(r => r.balance !== 0 || r.last_invoice_id);
-  }, [customers, salesInvoices, receiptVouchers, ledgerBalances, balancesLoading]);
+    });
+    // Every customer on the books belongs in this report, including the ones sitting
+    // at a nil balance with nothing invoiced yet — dropping them made accounts the
+    // user knows exist look like they had been deleted.
+  }, [customers, salesInvoices, receiptVouchers, ledgerBalances, balancesLoading, parties]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1326,12 +1347,17 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
       <td className={styles.code}>{i + 1}</td>
       <td>
         <strong>{r.name}</strong>
+        {r.also_vendor && <span style={partyTagStyle} title="This party is also a vendor — their purchase side is on the Vendor Balance report">
+          Also a vendor{r.party_payable ? ` · ${formatCurrency(Math.abs(r.party_payable))} ${r.party_payable >= 0 ? 'payable' : 'advance'}` : ''}
+        </span>}
         {r.contact && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{r.contact}</div>}
       </td>
-      <td className={`${styles.right} ${styles.mono}`} style={{ color: r.balance >= 0 ? 'var(--blue)' : 'var(--red)', fontWeight: 700 }}>
-        {r.balance >= 0
-          ? `${formatCurrency(r.balance)} Dr`
-          : `${formatCurrency(Math.abs(r.balance))} Cr`}
+      <td className={`${styles.right} ${styles.mono}`} style={{ color: r.balance > 0 ? 'var(--blue)' : r.balance < 0 ? 'var(--red)' : undefined, fontWeight: 700 }}>
+        {r.balance === 0
+          ? <span className={styles.nil}>—</span>
+          : r.balance > 0
+            ? `${formatCurrency(r.balance)} Dr`
+            : `${formatCurrency(Math.abs(r.balance))} Cr`}
       </td>
       <td className={`${styles.code} ${styles.right}`}>
         {r.last_payment_date ? formatDate(r.last_payment_date) : <span className={styles.nil}>—</span>}
@@ -1361,8 +1387,8 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
       <tr>
         <td>${i + 1}</td>
         <td><strong>${esc(r.name)}</strong>${r.contact ? `<br><span style="font-size:9px;color:#888">${esc(r.contact)}</span>` : ''}</td>
-        <td class="right" style="color:${r.balance >= 0 ? '#1a5276' : '#922b21'};font-weight:700">
-          ${r.balance >= 0 ? formatCurrency(r.balance) + ' Dr' : formatCurrency(Math.abs(r.balance)) + ' Cr'}
+        <td class="right" style="color:${r.balance > 0 ? '#1a5276' : r.balance < 0 ? '#922b21' : '#666'};font-weight:700">
+          ${r.balance === 0 ? '—' : r.balance > 0 ? formatCurrency(r.balance) + ' Dr' : formatCurrency(Math.abs(r.balance)) + ' Cr'}
         </td>
         <td class="center">${r.last_payment_date ? formatDate(r.last_payment_date) : '—'}</td>
         <td class="right">${r.last_payment_amount > 0 ? formatCurrency(r.last_payment_amount) : '—'}</td>
@@ -1596,8 +1622,17 @@ function DailyDayBook({ vouchers }) {
 }
 
 /* ── Vendor Current Balance ───────────────────────────────────────────── */
-function VendorCurrentBalance({ vendorBalances }) {
+function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
   const [search, setSearch] = useState('');
+
+  // Vendors who are also customers. vendor_balances carries no party_id, so the link is
+  // read off the vendor master rows the page already has.
+  const { data: parties } = useDb(() => financeDb.getPartyPositions(companyId), [companyId]);
+  const partyByVendorId = useMemo(() => {
+    const m = {};
+    (vendors || []).forEach(v => { if (v.party_id) m[v.id] = parties?.byId?.[v.party_id]; });
+    return m;
+  }, [vendors, parties]);
 
   // Ledger-derived: purchases credit the vendor (payable up), payments debit it.
   // A positive balance is a payable (we owe the vendor); negative is an advance.
@@ -1612,8 +1647,13 @@ function VendorCurrentBalance({ vendorBalances }) {
       balance:         parseFloat(v.balance_payable) || 0,
       last_txn_date:   v.last_txn_date || null,
       txn_count:       Number(v.txn_count) || 0,
-    })).filter(r => r.txn_count > 0 || r.balance !== 0);
-  }, [vendorBalances]);
+      has_account:     !!v.account_code,
+      also_customer:   !!partyByVendorId[v.vendor_id],
+      party_receivable: partyByVendorId[v.vendor_id]?.receivable || 0,
+    }));
+    // Vendors with no ledger activity and a nil balance are still real vendors, so
+    // they stay on the report rather than being filtered out of existence.
+  }, [vendorBalances, partyByVendorId]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1628,6 +1668,8 @@ function VendorCurrentBalance({ vendorBalances }) {
   const balLabel = (b) => b >= 0
     ? `${formatCurrency(b)} Payable`
     : `${formatCurrency(Math.abs(b))} Advance`;
+  // A vendor squared off at nil reads better as a dash than as "0.00 Payable".
+  const rowBal = (b) => (b === 0 ? '—' : balLabel(b));
 
   const { showPreview, previewNode } = useWordPreview();
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
@@ -1639,7 +1681,7 @@ function VendorCurrentBalance({ vendorBalances }) {
         <td>${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>${esc(r.category || '—')}</td>
         <td class="right">${formatCurrency(r.purchases)}</td>
         <td class="right">${formatCurrency(r.paid)}</td>
-        <td class="right" style="color:${r.balance >= 0 ? '#922b21' : '#1e7d34'};font-weight:700">${balLabel(r.balance)}</td>
+        <td class="right" style="color:${r.balance > 0 ? '#922b21' : r.balance < 0 ? '#1e7d34' : '#666'};font-weight:700">${rowBal(r.balance)}</td>
         <td>${r.last_txn_date ? formatDate(r.last_txn_date) : '—'}</td>
       </tr>`).join('');
 
@@ -1693,11 +1735,19 @@ function VendorCurrentBalance({ vendorBalances }) {
             {filtered.map((r, i) => (
               <tr key={r.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                 <td style={{ padding: '7px 12px', color: 'var(--text-muted)', fontSize: 11 }}>{i + 1}</td>
-                <td style={{ padding: '7px 12px', fontWeight: 500 }}>{r.name}</td>
+                <td style={{ padding: '7px 12px', fontWeight: 500 }}>
+                  {r.name}
+                  {r.also_customer && <span style={partyTagStyle} title="This party is also a customer — their sales side is on the Customer Balance report">
+                    Also a customer{r.party_receivable ? ` · ${formatCurrency(Math.abs(r.party_receivable))} ${r.party_receivable >= 0 ? 'receivable' : 'advance'}` : ''}
+                  </span>}
+                  {!r.has_account && <span style={{ ...partyTagStyle, color: 'var(--text-muted)' }} title="No supplier sub-ledger account (14-01-001-*) on the books, so this vendor has no ledger-derived balance">
+                    No ledger account
+                  </span>}
+                </td>
                 <td style={{ padding: '7px 12px', color: 'var(--text-secondary)', fontSize: 12 }}>{r.category || '—'}</td>
                 <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.purchases > 0 ? formatCurrency(r.purchases) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                 <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.paid > 0 ? formatCurrency(r.paid) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: r.balance >= 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>{balLabel(r.balance)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: r.balance > 0 ? 'var(--red)' : r.balance < 0 ? 'var(--green)' : 'var(--text-muted)', fontWeight: 700 }}>{rowBal(r.balance)}</td>
                 <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.last_txn_date ? formatDate(r.last_txn_date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
               </tr>
             ))}
@@ -1709,6 +1759,130 @@ function VendorCurrentBalance({ vendorBalances }) {
               <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalPaid)}</td>
               <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{balLabel(totalPayable)}</td>
               <td />
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ── Party Net Position ─────────────────────────────────────────────── */
+// The answer to "this person is our customer AND our vendor, why are they in two
+// reports?". They stay in two reports because a receivable is an asset and a payable is
+// a liability, and netting them off understates both sides of the balance sheet — and
+// sales-tax reporting needs sales and purchases kept apart. This report puts the two
+// sides on one line so the position is readable in one place without the books merging
+// them. Squaring one against the other remains a deliberate contra journal entry.
+function PartyNetPosition({ companyId = 1 }) {
+  const [search, setSearch] = useState('');
+  const { data: parties, loading } = useDb(() => financeDb.getPartyPositions(companyId), [companyId]);
+
+  const rows = useMemo(() => {
+    const all = parties?.rows || [];
+    const q = search.trim().toLowerCase();
+    const matched = q ? all.filter(r => (r.name || '').toLowerCase().includes(q)) : all;
+    // Biggest exposure first, whichever side it sits on.
+    return [...matched].sort((a, b) => Math.abs(b.net_position) - Math.abs(a.net_position));
+  }, [parties, search]);
+
+  const totalRecv = rows.reduce((s, r) => s + r.receivable, 0);
+  const totalPay  = rows.reduce((s, r) => s + r.payable, 0);
+  const totalNet  = totalRecv - totalPay;
+
+  const netLabel = (n) => n === 0
+    ? '—'
+    : n > 0 ? `${formatCurrency(n)} owed to us` : `${formatCurrency(Math.abs(n))} we owe`;
+
+  const { showPreview, previewNode } = useWordPreview();
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
+
+  const buildDoc = () => {
+    const body = rows.map((r, i) => `
+      <tr>
+        <td>${i + 1}</td><td><strong>${esc(r.name)}</strong></td>
+        <td class="right">${r.receivable ? formatCurrency(r.receivable) : '—'}</td>
+        <td class="right">${r.payable ? formatCurrency(r.payable) : '—'}</td>
+        <td class="right" style="color:${r.net_position > 0 ? '#1a5276' : r.net_position < 0 ? '#922b21' : '#666'};font-weight:700">${netLabel(r.net_position)}</td>
+      </tr>`).join('');
+
+    return buildReportDoc({
+      filename: 'Party Net Position',
+      title: 'Party Net Position',
+      meta: `${rows.length} parties trading both ways &nbsp;|&nbsp; Receivable: <strong>${formatCurrency(totalRecv)}</strong> &nbsp;|&nbsp; Payable: <strong>${formatCurrency(totalPay)}</strong>`,
+      table: `<table class="rpt">
+        <thead><tr><th width="30">#</th><th>Party</th>
+          <th class="right" width="110">Receivable</th><th class="right" width="110">Payable</th>
+          <th class="right" width="140">Net Position</th></tr></thead>
+        <tbody>${body || '<tr><td colspan="5" class="center" style="padding:18px;color:#666">No parties trade in both directions</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="2" class="right">Totals</td>
+          <td class="right">${formatCurrency(totalRecv)}</td>
+          <td class="right">${formatCurrency(totalPay)}</td>
+          <td class="right">${netLabel(totalNet)}</td></tr></tfoot>
+      </table>
+      <p style="margin-top:10px;font-size:10px;color:#666">Receivable and payable are reported separately and are not offset.
+      Settling one against the other requires a contra journal entry.</p>`,
+    });
+  };
+
+  const thRight = { padding: '8px 12px', textAlign: 'right', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' };
+  const thLeft  = { ...thRight, textAlign: 'left' };
+  const cell    = { padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' };
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>Loading party positions…</div>;
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search party..."
+          style={{ flex: 1, maxWidth: 280, background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '7px 12px', fontSize: 13 }} />
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {rows.length} parties · Receivable: <strong style={{ color: 'var(--blue)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalRecv)}</strong>
+          {' · '}Payable: <strong style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPay)}</strong>
+        </span>
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} style={{ marginLeft: 'auto' }}>Preview</Button>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload}>Download Word</Button>
+        {previewNode}
+      </div>
+
+      <div style={{ marginBottom: 14, padding: '8px 12px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', background: 'var(--bg-tertiary)', fontSize: 12, color: 'var(--text-secondary)' }}>
+        The two sides are shown together but are not offset — a receivable is an asset and a payable is a liability.
+        To settle one against the other, pass a contra journal entry so both ledgers move on the record.
+      </div>
+
+      {rows.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>
+          No parties trade in both directions{search ? ` matching "${search}"` : ''}.
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-tertiary)' }}>
+              <th style={thLeft}>#</th>
+              <th style={thLeft}>Party</th>
+              <th style={thRight}>Receivable</th>
+              <th style={thRight}>Payable</th>
+              <th style={thRight}>Net Position</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.party_id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <td style={{ padding: '7px 12px', color: 'var(--text-muted)', fontSize: 11 }}>{i + 1}</td>
+                <td style={{ padding: '7px 12px', fontWeight: 500 }}>{r.name}</td>
+                <td style={{ ...cell, color: r.receivable ? 'var(--blue)' : 'var(--text-muted)' }}>{r.receivable ? formatCurrency(r.receivable) : '—'}</td>
+                <td style={{ ...cell, color: r.payable ? 'var(--red)' : 'var(--text-muted)' }}>{r.payable ? formatCurrency(r.payable) : '—'}</td>
+                <td style={{ ...cell, fontWeight: 700, color: r.net_position > 0 ? 'var(--blue)' : r.net_position < 0 ? 'var(--red)' : 'var(--text-muted)' }}>{netLabel(r.net_position)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: 'var(--bg-tertiary)', fontWeight: 700 }}>
+              <td colSpan={2} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)' }}>Totals</td>
+              <td style={{ ...cell, color: 'var(--blue)' }}>{formatCurrency(totalRecv)}</td>
+              <td style={{ ...cell, color: 'var(--red)' }}>{formatCurrency(totalPay)}</td>
+              <td style={{ ...cell }}>{netLabel(totalNet)}</td>
             </tr>
           </tfoot>
         </table>
@@ -2123,8 +2297,17 @@ export default function Reports() {
         <Card padding={false}>
           <CardHeader title="Vendor Current Balance" subtitle="Total purchases, payments, and outstanding payable per vendor (from the ledger)" />
           <div className={styles.cardBody}>
-            <VendorCurrentBalance vendorBalances={vendorBalances} />
+            <VendorCurrentBalance vendorBalances={vendorBalances} vendors={vendors} companyId={companyId} />
           </div>
+        </Card>
+      )}
+      {pageTab === 'party-positions' && (
+        <Card padding={false}>
+          <CardHeader
+            title="Party Net Position"
+            subtitle="Parties we both sell to and buy from — receivable and payable side by side"
+          />
+          <div className={styles.cardBody}><PartyNetPosition companyId={companyId} /></div>
         </Card>
       )}
       {pageTab === 'day-book' && (
