@@ -48,7 +48,7 @@ export default function NewCashReceiptModal({ open, onClose, onSave, bankAccount
     } else {
       const bank = bankAccounts.find(b => b.account_id === form.bank_account_id);
       bankName = bank?.bank_name ?? null;
-      depositAccount = financeDb.bankCodeToAccount(chartOfAccounts, form.bank_account_id);
+      depositAccount = financeDb.bankCodeToAccount(chartOfAccounts, form.bank_account_id, bankAccounts);
     }
     if (!depositAccount) {
       toast.error('Could not resolve the deposit account in Chart of Accounts.');

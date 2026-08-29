@@ -77,7 +77,7 @@ export default function NewPettyCashModal({ open, onClose, onSave, bankAccounts,
 
     const sourceAccount = form.source_account_id === 'CASH'
       ? chartOfAccounts.find(a => a.account_code === CASH_IN_HAND_CODE)
-      : financeDb.bankCodeToAccount(chartOfAccounts, form.source_account_id);
+      : financeDb.bankCodeToAccount(chartOfAccounts, form.source_account_id, bankAccounts);
     if (!sourceAccount) {
       toast.error('Could not resolve the source account in Chart of Accounts.');
       return;

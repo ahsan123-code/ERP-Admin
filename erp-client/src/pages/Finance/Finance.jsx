@@ -421,7 +421,7 @@ export default function Finance() {
   const handleClearCheque = async (cheque) => {
     setClearingId(cheque.id);
     try {
-      const bankAccount = financeDb.bankCodeToAccount(chartOfAccounts, cheque.bank_account_id);
+      const bankAccount = financeDb.bankCodeToAccount(chartOfAccounts, cheque.bank_account_id, bankAccounts);
       const ledgerAccount = chartOfAccounts.find(a => a.account_id === cheque.account_id);
       if (!bankAccount || !ledgerAccount) throw new Error('Linked accounts not found for this cheque.');
 

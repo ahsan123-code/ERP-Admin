@@ -130,7 +130,7 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
       } else {
         const bankId = form.pocket.slice(5);
         const bank = bankAccounts.find(b => b.account_id === bankId);
-        pocketAccount = financeDb.bankCodeToAccount(chartOfAccounts, bankId) || await financeDb.ensureBankLedgerAccount(bank, companyId);
+        pocketAccount = financeDb.bankCodeToAccount(chartOfAccounts, bankId, bankAccounts) || await financeDb.ensureBankLedgerAccount(bank, companyId);
       }
 
       if (!pocketAccount) {

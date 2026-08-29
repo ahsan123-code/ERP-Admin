@@ -46,8 +46,8 @@ export default function NewTransferModal({ open, onClose, onSave, bankAccounts, 
     setSaving(true);
     try {
       // Link each bank to its ledger account; auto-create it if the seed data is missing it.
-      let fromAccount = financeDb.bankCodeToAccount(chartOfAccounts, form.from_account_id);
-      let toAccount   = financeDb.bankCodeToAccount(chartOfAccounts, form.to_account_id);
+      let fromAccount = financeDb.bankCodeToAccount(chartOfAccounts, form.from_account_id, bankAccounts);
+      let toAccount   = financeDb.bankCodeToAccount(chartOfAccounts, form.to_account_id, bankAccounts);
       if (!fromAccount) fromAccount = await financeDb.ensureBankLedgerAccount(fromBank, companyId);
       if (!toAccount)   toAccount   = await financeDb.ensureBankLedgerAccount(toBank, companyId);
       if (!fromAccount || !toAccount) {

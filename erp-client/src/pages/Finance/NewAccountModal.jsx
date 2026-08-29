@@ -5,6 +5,7 @@ import SelectField from '../../components/ui/SelectField';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
+import { isCreditNormal } from '../../utils/accounts';
 import { useCompany } from '../../context/CompanyContext';
 
 // Account categories the user sees — mapped to accounting types + code prefixes
@@ -19,7 +20,7 @@ const ACCOUNT_CATEGORIES = [
     { label: 'Owner Equity', type: 'Equity', prefix: '13-01' },
 ];
 
-const EMPTY = { name: '', category: '', openingBalance: '', description: '' };
+const EMPTY = { name: '', category: '', openingBalance: '', openingDate: '', description: '' };
 
 export default function NewAccountModal({ open, onClose, onSave, existingAccounts = [] }) {
     const toast = useToast();
@@ -61,22 +62,36 @@ export default function NewAccountModal({ open, onClose, onSave, existingAccount
         try {
             const code = generateCode(cat.prefix);
             const accountId = `ACCT-${code}-C${companyId}`;
-            const balance = parseFloat(form.openingBalance) || 0;
+            const opening = parseFloat(form.openingBalance) || 0;
 
-            const { error } = await financeDb.addChartAccount({
-                account_id: accountId,
-                account_code: code,
-                account_name: form.name.trim(),
-                account_type: cat.type,
-                parent_code: cat.prefix,
-                balance,
-                company_id: companyId,
-                description: form.description.trim() || null,
+            // The opening balance posts as a real Journal voucher against Capital rather
+            // than being written straight onto the account row — see
+            // financeDb.addChartAccountWithOpening.
+            const { error, voucherId, openingFailed } = await financeDb.addChartAccountWithOpening({
+                account: {
+                    account_id: accountId,
+                    account_code: code,
+                    account_name: form.name.trim(),
+                    account_type: cat.type,
+                    parent_code: cat.prefix,
+                    company_id: companyId,
+                    description: form.description.trim() || null,
+                },
+                openingBalance: opening,
+                date: form.openingDate || undefined,
+                companyId,
             });
 
             if (error) throw new Error(error.message);
 
-            toast.success(`Account "${form.name.trim()}" created.`, 'Account Added');
+            const name = form.name.trim();
+            if (openingFailed) {
+                toast.error(`Account "${name}" was created, but the opening balance could not be posted. Enter it as a journal voucher.`, 'Opening Balance Not Posted');
+            } else if (voucherId) {
+                toast.success(`Account "${name}" created. Opening balance posted as ${voucherId}.`, 'Account Added');
+            } else {
+                toast.success(`Account "${name}" created.`, 'Account Added');
+            }
             onSave();
             onClose();
         } catch (err) {
@@ -87,6 +102,10 @@ export default function NewAccountModal({ open, onClose, onSave, existingAccount
     };
 
     const selectedCat = ACCOUNT_CATEGORIES.find(c => c.label === form.category);
+    const openingAmount = Math.abs(parseFloat(form.openingBalance) || 0);
+    // Which side the opening balance lands on, previewed from the chosen category's code
+    // prefix — the same classifier db.js and the Trial Balance use.
+    const opensOnCredit = isCreditNormal(selectedCat?.prefix);
 
     return (
         <Modal
@@ -141,6 +160,22 @@ export default function NewAccountModal({ open, onClose, onSave, existingAccount
                     value={form.openingBalance}
                     onChange={set('openingBalance')}
                 />
+
+                {openingAmount > 0 && (
+                    <>
+                        <Input
+                            label="Opening Balance Date"
+                            type="date"
+                            value={form.openingDate}
+                            onChange={set('openingDate')}
+                        />
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: -4 }}>
+                            Posts as a Journal voucher: <strong>{opensOnCredit ? 'Capital' : form.name.trim() || 'this account'}</strong> debit{' '}
+                            {openingAmount.toLocaleString()} / <strong>{opensOnCredit ? form.name.trim() || 'this account' : 'Capital'}</strong> credit{' '}
+                            {openingAmount.toLocaleString()}. Leave the date blank to use today.
+                        </p>
+                    </>
+                )}
 
                 <Input
                     label="Description (optional)"

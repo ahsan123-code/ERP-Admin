@@ -184,6 +184,64 @@ export const financeDb = {
   addChartAccount: (account) =>
     supabase.from('chart_of_accounts').insert([account]).select().single(),
 
+  // Where an opening balance is booked. Money never appears from nowhere: the amount a
+  // new account starts with has to come off another account, and for a balance carried
+  // onto the books the other side is the owner's Capital. Same account the old system
+  // used (13-01-000-000000), created on demand if a branch lacks it.
+  OPENING_BALANCE_CONTRA: '13-01-000-000000',
+
+  // Creates a chart account and, when it starts with a balance, posts that balance as a
+  // real Journal voucher instead of writing a loose number onto the account row.
+  //
+  // The modal used to send `balance: <opening>` straight into the insert. Nothing was
+  // credited, so the money had no source: the Trial Balance (which reads
+  // chart_of_accounts.balance) showed it and stopped tallying, while the Ledger Report
+  // (which reads voucher_lines) showed an empty account — the two reports disagreeing
+  // about the same account, with no date or narration to explain either.
+  //
+  // The account is therefore always created flat, and the opening amount goes through
+  // postJournalEntry, which writes both legs AND maintains the balances. Passing a
+  // non-zero balance here as well would count it twice.
+  addChartAccountWithOpening: async ({ account, openingBalance = 0, date = null, companyId = 1 }) => {
+    const { data: created, error } = await supabase
+      .from('chart_of_accounts').insert([{ ...account, balance: 0 }]).select().single();
+    if (error || !created) return { data: null, error };
+
+    const amount = Math.abs(parseFloat(openingBalance) || 0);
+    if (amount === 0) return { data: created, error: null, voucherId: null };
+
+    const contra = await financeDb.ensureLedgerAccount({
+      code: financeDb.OPENING_BALANCE_CONTRA,
+      name: 'Capital', type: 'Equity', parent: '13-01', companyId,
+    });
+    // Without the other side this would repeat the very bug it replaces, so the account
+    // stays at zero and the caller is told the opening balance did not post.
+    if (!contra) {
+      return { data: created, error: null, voucherId: null, openingFailed: true };
+    }
+
+    // Which way round depends on the new account's normal side: an asset or expense opens
+    // in debit, an income, equity or liability account opens in credit. Same classifier
+    // the Trial Balance and applyVoucherToBalances read, so all three agree.
+    const opensOnCredit = isCreditNormal(created.account_code);
+    const narration = `Opening balance — ${created.account_name}`;
+    const legs = opensOnCredit
+      ? [{ account: contra,  debit: amount, credit: 0 }, { account: created, debit: 0, credit: amount }]
+      : [{ account: created, debit: amount, credit: 0 }, { account: contra,  debit: 0, credit: amount }];
+
+    const voucherId = 'VCH-' + String(Date.now()).slice(-6);
+    await financeDb.postJournalEntry({
+      voucherId, voucherType: 'Journal',
+      date: date || new Date().toISOString().slice(0, 10),
+      companyId,
+      legs: legs.map(l => ({ ...l, narration })),
+      narration,
+      reference: voucherId,
+    });
+
+    return { data: created, error: null, voucherId };
+  },
+
   // How many transactions reference this account (by name on vouchers, by code on
   // voucher_lines). Used to block deleting an account that has posted history.
   getAccountUsage: async (account, companyId = 1) => {
@@ -323,25 +381,44 @@ export const financeDb = {
       .update({ balance: (account.balance || 0) + delta })
       .eq('account_id', account.account_id);
 
-    const bankMatch = account.account_code?.match(/^11-05-001-0*(\d+)$/);
-    if (bankMatch) {
-      const bankAccountId = `BANK-${bankMatch[1]}`;
-      const { data: bank } = await supabase.from('bank_accounts').select('balance').eq('account_id', bankAccountId).single();
+    // The bank's display copy of this balance, found by the stored link. It used to be
+    // found by pulling the number out of the code and assuming BANK-<n> — which paired
+    // Al-Falah's row with AL-HABIB's ledger, among others. It also matched on account_id
+    // alone, with no company filter, so once both branches had banks the update could
+    // land on the wrong shop entirely.
+    if (account.account_code?.startsWith('11-05-001-')) {
+      const { data: bank } = await supabase.from('bank_accounts')
+        .select('id, balance')
+        .eq('account_code', account.account_code)
+        .eq('company_id', account.company_id)
+        .maybeSingle();
       if (bank) {
         await supabase.from('bank_accounts')
           .update({ balance: (bank.balance || 0) + (debit - credit) })
-          .eq('account_id', bankAccountId);
+          .eq('id', bank.id);
       }
     }
   },
 
-  // Maps a bank_accounts.account_id (e.g. "BANK-37") to its linked chart_of_accounts row
-  // (account_code "11-05-001-000037") — inverse of the regex in applyVoucherToBalances.
-  bankCodeToAccount: (chartOfAccounts, bankAccountId) => {
-    const m = bankAccountId?.match(/^BANK-(\d+)$/);
-    if (!m) return null;
-    const code = '11-05-001-' + m[1].padStart(6, '0');
-    return chartOfAccounts.find(a => a.account_code === code) || null;
+  // Resolves a picked bank to the ledger account its postings belong on.
+  //
+  // The link is read from the bank row's own account_code. It used to be derived from the
+  // digits in the id — BANK-37 was taken to mean chart code 11-05-001-000037 — but those
+  // numbers came from the old system's bank numbering, which sits in the chart account
+  // NAMES and had drifted away from the codes. Five of nine banks resolved to a different
+  // bank's ledger, so a receipt banked into Al-Falah was recorded against AL-HABIB.
+  //
+  // `bankAccounts` is optional only so a caller without the list still gets the old
+  // behaviour rather than nothing; every caller in the app passes it.
+  bankCodeToAccount: (chartOfAccounts, bankAccountId, bankAccounts = null) => {
+    const bank = (bankAccounts || []).find(b => b.account_id === bankAccountId);
+    const code = bank?.account_code
+      || (() => {
+        const m = bankAccountId?.match(/^BANK-(\d+)$/);
+        return m ? '11-05-001-' + m[1].padStart(6, '0') : null;
+      })();
+    if (!code) return null;
+    return (chartOfAccounts || []).find(a => a.account_code === code) || null;
   },
 
   // Self-heal: every bank account needs a matching ledger (chart_of_accounts) row under
@@ -349,9 +426,11 @@ export const financeDb = {
   // is missing it, create it on demand and return it. Returns null only if the bank's
   // account_id isn't the expected BANK-<n> shape.
   ensureBankLedgerAccount: async (bank, companyId = 1) => {
+    // Prefer the stored link; fall back to the id's digits only for a row that predates
+    // the account_code column.
     const m = bank?.account_id?.match(/^BANK-(\d+)$/);
-    if (!m) return null;
-    const code = '11-05-001-' + m[1].padStart(6, '0');
+    const code = bank?.account_code || (m ? '11-05-001-' + m[1].padStart(6, '0') : null);
+    if (!code) return null;
     const { data: existing } = await supabase
       .from('chart_of_accounts').select('*')
       .eq('account_code', code).eq('company_id', companyId).maybeSingle();
