@@ -1253,6 +1253,12 @@ const partyTagStyle = {
 
 function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, companyId = 1 }) {
   const [search, setSearch] = useState('');
+  // Customers squared off at nil, hidden by default at the client's request: of Shop
+  // #41's 773 customers only 119 carry a balance, so the 654 settled ones buried the
+  // ones the report exists to show and made the printed copy six pages longer than it
+  // needed to be. They are still reachable — see the search note below — so this is a
+  // default view, not a filter on who is a customer.
+  const [showNil, setShowNil] = useState(false);
 
   // A customer's real position comes from the ledger, not from invoices. Shop #58's
   // sales were never recorded as invoices at all, and Shop #41's invoice-derived figure
@@ -1328,14 +1334,20 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
     // user knows exist look like they had been deleted.
   }, [customers, salesInvoices, receiptVouchers, ledgerBalances, balancesLoading, parties]);
 
+  const nilCount = useMemo(() => report.filter(r => r.balance === 0).length, [report]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return report;
-    return report.filter(r =>
-      (r.name    || '').toLowerCase().includes(q) ||
-      (r.contact || '').toLowerCase().includes(q)
-    );
-  }, [report, search]);
+    return report.filter(r => {
+      if (q && !((r.name    || '').toLowerCase().includes(q) ||
+                 (r.contact || '').toLowerCase().includes(q))) return false;
+      // A search is a hunt for one named customer, so it reaches the settled ones too
+      // even while they are hidden. Without this, looking up a customer who happens to
+      // be square would come back empty and read as "this account has been deleted" —
+      // the very thing that put every customer on this report in the first place.
+      return q ? true : (showNil || r.balance !== 0);
+    });
+  }, [report, search, showNil]);
 
   const drRows    = filtered.filter(r => r.balance >= 0).sort((a, b) => b.balance - a.balance);
   const crRows    = filtered.filter(r => r.balance  < 0).sort((a, b) => a.balance - b.balance);
@@ -1413,7 +1425,9 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
       filename: 'Customer Current Balance',
       title: 'Customer Current Balance Report',
       landscape: true,
-      meta: `As of ${formatDate(new Date().toISOString())} &nbsp;|&nbsp; ${allRows.length} customers`,
+      // Says what was left out, so a printed copy is not read as the whole customer list.
+      meta: `As of ${formatDate(new Date().toISOString())} &nbsp;|&nbsp; ${allRows.length} customers`
+          + (!showNil && nilCount > 0 ? ` &nbsp;|&nbsp; ${nilCount} nil-balance ${nilCount === 1 ? 'account' : 'accounts'} not shown` : ''),
       table: `<table class="rpt">
           <thead><tr>
             <th width="34">Sr#</th><th>Customer</th><th class="right" width="120">Current Balance</th>
@@ -1454,6 +1468,12 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
             style={{ minWidth: 260 }}
           />
         </div>
+        {nilCount > 0 && !balancesLoading && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-end', paddingBottom: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={showNil} onChange={e => setShowNil(e.target.checked)} />
+            Show nil balances ({nilCount})
+          </label>
+        )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <span className={styles.mono} style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
             {balancesLoading
@@ -1523,7 +1543,11 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
 
       {filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 13 }}>
-          No customer balance data found{search ? ` for "${search}"` : ''}.
+          {search
+            ? `No customer matches "${search}".`
+            : nilCount > 0
+              ? `No customer is carrying a balance. ${nilCount} settled ${nilCount === 1 ? 'account is' : 'accounts are'} hidden — tick "Show nil balances" to see them.`
+              : 'No customer balance data found.'}
         </div>
       )}
     </div>
