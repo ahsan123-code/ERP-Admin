@@ -9,8 +9,15 @@ import { isCreditNormal } from '../../utils/accounts';
 import { useCompany } from '../../context/CompanyContext';
 
 // Account categories the user sees — mapped to accounting types + code prefixes
+//
+// "Dasti" and "Cash / Wallet" were one entry pointing at 11-01-001, which put every new
+// dasti party in Cash & Cash Equivalents beside Cash In Hand and Jazz Cash — counted as
+// money the shop holds rather than money it has handed out, and nowhere near the 128
+// existing dasti parties under 11-01-006. They are separate things and now have separate
+// entries: a dasti party is a receivable, a wallet is a pocket.
 const ACCOUNT_CATEGORIES = [
-    { label: 'Dasti (Cash / Wallet)', type: 'Asset', prefix: '11-01-001' },
+    { label: 'Dasti / Hand Loan Party', type: 'Asset', prefix: '11-01-006' },
+    { label: 'Cash / Wallet', type: 'Asset', prefix: '11-01-001' },
     { label: 'Salary Payable', type: 'Liability', prefix: '14-02' },
     { label: 'General Expense', type: 'Expense', prefix: '12-99' },
     { label: 'General Income', type: 'Income', prefix: '10-99' },
