@@ -21,6 +21,18 @@ export default function DisbursePayrollModal({ open, month, year, records = [], 
   const pending  = (records || []).filter(r => r.status !== 'paid');
   const totalNet = pending.reduce((s, r) => s + (Number(r.net_salary) || 0), 0);
 
+  // Loans and advances recovered out of this month's salaries. They were paid out of a
+  // cash pocket when granted (see financeDb.addLoanWithPosting) and sit in "Loan to
+  // Employees" until recovered, so payroll has to credit that account back down — without
+  // this leg the receivable would only ever grow.
+  const totalRecovered = pending.reduce(
+    (s, r) => s + (Number(r.loan_deduction) || 0) + (Number(r.advance_salary) || 0), 0);
+
+  // What the staff actually earned. Taking it as net + recovered keeps the entry balanced
+  // by construction: the earnings are settled partly in cash and partly by writing the
+  // loan down.
+  const totalEarned = totalNet + totalRecovered;
+
   const expenseAccounts = (chartOfAccounts || []).filter(a => a.account_code?.slice(0, 2) === '12');
   const defaultSalary   = expenseAccounts.find(a => /salaries\s*(and|&)?\s*wages/i.test(a.account_name || ''));
 
@@ -42,7 +54,7 @@ export default function DisbursePayrollModal({ open, month, year, records = [], 
     const expenseAccount = chartOfAccounts.find(a => a.account_id === form.expense_account_id);
     const sourceAccount  = form.source_account_id === 'CASH'
       ? chartOfAccounts.find(a => a.account_code === CASH_IN_HAND_CODE)
-      : financeDb.bankCodeToAccount(chartOfAccounts, form.source_account_id);
+      : financeDb.bankCodeToAccount(chartOfAccounts, form.source_account_id, bankAccounts);
     if (!expenseAccount || !sourceAccount) {
       toast.error('Could not resolve the accounts in the Chart of Accounts.');
       return;
@@ -50,13 +62,29 @@ export default function DisbursePayrollModal({ open, month, year, records = [], 
 
     setSaving(true);
     try {
+      const loanControl = totalRecovered > 0
+        ? await financeDb.ensureLedgerAccount({
+            code: financeDb.EMPLOYEE_LOAN_CONTROL,
+            name: 'Loan to Employees', type: 'Asset', parent: '11-01-007', companyId,
+          })
+        : null;
+      if (totalRecovered > 0 && !loanControl) {
+        toast.error('Could not resolve the "Loan to Employees" account.');
+        setSaving(false);
+        return;
+      }
+
       const voucherId = 'SAL-' + String(Date.now()).slice(-6);
+      const legs = [
+        { account: expenseAccount, debit: totalEarned, credit: 0 },
+        { account: sourceAccount,  debit: 0, credit: totalNet },
+      ];
+      if (totalRecovered > 0) {
+        legs.push({ account: loanControl, debit: 0, credit: totalRecovered });
+      }
       await financeDb.postJournalEntry({
         voucherId, voucherType: 'Payment', date: form.date, companyId,
-        legs: [
-          { account: expenseAccount, debit: totalNet, credit: 0 },
-          { account: sourceAccount,  debit: 0, credit: totalNet },
-        ],
+        legs,
         narration: `Salary paid for ${month} ${year} (${pending.length} employees)`,
         reference: `Payroll ${month} ${year}`,
       });
@@ -64,7 +92,11 @@ export default function DisbursePayrollModal({ open, month, year, records = [], 
       // Mark every disbursed row paid.
       await Promise.all(pending.map(r => hrDb.updatePayroll(r.payroll_id, { status: 'paid' })));
 
-      toast.success(`Payroll for ${month} ${year} disbursed — ${formatCurrency(totalNet)} posted to accounts.`, 'Payroll Disbursed');
+      toast.success(
+        totalRecovered > 0
+          ? `Payroll for ${month} ${year} disbursed — ${formatCurrency(totalNet)} paid out and ${formatCurrency(totalRecovered)} recovered against loans/advances.`
+          : `Payroll for ${month} ${year} disbursed — ${formatCurrency(totalNet)} posted to accounts.`,
+        'Payroll Disbursed');
       onDone?.();
       onClose();
     } catch (err) {
@@ -94,6 +126,9 @@ export default function DisbursePayrollModal({ open, month, year, records = [], 
         <div className="ff" style={{ display: 'flex', gap: 24, fontSize: 13, background: 'var(--bg-tertiary)', padding: '10px 14px', borderRadius: 'var(--radius-md)' }}>
           <span>Employees: <strong style={{ color: 'var(--text-primary)' }}>{pending.length}</strong></span>
           <span>Total net: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{formatCurrency(totalNet)}</strong></span>
+          {totalRecovered > 0 && (
+            <span>Recovered from loans/advances: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--orange)' }}>{formatCurrency(totalRecovered)}</strong></span>
+          )}
         </div>
 
         <Input label="Payment Date *" type="date" value={form.date} onChange={set('date')} required />
@@ -122,7 +157,9 @@ export default function DisbursePayrollModal({ open, month, year, records = [], 
         </SelectField>
 
         <p className="ff" style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: 0 }}>
-          Posts a voucher — <strong>debit</strong> {`{salary expense}`} and <strong>credit</strong> {`{cash/bank}`} for {formatCurrency(totalNet)} — then marks these {pending.length} payroll rows as paid. It will appear in Reports → Ledger under both accounts.
+          Posts a voucher — <strong>debit</strong> {`{salary expense}`} {formatCurrency(totalEarned)}, <strong>credit</strong> {`{cash/bank}`} {formatCurrency(totalNet)}
+          {totalRecovered > 0 && <> and <strong>credit</strong> Loan to Employees {formatCurrency(totalRecovered)}</>}
+          {' '}— then marks these {pending.length} payroll rows as paid. It will appear in Reports → Ledger under each account.
         </p>
       </form>
     </Modal>

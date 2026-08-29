@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
@@ -6,16 +6,22 @@ import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { hrDb } from '../../lib/db';
 import { LOAN_TYPES } from '../../data/hr';
+import { buildPaymentSources, paymentSourceLabel } from '../../utils/paymentSources';
 
 const today = new Date().toISOString().split('T')[0];
 
-export default function AddLoanModal({ open, onClose, onSave, employees }) {
+export default function AddLoanModal({ open, onClose, onSave, employees, chartOfAccounts = [], bankAccounts = [], companyId = 1 }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     employee_id: '', loan_amount: '', monthly_deduction: '',
     disbursed_date: today, total_installments: '', purpose: '',
+    payment_account_code: '',
   });
+
+  // Which pocket the money is handed over from — cash, a wallet, or a bank.
+  const sources = useMemo(
+    () => buildPaymentSources(chartOfAccounts, bankAccounts), [chartOfAccounts, bankAccounts]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -29,6 +35,10 @@ export default function AddLoanModal({ open, onClose, onSave, employees }) {
     e.preventDefault();
     if (!form.employee_id || !form.loan_amount || !form.monthly_deduction || !form.disbursed_date) {
       toast.error('Please fill in all required fields.');
+      return;
+    }
+    if (!form.payment_account_code) {
+      toast.error('Select how the loan was paid.');
       return;
     }
     setSaving(true);
@@ -49,12 +59,27 @@ export default function AddLoanModal({ open, onClose, onSave, employees }) {
         paid_installments:  0,
         purpose:            form.purpose || null,
         status:             'active',
+        // How it was handed over. The label is stored alongside the code so the record
+        // still reads correctly if the account is renamed later.
+        payment_account_code: form.payment_account_code,
+        payment_method:       paymentSourceLabel(sources, form.payment_account_code),
       };
-      const { data, error } = await hrDb.addLoan(record);
+      // Posts the money movement too: the loan leaves the chosen pocket and becomes an
+      // amount the firm is owed, recovered when payroll is disbursed.
+      const { data, error, postingFailed } = await hrDb.addLoanWithPosting({
+        loan: record, companyId, chartOfAccounts,
+      });
       if (error) throw new Error(error.message);
-      toast.success(`Loan of PKR ${amount.toLocaleString()} disbursed to ${selectedEmp?.name}.`, 'Loan Added');
+      if (postingFailed) {
+        toast.error(
+          `Loan saved, but it could not be posted to the accounts — ${paymentSourceLabel(sources, form.payment_account_code)} was not reduced. Record it as a payment voucher.`,
+          'Not Posted to Accounts',
+        );
+      } else {
+        toast.success(`Loan of PKR ${amount.toLocaleString()} disbursed to ${selectedEmp?.name} via ${paymentSourceLabel(sources, form.payment_account_code)}.`, 'Loan Added');
+      }
       onSave(data);
-      setForm({ employee_id: '', loan_amount: '', monthly_deduction: '', disbursed_date: today, total_installments: '', purpose: '' });
+      setForm({ employee_id: '', loan_amount: '', monthly_deduction: '', disbursed_date: today, total_installments: '', purpose: '', payment_account_code: '' });
       onClose();
     } catch (err) {
       toast.error(err.message, 'Save Failed');
@@ -100,6 +125,22 @@ export default function AddLoanModal({ open, onClose, onSave, employees }) {
         )}
         <Input label="Override Installments" type="number" min="1" value={form.total_installments} onChange={set('total_installments')} placeholder={autoInstallments ? `Auto: ${autoInstallments}` : 'e.g. 12'} />
         <Input label="Disbursed Date *" type="date" value={form.disbursed_date} onChange={set('disbursed_date')} required />
+
+        <div className="ff">
+          <SelectField label="Paid From *" value={form.payment_account_code} onChange={set('payment_account_code')} required>
+            <option value="">— How was it paid? —</option>
+            {sources.cash.length > 0 && (
+              <optgroup label="Cash &amp; Wallets">
+                {sources.cash.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+              </optgroup>
+            )}
+            {sources.banks.length > 0 && (
+              <optgroup label="Bank">
+                {sources.banks.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+              </optgroup>
+            )}
+          </SelectField>
+        </div>
         <div className="ff">
           <Input label="Purpose / Notes" placeholder="e.g. Medical emergency" value={form.purpose} onChange={set('purpose')} />
         </div>

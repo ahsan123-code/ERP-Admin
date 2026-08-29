@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { hrDb } from '../../lib/db';
 import { LOAN_TYPES } from '../../data/hr';
+import { buildPaymentSources, paymentSourceLabel } from '../../utils/paymentSources';
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -13,12 +14,17 @@ const today = new Date().toISOString().split('T')[0];
 // coming salary. It shares the loans table with proper loans (type tells them apart) but
 // recovers differently — in one go by default, which is why the recovery field is left
 // blank to mean "the whole amount" rather than asking for an installment.
-export default function AddAdvanceModal({ open, onClose, onSave, employees = [] }) {
+export default function AddAdvanceModal({ open, onClose, onSave, employees = [], chartOfAccounts = [], bankAccounts = [], companyId = 1 }) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     employee_id: '', advance_amount: '', recover_per_month: '', paid_date: today, purpose: '',
+    payment_account_code: '',
   });
+
+  // Which pocket the money is handed over from — cash, a wallet, or a bank.
+  const sources = useMemo(
+    () => buildPaymentSources(chartOfAccounts, bankAccounts), [chartOfAccounts, bankAccounts]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -38,12 +44,17 @@ export default function AddAdvanceModal({ open, onClose, onSave, employees = [] 
 
   const reset = () => setForm({
     employee_id: '', advance_amount: '', recover_per_month: '', paid_date: today, purpose: '',
+    payment_account_code: '',
   });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.employee_id || !form.advance_amount || !form.paid_date) {
       toast.error('Please fill in all required fields.');
+      return;
+    }
+    if (!form.payment_account_code) {
+      toast.error('Select how the advance was paid.');
       return;
     }
     if (amount <= 0) {
@@ -65,13 +76,28 @@ export default function AddAdvanceModal({ open, onClose, onSave, employees = [] 
         paid_installments:  0,
         purpose:            form.purpose || null,
         status:             'active',
+        // How it was handed over. The label is stored alongside the code so the record
+        // still reads correctly if the account is renamed later.
+        payment_account_code: form.payment_account_code,
+        payment_method:       paymentSourceLabel(sources, form.payment_account_code),
       };
-      const { data, error } = await hrDb.addLoan(record);
+      // Posts the money movement too: the advance leaves the chosen pocket and becomes
+      // an amount the firm is owed, recovered when payroll is disbursed.
+      const { data, error, postingFailed } = await hrDb.addLoanWithPosting({
+        loan: record, companyId, chartOfAccounts,
+      });
       if (error) throw new Error(error.message);
-      toast.success(
-        `Advance of PKR ${amount.toLocaleString()} paid to ${selectedEmp?.name}. It will be deducted from the next payroll you generate.`,
-        'Advance Added',
-      );
+      if (postingFailed) {
+        toast.error(
+          `Advance saved, but it could not be posted to the accounts — ${paymentSourceLabel(sources, form.payment_account_code)} was not reduced. Record it as a payment voucher.`,
+          'Not Posted to Accounts',
+        );
+      } else {
+        toast.success(
+          `Advance of PKR ${amount.toLocaleString()} paid to ${selectedEmp?.name} via ${paymentSourceLabel(sources, form.payment_account_code)}. It will be deducted from the next payroll you generate.`,
+          'Advance Added',
+        );
+      }
       onSave(data);
       reset();
       onClose();
@@ -122,6 +148,22 @@ export default function AddAdvanceModal({ open, onClose, onSave, employees = [] 
 
         <Input label="Advance Amount (PKR) *" type="number" min="1" value={form.advance_amount} onChange={set('advance_amount')} placeholder="0" required />
         <Input label="Date Paid *" type="date" value={form.paid_date} onChange={set('paid_date')} required />
+
+        <div className="ff">
+          <SelectField label="Paid From *" value={form.payment_account_code} onChange={set('payment_account_code')} required>
+            <option value="">— How was it paid? —</option>
+            {sources.cash.length > 0 && (
+              <optgroup label="Cash &amp; Wallets">
+                {sources.cash.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+              </optgroup>
+            )}
+            {sources.banks.length > 0 && (
+              <optgroup label="Bank">
+                {sources.banks.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+              </optgroup>
+            )}
+          </SelectField>
+        </div>
 
         <div className="ff">
           <Input

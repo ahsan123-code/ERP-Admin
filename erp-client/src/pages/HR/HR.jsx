@@ -104,6 +104,10 @@ const LOAN_COLS = [
   { key: 'loan_amount',      label: 'Amount',            width: 140, align: 'right',
     render: v => <span className={styles.mono}>{formatCurrency(v)}</span> },
   { key: 'disbursed_date',   label: 'Disbursed',         width: 120, render: v => <span className={styles.date}>{v ? formatDate(v) : '—'}</span> },
+  // Which pocket the money was handed over from. Rows entered before this was captured
+  // have nothing to show, so they read as a dash rather than as an empty cell.
+  { key: 'payment_method',   label: 'Paid From',         width: 170,
+    render: v => v || <span style={{ color: 'var(--text-muted)' }}>—</span> },
   { key: 'monthly_deduction',label: 'Per Month',         width: 155, align: 'right',
     render: v => <span className={`${styles.mono} ${styles.negative}`}>{formatCurrency(v)}</span> },
   { key: 'remaining_balance',label: 'Balance',           width: 140, align: 'right',
@@ -396,8 +400,8 @@ export default function HR() {
       <EditEmployeeModal employee={editEmp} onClose={() => setEditEmp(null)} onSave={handleEditSave} />
       <DeleteConfirmModal employee={deleteEmp} onClose={() => setDeleteEmp(null)} onConfirm={handleDeleteConfirm} />
       <NewLeaveModal open={leaveOpen} onClose={() => setLeaveOpen(false)} onSave={() => refetchLeave()} employees={employees} />
-      <AddLoanModal open={loanOpen} onClose={() => setLoanOpen(false)} onSave={() => refetchLoans()} employees={employees} />
-      <AddAdvanceModal open={advanceOpen} onClose={() => setAdvanceOpen(false)} onSave={() => refetchLoans()} employees={employees} />
+      <AddLoanModal open={loanOpen} onClose={() => setLoanOpen(false)} onSave={() => refetchLoans()} employees={employees} chartOfAccounts={chartOfAccounts} bankAccounts={bankAccounts} companyId={companyId} />
+      <AddAdvanceModal open={advanceOpen} onClose={() => setAdvanceOpen(false)} onSave={() => refetchLoans()} employees={employees} chartOfAccounts={chartOfAccounts} bankAccounts={bankAccounts} companyId={companyId} />
       <EditLoanModal loan={editLoan} onClose={() => setEditLoan(null)} onSave={() => refetchLoans()} />
       {payslipRec && <PayslipModal record={payslipRec} onClose={() => setPayslipRec(null)} />}
       {manageRec  && <PayrollManageModal record={manageRec} onSave={handlePayrollSave} onClose={() => setManageRec(null)} />}

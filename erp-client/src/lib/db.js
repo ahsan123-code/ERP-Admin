@@ -155,6 +155,59 @@ export const hrDb = {
   addLoan: (loan) =>
     supabase.from('loans').insert([loan]).select().single(),
 
+  // Records a loan or advance AND puts the money movement in the ledger.
+  //
+  // Handing an employee 30,000 from Jazz Cash has to show up as 30,000 less in Jazz Cash;
+  // the loans table alone cannot do that. The pocket comes from the "Paid From" choice on
+  // the modal, stored on the row as payment_account_code.
+  //
+  //   Dr  Loan to Employees   (the firm is owed it)
+  //   Cr  the chosen pocket   (the cash actually left)
+  //
+  // Recovery is the mirror and happens when payroll is disbursed - see
+  // DisbursePayrollModal, which credits this same control account by what it deducted.
+  addLoanWithPosting: async ({ loan, companyId = 1, chartOfAccounts = [] }) => {
+    const { data: created, error } = await supabase
+      .from('loans').insert([loan]).select().single();
+    if (error || !created) return { data: null, error };
+
+    const amount = Math.abs(parseFloat(loan.loan_amount) || 0);
+    const pocketCode = loan.payment_account_code;
+    if (amount === 0 || !pocketCode) return { data: created, error: null, voucherId: null };
+
+    const pocket = (chartOfAccounts || []).find(a => a.account_code === pocketCode)
+      || await financeDb.ensureLedgerAccount({
+        code: pocketCode, name: loan.payment_method || pocketCode,
+        type: 'Asset', parent: pocketCode.slice(0, 9), companyId,
+      });
+    const control = await financeDb.ensureLedgerAccount({
+      code: financeDb.EMPLOYEE_LOAN_CONTROL,
+      name: 'Loan to Employees', type: 'Asset', parent: '11-01-007', companyId,
+    });
+    // Without both sides this would be a one-legged entry, the very bug it exists to
+    // avoid. The loan row still stands; the caller is told the ledger part did not post.
+    if (!pocket || !control) {
+      return { data: created, error: null, voucherId: null, postingFailed: true };
+    }
+
+    const isAdvanceRow = loan.type === 'advance';
+    const voucherId = (isAdvanceRow ? 'ADVP-' : 'LNP-') + String(Date.now()).slice(-6);
+    const narration = `${isAdvanceRow ? 'Salary advance' : 'Loan'} to ${loan.employee_name || loan.employee_id} via ${loan.payment_method || 'selected account'}`;
+
+    await financeDb.postJournalEntry({
+      voucherId, voucherType: 'Payment',
+      date: loan.disbursed_date, companyId,
+      legs: [
+        { account: control, debit: amount, credit: 0, narration },
+        { account: pocket,  debit: 0, credit: amount, narration },
+      ],
+      narration,
+      reference: loan.loan_id,
+    });
+
+    return { data: created, error: null, voucherId };
+  },
+
   updateLoan: (loanId, updates) =>
     supabase.from('loans').update(updates).eq('loan_id', loanId).select().single(),
 };
@@ -189,6 +242,16 @@ export const financeDb = {
   // onto the books the other side is the owner's Capital. Same account the old system
   // used (13-01-000-000000), created on demand if a branch lacks it.
   OPENING_BALANCE_CONTRA: '13-01-000-000000',
+
+  // Where employee loans and advances sit in the ledger: the "Loan to Employees" control
+  // account. Money lent to staff is still the firm's money, so it moves from a cash/bank
+  // pocket into a receivable rather than becoming an expense.
+  //
+  // The control account is used rather than a per-employee sub-account under 11-01-007
+  // because not one of the 20 current employees matches any of the 34 historical
+  // "<name> (Loan)" accounts there - they belong to earlier staff. Matching on name would
+  // be a guess, and per-employee balances are already tracked in the loans table.
+  EMPLOYEE_LOAN_CONTROL: '11-01-007-000000',
 
   // Creates a chart account and, when it starts with a balance, posts that balance as a
   // real Journal voucher instead of writing a loose number onto the account row.
