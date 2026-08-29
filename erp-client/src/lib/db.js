@@ -984,6 +984,87 @@ export const financeDb = {
     return { data: totals, error: null };
   },
 
+  // "Dasti" — money moved by hand, outside the customer and vendor ledgers. The parties
+  // live under 11-01-006 "Loans and Other Receivables": committee and hawala holders,
+  // contractors, staff lent cash personally. They are neither customers (11-01-003) nor
+  // vendors (14-01-001), so the Customer and Vendor Balance reports cannot see them —
+  // 31 live positions worth 16.0M receivable and 15.5M payable, with no report of their
+  // own and no way to record a new one.
+  DASTI_GROUP: '11-01-006',
+
+  // Every dasti account that is a party, i.e. not the 11-01-006-000000 group header —
+  // that row heads the group and is never somewhere money goes, the same reason the
+  // cash header is left out of the "Paid From" list (see utils/paymentSources).
+  dastiPartyAccounts: (chartOfAccounts = []) =>
+    (chartOfAccounts || [])
+      .filter(a => a.account_code?.startsWith(financeDb.DASTI_GROUP + '-')
+                && !a.account_code.endsWith('-000000'))
+      .sort((a, b) => (a.account_name || '').localeCompare(b.account_name || '')),
+
+  // Each dasti party's position, summed from voucher_lines.
+  //
+  // Deliberately NOT read from chart_of_accounts.balance. That column disagrees with the
+  // ledger for these accounts — it holds credit-minus-debit where an 11-* asset is
+  // debit-normal, so Anjum Butt reads +5,800,000 (owed TO the shop) when the 41 lines
+  // behind him say the shop owes HIM that amount. The lines are internally consistent
+  // and their narrations agree with them ("cheque paid to…" debits, "cash received
+  // from…" credits), so the ledger is the truth here. The Customer and Vendor balance
+  // reports are ledger-derived for the same reason.
+  //
+  // Only ~1,400 lines across the whole group, so one paged read and a client-side
+  // aggregate is enough — no Postgres view to migrate before the report works.
+  //
+  // balance is debit - credit, the normal side for an asset:
+  //   > 0  the party owes the shop   (receivable — cash went out by hand)
+  //   < 0  the shop owes the party   (payable — they are holding our money)
+  getDastiBalances: async (companyId = 1) => {
+    const PAGE = 1000;
+    const lines = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('voucher_lines')
+        .select('voucher_id, account_code, account_title, debit, credit')
+        .eq('company_id', companyId)
+        .like('account_code', `${financeDb.DASTI_GROUP}-%`)
+        .order('id')
+        .range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      lines.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+
+    // voucher_lines carries no date — it lives on the voucher header — so the headers
+    // are fetched by id to date each party's last movement. Chunked because the id list
+    // runs past what one .in() can carry.
+    const voucherIds = [...new Set(lines.map(l => l.voucher_id).filter(Boolean))];
+    const { data: headers, error: headerError } = voucherIds.length
+      ? await inChunks(voucherIds, (slice) => supabase.from('vouchers')
+          .select('voucher_id, date')
+          .eq('company_id', companyId)
+          .in('voucher_id', slice))
+      : { data: [], error: null };
+    if (headerError) return { data: null, error: headerError };
+    const dateOf = new Map((headers || []).map(h => [h.voucher_id, h.date]));
+
+    const byAccount = new Map();
+    lines.forEach(l => {
+      const row = byAccount.get(l.account_code) || {
+        account_code: l.account_code, account_title: l.account_title,
+        paid_out: 0, received: 0, txn_count: 0, last_txn_date: null,
+      };
+      row.paid_out += parseFloat(l.debit)  || 0;
+      row.received += parseFloat(l.credit) || 0;
+      row.txn_count += 1;
+      const date = dateOf.get(l.voucher_id);
+      if (date && (!row.last_txn_date || date > row.last_txn_date)) row.last_txn_date = date;
+      byAccount.set(l.account_code, row);
+    });
+
+    return {
+      data: [...byAccount.values()].map(r => ({ ...r, balance: r.paid_out - r.received })),
+      error: null,
+    };
+  },
+
   // Parties that trade in both directions — we sell to them and buy from them. Returns
   // one row per linked party with the receivable and payable sides kept separate, plus
   // the net for information. The two sides are NOT merged in the ledger: a receivable is

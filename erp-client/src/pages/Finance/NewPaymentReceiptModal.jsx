@@ -80,12 +80,28 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
     ? []
     : (chartOfAccounts || []).filter(a => a.account_code?.slice(0, 2) === '12');
 
-  // Party dropdown = customers + vendors + (on payments) expense accounts. The prefix on
-  // each value decides what the line posts against: AR sub-ledger, AP control, or the
-  // expense account itself.
+  // Dasti parties — money handed over outside the customer and vendor ledgers (committee
+  // and hawala holders, contractors, staff lent cash personally). They sit under
+  // 11-01-006 and belong to neither list, so without them here there was no way to record
+  // handing someone cash by hand at all.
+  //
+  // Offered on receipts as well as payments, unlike expense heads: a dasti balance runs
+  // both ways by nature — cash goes out by hand and comes back the same way — and money
+  // returned that could not be recorded would leave the balance permanently overstated.
+  const dastiAccounts = financeDb.dastiPartyAccounts(chartOfAccounts);
+
+  // Party dropdown = customers + vendors + dasti parties + (on payments) expense
+  // accounts. The prefix on each value decides what the line posts against: AR
+  // sub-ledger, AP control, or the account itself.
   const partyOptions = [
     ...(customers || []).map(c => ({ value: `cust:${c.id}`, label: c.name, hint: 'Customer' })),
     ...(vendors || []).map(v => ({ value: `vend:${v.id}`, label: v.name, hint: 'Vendor' })),
+    ...dastiAccounts.map(a => ({
+      value: `dasti:${a.account_id}`,
+      label: a.account_name,
+      hint: 'Dasti',
+      search: a.account_code,
+    })),
     ...expenseAccounts.map(a => ({
       value: `exp:${a.account_id}`,
       label: a.account_name,
@@ -155,26 +171,33 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
       // customer it settles. AR stays the fallback for a customer with no code of its own.
       // Vendors keep the control account: there is no per-vendor sub-ledger to post to.
       const parties = await Promise.all(filledLines.map(async (l) => {
-        const isVendor  = l.party.startsWith('vend:');
-        const isExpense = l.party.startsWith('exp:');
-        // An expense line posts to the expense account itself — it is already in the
-        // chart, so there is nothing to resolve or create.
-        const expenseAccount = isExpense
-          ? (chartOfAccounts || []).find(a => a.account_id === l.party.slice(4))
+        const sep  = l.party.indexOf(':');
+        const kind = l.party.slice(0, sep);
+        const id   = l.party.slice(sep + 1);
+        const label = partyOptions.find(o => o.value === l.party)?.label ?? l.party;
+
+        // Expense heads and dasti parties both post to their own chart account — each is
+        // already in the chart, so there is nothing to resolve or create. The leg's
+        // direction is the voucher's, which is what makes a dasti account work both
+        // ways: a payment debits the party (cash handed out, they owe it) and a receipt
+        // credits them (it came back), exactly as the ledger has always recorded it.
+        const directAccount = (kind === 'exp' || kind === 'dasti')
+          ? (chartOfAccounts || []).find(a => a.account_id === id)
           : null;
-        if (isExpense && !expenseAccount) {
-          throw new Error(`Could not resolve the expense account for "${partyOptions.find(o => o.value === l.party)?.label ?? l.party}".`);
+        if ((kind === 'exp' || kind === 'dasti') && !directAccount) {
+          throw new Error(`Could not resolve the ${kind === 'dasti' ? 'dasti' : 'expense'} account for "${label}".`);
         }
-        const customer = (isVendor || isExpense)
-          ? null
-          : (customers || []).find(c => `cust:${c.id}` === l.party) || null;
+
+        const customer = kind === 'cust'
+          ? (customers || []).find(c => String(c.id) === id) || null
+          : null;
         return {
-          controlAccount: isExpense
-            ? expenseAccount
-            : isVendor
+          controlAccount: directAccount
+            ? directAccount
+            : kind === 'vend'
               ? apAccount
               : await financeDb.customerLedgerAccount({ customer, companyId, fallback: arAccount }),
-          name: partyOptions.find(o => o.value === l.party).label,
+          name: label,
           amount: l.amountNum,
           narration: l.narration.trim() || null,
         };

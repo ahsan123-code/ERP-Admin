@@ -5,7 +5,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
-import Skeleton from '../../components/shared/Skeleton';
+import Skeleton, { SkeletonText } from '../../components/shared/Skeleton';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { financeDb, salesDb, procurementDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
@@ -81,6 +81,7 @@ const SEG_TO_TAB = {
   gst: 'gst', challan: 'challan', 'bank-recon': 'bank-recon',
   'cust-balance': 'cust-balance', 'day-book': 'day-book', 'vendor-balance': 'vendor-balance',
   'vendor-ledger': 'vendor-ledger', 'party-positions': 'party-positions',
+  'dasti-balance': 'dasti-balance',
 };
 // Legacy sales vouchers carry their invoice number inside the narration:
 //   "Sales-28-Sep-2020-0157-L-…"  ->  INV-SA-20-09-0157
@@ -1767,6 +1768,189 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
   );
 }
 
+/* ── Dasti Current Balance ──────────────────────────────────────────── */
+// Money moved by hand, which the customer and vendor reports cannot see: dasti parties
+// sit under 11-01-006 "Loans and Other Receivables" — committee and hawala holders,
+// contractors, staff lent cash personally — and are neither customers (11-01-003) nor
+// vendors (14-01-001). Until this report they had no summary anywhere, so a live
+// position spread across dozens of accounts was only visible one account at a time
+// through the Account Ledger.
+//
+// Balances come from the ledger, not chart_of_accounts.balance — see
+// financeDb.getDastiBalances for why that column cannot be trusted for these accounts.
+function DastiCurrentBalance({ chartOfAccounts = [], companyId = 1 }) {
+  const [search, setSearch] = useState('');
+  // Most of these parties are long settled — 96 of the 127 sit at nil. Showing them by
+  // default buries the 31 that still hold money, so they start hidden behind a count
+  // that says how many there are.
+  const [showSettled, setShowSettled] = useState(false);
+
+  const { data: balances, loading } = useDb(() => financeDb.getDastiBalances(companyId), [companyId]);
+
+  // Every dasti party in the chart, carrying its ledger position. An account with no
+  // lines at all is still a real party someone opened, so it stays on the report at nil
+  // rather than vanishing.
+  const report = useMemo(() => {
+    const byCode = new Map((balances || []).map(b => [b.account_code, b]));
+    return financeDb.dastiPartyAccounts(chartOfAccounts).map(a => {
+      const b = byCode.get(a.account_code);
+      return {
+        code:          a.account_code,
+        name:          a.account_name,
+        paid_out:      b?.paid_out  || 0,
+        received:      b?.received  || 0,
+        balance:       b?.balance   || 0,
+        txn_count:     b?.txn_count || 0,
+        last_txn_date: b?.last_txn_date || null,
+      };
+    // Largest position first, either way round — the money is what the report is for,
+    // and it drops the settled parties to the bottom.
+    }).sort((x, y) => Math.abs(y.balance) - Math.abs(x.balance));
+  }, [chartOfAccounts, balances]);
+
+  const settledCount = report.filter(r => r.balance === 0).length;
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return report.filter(r =>
+      (showSettled || r.balance !== 0) &&
+      (!q || (r.name || '').toLowerCase().includes(q) || (r.code || '').includes(q)));
+  }, [report, search, showSettled]);
+
+  const totalPaidOut  = filtered.reduce((s, r) => s + r.paid_out, 0);
+  const totalReceived = filtered.reduce((s, r) => s + r.received, 0);
+  // Receivable and payable are counted separately rather than netted: one party holding
+  // our money does not cancel another owing us, and a single net figure would hide both.
+  const totalReceivable = filtered.reduce((s, r) => s + (r.balance > 0 ? r.balance : 0), 0);
+  const totalPayable    = filtered.reduce((s, r) => s + (r.balance < 0 ? -r.balance : 0), 0);
+
+  // A debit balance means cash went out by hand and is owed back; a credit means the
+  // party is holding the shop's money.
+  const balLabel = (b) => b > 0
+    ? `${formatCurrency(b)} Receivable`
+    : `${formatCurrency(Math.abs(b))} Payable`;
+  const rowBal = (b) => (b === 0 ? '—' : balLabel(b));
+  const balColor = (b) => b > 0 ? 'var(--green)' : b < 0 ? 'var(--red)' : 'var(--text-muted)';
+
+  const { showPreview, previewNode } = useWordPreview();
+  const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
+  const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
+
+  const buildDoc = () => {
+    const rows = filtered.map((r, i) => `
+      <tr>
+        <td>${i + 1}</td><td><strong>${esc(r.name)}</strong></td>
+        <td class="center">${esc(r.code)}</td>
+        <td class="right">${r.paid_out ? formatCurrency(r.paid_out) : '—'}</td>
+        <td class="right">${r.received ? formatCurrency(r.received) : '—'}</td>
+        <td class="right" style="color:${r.balance > 0 ? '#1e7d34' : r.balance < 0 ? '#922b21' : '#666'};font-weight:700">${rowBal(r.balance)}</td>
+        <td class="center">${r.txn_count || '—'}</td>
+        <td>${r.last_txn_date ? formatDate(r.last_txn_date) : '—'}</td>
+      </tr>`).join('');
+
+    return buildReportDoc({
+      filename: 'Dasti Current Balance',
+      title: 'Dasti Current Balance',
+      landscape: true,
+      meta: `As of ${formatDate(new Date().toISOString())} &nbsp;|&nbsp; ${filtered.length} parties`
+          + ` &nbsp;|&nbsp; Receivable: <strong>${formatCurrency(totalReceivable)}</strong>`
+          + ` &nbsp;|&nbsp; Payable: <strong>${formatCurrency(totalPayable)}</strong>`,
+      note: 'Dasti parties are recorded under 11-01-006 (Loans and Other Receivables) and appear on neither the Customer nor the Vendor balance report. Receivable = cash handed out and owed back. Payable = the party is holding the shop’s money.',
+      table: `<table class="rpt">
+        <thead><tr><th width="30">#</th><th>Party</th><th class="center" width="105">Account Code</th>
+          <th class="right" width="95">Paid Out</th><th class="right" width="95">Received</th>
+          <th class="right" width="115">Balance</th><th class="center" width="45">Txns</th>
+          <th width="80">Last Txn</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="8" class="center" style="padding:18px;color:#666">No dasti parties to report</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="3" class="right">Totals</td>
+          <td class="right">${formatCurrency(totalPaidOut)}</td>
+          <td class="right">${formatCurrency(totalReceived)}</td>
+          <td class="right">${formatCurrency(totalReceivable)} Dr / ${formatCurrency(totalPayable)} Cr</td>
+          <td colspan="2"></td></tr></tfoot>
+      </table>`,
+    });
+  };
+
+  const thRight = { padding: '8px 12px', textAlign: 'right', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, borderBottom: '1px solid var(--border-subtle)' };
+  const thLeft  = { ...thRight, textAlign: 'left' };
+  const thCentre = { ...thRight, textAlign: 'center' };
+
+  if (loading) return <div style={{ padding: 16 }}><SkeletonText lines={8} /></div>;
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search party or code..."
+          style={{ flex: 1, maxWidth: 280, background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '7px 12px', fontSize: 13 }} />
+        {settledCount > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={showSettled} onChange={e => setShowSettled(e.target.checked)} />
+            Show settled ({settledCount})
+          </label>
+        )}
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {filtered.length} parties · Receivable: <strong style={{ color: 'var(--green)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalReceivable)}</strong>
+          {' '}· Payable: <strong style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPayable)}</strong>
+        </span>
+        <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} style={{ marginLeft: 'auto' }}>Preview</Button>
+        <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload}>Download Word</Button>
+        {previewNode}
+      </div>
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>
+          {search
+            ? `No dasti party matches "${search}".`
+            : settledCount > 0
+              ? `No dasti party is carrying a balance. ${settledCount} settled ${settledCount === 1 ? 'party is' : 'parties are'} hidden — tick "Show settled" to see them.`
+              : 'No dasti parties on the books yet.'}
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-tertiary)' }}>
+              <th style={thLeft}>#</th>
+              <th style={thLeft}>Party</th>
+              <th style={thLeft}>Account Code</th>
+              <th style={thRight}>Paid Out</th>
+              <th style={thRight}>Received</th>
+              <th style={thRight}>Balance</th>
+              <th style={thCentre}>Txns</th>
+              <th style={thLeft}>Last Txn</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r, i) => (
+              <tr key={r.code} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <td style={{ padding: '7px 12px', color: 'var(--text-muted)', fontSize: 11 }}>{i + 1}</td>
+                <td style={{ padding: '7px 12px', fontWeight: 500 }}>{r.name}</td>
+                <td style={{ padding: '7px 12px', color: 'var(--text-secondary)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>{r.code}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.paid_out ? formatCurrency(r.paid_out) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.received ? formatCurrency(r.received) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: balColor(r.balance), fontWeight: 700 }}>{rowBal(r.balance)}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>{r.txn_count || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.last_txn_date ? formatDate(r.last_txn_date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: 'var(--bg-tertiary)', fontWeight: 700 }}>
+              <td colSpan={3} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)' }}>Totals</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalPaidOut)}</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalReceived)}</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                <span style={{ color: 'var(--green)' }}>{formatCurrency(totalReceivable)} Dr</span>
+                <span style={{ color: 'var(--text-muted)' }}> / </span>
+                <span style={{ color: 'var(--red)' }}>{formatCurrency(totalPayable)} Cr</span>
+              </td>
+              <td colSpan={2} />
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
+
 /* ── Party Net Position ─────────────────────────────────────────────── */
 // The answer to "this person is our customer AND our vendor, why are they in two
 // reports?". They stay in two reports because a receivable is an asset and a payable is
@@ -2290,6 +2474,17 @@ export default function Reports() {
               receiptVouchers={receiptVouchers}
               companyId={companyId}
             />
+          </div>
+        </Card>
+      )}
+      {pageTab === 'dasti-balance' && (
+        <Card padding={false}>
+          <CardHeader
+            title="Dasti Current Balance"
+            subtitle="Money moved by hand — parties under 11-01-006 who appear on neither the customer nor the vendor report"
+          />
+          <div className={styles.cardBody}>
+            <DastiCurrentBalance chartOfAccounts={chartOfAccounts} companyId={companyId} />
           </div>
         </Card>
       )}
