@@ -106,6 +106,12 @@ function invoiceIdFromNarration(narration) {
 //   purchase, imported : "Purchases Charged,GRN:GRN-20-12-0012,PO:DM-20-12-0012-Bill#83-2" -> "Bill#83-2"
 //   either, in-app     : "Sales invoice INV-844969 — Tahir Sb"                            -> "INV-844969"
 //                        "Purchase invoice PBILL-58635 — ABDUL RAHMAN (T)(Khi)"           -> "PBILL-58635"
+//   sale, in-app       : "Sales invoice INV-975689 — Zain Ali Dinah (Book # 50-3)"        -> "Bill#50-3"
+//
+// A Book # wins over the invoice serial for the same reason it does on an imported row:
+// it is the number written in the physical bill book, so it is what a reader has in front
+// of them when they come to the ledger to check a bill. The invoice serial is not lost by
+// preferring it — the Voucher column beside this one already carries it.
 //
 // Of 18,808 imported sales lines, 18,477 carry a bill number (15,944 labelled "Bill#", the
 // rest a bare "-94-4" from before the label existed); the 331 with none fall back to the
@@ -121,6 +127,8 @@ const IMPORTED_SALE = /^Sales-\d{2}-[A-Za-z]{3}-\d{4}-(\d{4})-[A-Za-z]-\d{2}-[A-
 // customer that follows is already the ledger you are looking at.
 const IN_APP_DOC    = /^(?:Sales|Purchase) invoice\s+(\S+)/i;
 const PURCHASE_DOC  = /^[^,]*,\s*GRN:\s*([A-Za-z0-9-]+)\s*,\s*PO:/i;
+// The bill book number postSalesInvoiceVoucher appends to a sale it raises.
+const IN_APP_BOOK_NO = /\(Book #\s*([^)]+)\)/i;
 
 // Stray backticks and trailing separators are import noise, present on a few dozen rows.
 // Everything after "Bill#" is otherwise kept verbatim — a handful read "Bill#3136 (1)-9"
@@ -135,7 +143,10 @@ function shortParticulars(text) {
   const s = String(text ?? '').trim();
 
   const inApp = IN_APP_DOC.exec(s);
-  if (inApp) return inApp[1];
+  if (inApp) {
+    const book = IN_APP_BOOK_NO.exec(s);
+    return book ? `Bill#${book[1].trim()}` : inApp[1];
+  }
 
   const purchase = PURCHASE_DOC.exec(s);
   if (purchase) return billNo(s) ? `Bill#${billNo(s)}` : purchase[1];
