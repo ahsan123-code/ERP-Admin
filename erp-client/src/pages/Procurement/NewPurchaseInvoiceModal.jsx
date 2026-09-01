@@ -18,7 +18,10 @@ const genBillId = () => 'PBILL-' + String(Date.now()).slice(-5);
 
 const EMPTY_FORM = {
   bill_date: today(), bill_no: '', po_ref: '', grn_ref: '',
-  vendor_name: '', tax_amount: '', payment_terms: 'Net 30', due_date: '', notes: '',
+  // vendor_id drives the picker; vendor_name is what the bill and the ledger store, and
+  // is set from whichever vendor was picked rather than typed by hand.
+  vendor_id: '', vendor_name: '',
+  tax_amount: '', payment_terms: 'Net 30', due_date: '', notes: '',
 };
 const EMPTY_DRAFT = { product_id: '', item_code: '', item_name: '', unit: '', gauge: '', size: '', qty: '', unit_price: '' };
 
@@ -53,6 +56,7 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
   const [lineItems, setLineItems] = useState([]);
   const [showAllDocs, setShowAllDocs] = useState(false);
 
+  const { data: vendors }        = useDb(() => procurementDb.getVendors(companyId),        [companyId]);
   const { data: purchaseOrders } = useDb(() => procurementDb.getPurchaseOrders(companyId), [companyId]);
   const { data: grns }           = useDb(() => procurementDb.getGrns(companyId),           [companyId]);
 
@@ -100,18 +104,54 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
     }
   };
 
+  const vendorOptions = (vendors || []).map(v => ({
+    value: v.id, label: v.name, hint: v.category,
+  }));
+
+  const handleVendorSelect = (id) => {
+    const v = (vendors || []).find(v => v.id === id || v.id === Number(id));
+    setForm(f => ({ ...f, vendor_id: id, vendor_name: v?.name || '' }));
+  };
+
+  // A PO or GRN records its vendor by name. Match that back to a vendor row so linking a
+  // document fills the picker in rather than leaving it blank beside a vendor the bill
+  // has quietly already decided on.
+  const matchVendor = (name) => {
+    const wanted = String(name || '').trim().toLowerCase();
+    if (!wanted) return null;
+    return (vendors || []).find(v => String(v.name || '').trim().toLowerCase() === wanted) || null;
+  };
+
+  // Only fills when no vendor has been chosen yet — linking a document should never
+  // silently move a bill onto a different vendor. An unmatched name is reported rather
+  // than stored, so the field cannot end up holding a vendor that is not on the list.
+  //
+  // Called before setForm rather than inside its updater: the updater is re-run on a
+  // StrictMode double-invoke, and a toast fired from in there would appear twice.
+  const adoptVendor = (name) => {
+    if (form.vendor_id || !name) return {};
+    const v = matchVendor(name);
+    if (!v) {
+      toast.warning(`"${name}" is not in the vendor list — pick the vendor for this bill.`);
+      return {};
+    }
+    return { vendor_id: v.id, vendor_name: v.name };
+  };
+
   const handlePoSelect = (poId) => {
     const po = (purchaseOrders || []).find(p => p.po_id === poId);
-    setForm(f => ({ ...f, po_ref: poId, vendor_name: f.vendor_name || po?.vendor_name || '' }));
+    const vendorPatch = adoptVendor(po?.vendor_name);
+    setForm(f => ({ ...f, po_ref: poId, ...vendorPatch }));
     if (poId) pullLines(() => procurementDb.getPoLineItems(poId), `PO ${poId}`);
   };
 
   const handleGrnSelect = (grnId) => {
     const grn = (grns || []).find(g => g.grn_id === grnId);
+    const vendorPatch = adoptVendor(grn?.vendor_name);
     setForm(f => ({
       ...f, grn_ref: grnId,
-      vendor_name: f.vendor_name || grn?.vendor_name || '',
-      po_ref:      f.po_ref      || grn?.po_ref      || '',
+      ...vendorPatch,
+      po_ref: f.po_ref || grn?.po_ref || '',
     }));
     // Billing off the GRN is the accurate path: it holds what actually arrived,
     // so a short delivery is invoiced at the received quantity, not the ordered one.
@@ -133,7 +173,7 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
   const grandTotal = itemsTotal + taxAmount;
 
   const handleSubmit = async () => {
-    if (!form.vendor_name)      { toast.error('Vendor name is required.'); return; }
+    if (!form.vendor_id)        { toast.error('Pick the vendor this bill is from.'); return; }
     if (!form.bill_date)        { toast.error('Bill date is required.'); return; }
     if (lineItems.length === 0) { toast.error('Add at least one item to the bill.'); return; }
 
@@ -279,7 +319,18 @@ export default function NewPurchaseInvoiceModal({ open, onClose, onSave }) {
         <Input label="Vendor Invoice No." value={form.bill_no} onChange={set('bill_no')} placeholder="Vendor's own invoice number" />
         <Input label="Bill Date *" type="date" value={form.bill_date} onChange={set('bill_date')} required />
         <Input label="Due Date" type="date" value={form.due_date} onChange={set('due_date')} />
-        <Input label="Vendor / Supplier *" value={form.vendor_name} onChange={set('vendor_name')} placeholder="Vendor name" required />
+        {/* Sits directly in the grid rather than in a .ff wrapper: it replaces a
+            half-width input, and spanning both columns would leave Payment Terms
+            stranded on a row of its own. */}
+        <SearchableSelect
+          label="Vendor / Supplier"
+          required
+          placeholder="Search vendors..."
+          emptyText="No vendors found"
+          value={form.vendor_id}
+          onChange={handleVendorSelect}
+          options={vendorOptions}
+        />
         <SelectField label="Payment Terms" value={form.payment_terms} onChange={set('payment_terms')}>
           <option value="Advance">Advance</option>
           <option value="Net 15">Net 15</option>
