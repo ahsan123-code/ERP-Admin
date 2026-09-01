@@ -1159,6 +1159,81 @@ export const financeDb = {
   // vouchers, a voucher-type label on the rest — while the note the user actually
   // typed sits on the line records. Returns one row per line so the caller can pick
   // the line matching the account being viewed.
+  // The account ledger, read from the lines rather than the voucher headers.
+  //
+  // vouchers holds one row per leg but carries the voucher's TOTAL on both sides —
+  // 56,983 of 57,570 rows have debit == credit — so every legacy balance summed to zero.
+  // The real per-account amounts are on voucher_lines, and they reconcile exactly with
+  // the source export.
+  //
+  // Keyed on account_code, not account_name. A name is what someone typed on the day:
+  // 553 accounts were written under more than one, and one title ("UZAIR AYOUB SB
+  // (66# Shop)") was used on two different accounts, so grouping by name both split
+  // single accounts apart and risked merging separate ones. The code is the identity.
+  //
+  // Rows come back in the shape the ledger already renders, so `id` stays the voucher's
+  // own id — deleting from the ledger still targets the voucher, not the line.
+  getLedgerLinesByAccount: async (accountCode, fromDate, toDate, companyId = 1) => {
+    if (!accountCode) return { data: [], error: null };
+
+    const PAGE = 1000;
+    const lines = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('voucher_lines')
+        .select('id, voucher_id, account_code, account_title, debit, credit, narration')
+        .eq('account_code', accountCode)
+        .eq('company_id', companyId)
+        .order('id')
+        .range(from, from + PAGE - 1);
+      if (error) return { data: null, error };
+      lines.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    if (lines.length === 0) return { data: [], error: null };
+
+    // The date, type and reference live on the header. There is no foreign key between
+    // the two tables, so this is a lookup rather than an embedded join.
+    const ids = [...new Set(lines.map(l => l.voucher_id).filter(Boolean))];
+    const { data: headers, error: hErr } = await inChunks(ids, (slice) =>
+      supabase.from('vouchers')
+        .select('id, voucher_id, voucher_type, date, narration, reference')
+        .eq('company_id', companyId)
+        .in('voucher_id', slice));
+    if (hErr) return { data: null, error: hErr };
+
+    const byVoucher = new Map((headers || []).map(h => [h.voucher_id, h]));
+
+    const rows = lines.map((l) => {
+      const h = byVoucher.get(l.voucher_id) || {};
+      return {
+        id:           h.id ?? l.id,          // the voucher, so deletion still works
+        lineId:       l.id,
+        voucher_id:   l.voucher_id,
+        voucher_type: h.voucher_type ?? null,
+        date:         h.date ?? null,
+        // The line's own remark is the real one; the header's is often a placeholder.
+        narration:    l.narration || h.narration || null,
+        debit:        l.debit,
+        credit:       l.credit,
+        reference:    h.reference ?? null,
+        account_name: l.account_title,
+      };
+    });
+
+    // Dates are on the header, so the range can only be applied once the two are joined.
+    const inRange = rows.filter(r => {
+      const d = (r.date || '').slice(0, 10);
+      if (fromDate && (!d || d < fromDate)) return false;
+      if (toDate   && (!d || d > toDate))   return false;
+      return true;
+    });
+
+    inRange.sort((a, b) =>
+      String(a.date || '').localeCompare(String(b.date || '')) || (a.lineId - b.lineId));
+
+    return { data: inRange, error: null };
+  },
+
   getVoucherLineNarrations: async (voucherIds = [], companyId = 1) => {
     const ids = [...new Set((voucherIds || []).filter(Boolean))];
     if (ids.length === 0) return { data: [], error: null };

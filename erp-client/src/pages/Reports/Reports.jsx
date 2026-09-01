@@ -181,15 +181,18 @@ const LEDGER_PAGE_SIZE = 100;
 function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   const printRef = useRef();
   const toast = useToast();
-  const { data: rawAccounts } = useDb(() => financeDb.getVoucherAccounts());
-  // Merge the full chart of accounts (so every account is selectable — even one you just
-  // posted your first entry to, which wouldn't yet appear in the voucher-account view) with
-  // historical voucher party-names (legacy accounts that may not exist in the chart anymore).
-  const accountList = useMemo(() => {
-    const fromChart    = (chartOfAccounts || []).map(a => a.account_name).filter(Boolean);
-    const fromVouchers = (rawAccounts     || []).map(r => r.account_name).filter(Boolean);
-    return [...new Set([...fromChart, ...fromVouchers])].sort((a, b) => a.localeCompare(b));
-  }, [rawAccounts, chartOfAccounts]);
+  // The chart is the whole list: every account_code that appears on a voucher line exists
+  // in it, so nothing is lost by dropping the old merge with historical voucher names.
+  //
+  // That merge is what produced the duplicates. It listed distinct account_name values
+  // off the vouchers, and a name is what someone typed on the day — 553 accounts had been
+  // written under more than one, so one account showed up as several entries that each
+  // held a slice of its history.
+  const accountList = useMemo(() => (chartOfAccounts || [])
+    .filter(a => a.account_code && a.account_name)
+    .map(a => ({ code: a.account_code, name: a.account_name }))
+    .sort((a, b) => a.name.localeCompare(b.name)),
+  [chartOfAccounts]);
 
   // Default to ALL dates (historical data spans many years) — the user can narrow if needed.
   // Default to ALL dates (historical data spans many years) — the user can narrow if needed.
@@ -201,34 +204,26 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
 
   const { data: rawVouchers, refetch: refetchVouchers, settled: vouchersSettled } = useDb(
     () => account
-      ? financeDb.getVouchersByAccount(account, fromDate, toDate, companyId)
+      ? financeDb.getLedgerLinesByAccount(account, fromDate, toDate, companyId)
       : Promise.resolve({ data: [], error: null }),
     [account, fromDate, toDate, companyId]
   );
 
   // Real remarks live on the voucher lines; vouchers.narration is a placeholder from
   // the source system ("Remarks", "Journal Voucher", …).
-  const voucherIds = useMemo(
-    () => (rawVouchers || []).map(v => v.voucher_id).filter(Boolean), [rawVouchers]);
-  const voucherIdKey = voucherIds.join(',');
-  const { data: lineNotes, settled: notesSettled } = useDb(
-    () => financeDb.getVoucherLineNarrations(voucherIds, companyId),
-    [voucherIdKey, companyId]);
-
-  // Prefer the line booked against the account being viewed; fall back to any line
-  // that carries a note, since one-sided legacy vouchers often only annotate the
-  // opposite leg. Placeholder header values are never shown.
+  //
+  // Each row now arrives with its own line's remark already on it, so the separate
+  // round-trip that used to fetch them — one of four chained queries the ledger waited
+  // on — is gone.
   const narrationByVoucher = useMemo(() => {
     const PLACEHOLDER = /^(remarks|journal voucher|cash (paid|receipt) voucher|bank cheques reconciliation|posted from purchase invoice)$/i;
     const map = {};
-    (lineNotes || []).forEach(l => {
-      if (!l.narration) return;
-      const mine = (l.account_title || '').toLowerCase() === (account || '').toLowerCase();
-      const cur = map[l.voucher_id];
-      if (!cur || (mine && !cur.mine)) map[l.voucher_id] = { text: l.narration, mine };
+    (rawVouchers || []).forEach(r => {
+      if (!r.narration || map[r.voucher_id]) return;
+      map[r.voucher_id] = { text: r.narration, mine: true };
     });
     return { map, isPlaceholder: (s) => !s || PLACEHOLDER.test(String(s).trim()) };
-  }, [lineNotes, account]);
+  }, [rawVouchers]);
 
   // Item detail comes from the sales order behind the voucher, and a voucher names its
   // invoice one of two ways: the app writes an INV- reference, while imported history has
@@ -272,7 +267,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
   // over painted one frame with all four flags false. The skeleton fell away and came
   // back five times per account. `settled` compares the deps the data was fetched for
   // against the deps being asked for now, so the gap reads as still-loading.
-  const loading = !(vouchersSettled && notesSettled && refsSettled && itemsSettled);
+  const loading = !(vouchersSettled && refsSettled && itemsSettled);
 
   const itemsForVoucher = useMemo(() => {
     const bySo = {};
@@ -353,6 +348,8 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
 
   const buildDoc = () => {
     if (!account) return;
+    // `account` is the code; the reader wants the name, with the code beside it.
+    const accountName = accountList.find(a => a.code === account)?.name || account;
     const rows = entries.map(e => {
       const items = itemsForVoucher(e);
       const join = (fn) => items.length ? items.map(fn).join('<br>') : '—';
@@ -371,11 +368,11 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
     }).join('');
 
     return buildReportDoc({
-      filename: `Ledger ${account}`,
+      filename: `Ledger ${accountName}`,
       title: 'Account Ledger',
       landscape: true,
       css: LEDGER_DOC_CSS,
-      meta: `Account: <strong>${esc(account)}</strong> &nbsp;|&nbsp; Period: ${formatDateNumeric(fromDate)} — ${formatDateNumeric(toDate)}`,
+      meta: `Account: <strong>${esc(accountName)}</strong> <span style="color:#666">${esc(account)}</span> &nbsp;|&nbsp; Period: ${formatDateNumeric(fromDate)} — ${formatDateNumeric(toDate)}`,
       note: `Opening: ${formatAmount(Math.abs(openBal))}  |  Closing: ${formatAmount(Math.abs(closeBal))}`,
       table: `<table class="rpt">
         <thead><tr><th width="70">Date</th><th>Narration</th><th width="96">Item</th>
@@ -398,7 +395,7 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
             emptyText="No matching accounts"
             value={account}
             onChange={(v) => { setAccount(v); setPage(1); }}
-            options={accountList.map(name => ({ value: name, label: name }))}
+            options={accountList.map(a => ({ value: a.code, label: a.name, search: a.code }))}
           />
         </div>
         <div className={styles.filterGroup}>
