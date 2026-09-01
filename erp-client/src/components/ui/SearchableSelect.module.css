@@ -43,7 +43,10 @@
 }
 
 .option {
-  display: flex; align-items: flex-start; gap: 8px; width: 100%;
+  /* Wraps so a long hint drops onto its own line instead of squeezing the name out of
+     the row — the party picker in a payment voucher is one of five grid columns and has
+     very little width to give away. */
+  display: flex; align-items: flex-start; gap: 8px; width: 100%; flex-wrap: wrap;
   padding: 8px 10px; border: none; background: transparent; border-radius: var(--radius-sm);
   text-align: left; cursor: pointer; font-size: 13px; color: var(--text-primary);
   transition: background var(--transition-fast);
@@ -63,14 +66,23 @@
    read identically and the wrong one gets picked. overflow-wrap covers a single
    unbroken token longer than the panel. */
 .optionLabel {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  /* Deliberately no `min-width: 0`. That is what lets a flex item shrink below its own
+     min-content width, and with a hint that refuses to shrink beside it the name was
+     squeezed down to a single character and came out stacked a letter per line. Left at
+     `auto`, the name never narrows past its longest word. */
   white-space: normal;
-  overflow-wrap: anywhere;
+  /* break-word, not anywhere. `anywhere` also counts toward the element's min-content
+     width, so as a flex item the label was allowed to shrink to one character and every
+     name came out stacked a letter per line. `break-word` breaks a long word only when
+     it actually has to, and leaves intrinsic sizing alone. */
+  overflow-wrap: break-word;
   line-height: 1.45;
 }
 
-.optionHint { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; padding-top: 2px; }
+/* Allowed to shrink and to wrap away onto its own line; it is a tag, and the name it
+   sits beside matters more than keeping the two on one row. */
+.optionHint { font-size: 11px; color: var(--text-tertiary); flex: 0 1 auto; padding-top: 2px; }
 
 .empty { padding: 14px 10px; text-align: center; font-size: 12px; color: var(--text-muted); }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
@@ -93,9 +93,10 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
   //
   // Payments only. On a receipt, money coming in against an expense head would be a
   // refund — a different entry that belongs with income accounts, not this list.
-  const expenseAccounts = isReceipt
+  const expenseAccounts = useMemo(() => (isReceipt
     ? []
-    : (chartOfAccounts || []).filter(a => a.account_code?.slice(0, 2) === '12');
+    : (chartOfAccounts || []).filter(a => a.account_code?.slice(0, 2) === '12')),
+  [isReceipt, chartOfAccounts]);
 
   // Dasti parties — money handed over outside the customer and vendor ledgers (committee
   // and hawala holders, contractors, staff lent cash personally). They sit under
@@ -105,27 +106,70 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
   // Offered on receipts as well as payments, unlike expense heads: a dasti balance runs
   // both ways by nature — cash goes out by hand and comes back the same way — and money
   // returned that could not be recorded would leave the balance permanently overstated.
-  const dastiAccounts = financeDb.dastiPartyAccounts(chartOfAccounts);
+  const dastiAccounts = useMemo(
+    () => financeDb.dastiPartyAccounts(chartOfAccounts), [chartOfAccounts]);
 
   // Party dropdown = customers + vendors + dasti parties + (on payments) expense
   // accounts. The prefix on each value decides what the line posts against: AR
   // sub-ledger, AP control, or the account itself.
-  const partyOptions = [
-    ...(customers || []).map(c => ({ value: `cust:${c.id}`, label: c.name, hint: 'Customer' })),
-    ...(vendors || []).map(v => ({ value: `vend:${v.id}`, label: v.name, hint: 'Vendor' })),
-    ...dastiAccounts.map(a => ({
-      value: `dasti:${a.account_id}`,
-      label: a.account_name,
-      hint: 'Dasti',
-      search: a.account_code,
-    })),
-    ...expenseAccounts.map(a => ({
-      value: `exp:${a.account_id}`,
-      label: a.account_name,
-      hint: 'Expense',
-      search: a.account_code,
-    })),
-  ];
+  //
+  // One row per party, not one per record. 119 parties trade both ways — we sell to them
+  // and buy from them — so they hold a customer record and a vendor record, and listing
+  // both put the same person in the list twice under the same name, told apart only by a
+  // tag. Picking between two identical-looking rows is a coin toss, and the wrong one
+  // posts to the wrong side of the ledger. 30 more are the same name duplicated inside
+  // one table, which is simply bad data and should never have been offered twice either.
+  //
+  // Which side a merged party posts to follows the voucher: money going out settles what
+  // we owe them, money coming in settles what they owe us. That is the ordinary case for
+  // both directions, and the hint on the row says which side it will use so it is never a
+  // silent choice.
+  const partyOptions = useMemo(() => {
+    const byName = new Map();
+    const add = (name, side, option) => {
+      const key = String(name || '').trim().toLowerCase();
+      if (!key) return;
+      const cur = byName.get(key);
+      if (!cur) { byName.set(key, { sides: { [side]: option }, label: name }); return; }
+      // First record of a side wins; a repeat of the same side is a duplicate row.
+      if (!cur.sides[side]) cur.sides[side] = option;
+    };
+
+    (customers || []).forEach(c => add(c.name, 'cust', { value: `cust:${c.id}`, label: c.name }));
+    (vendors   || []).forEach(v => add(v.name, 'vend', { value: `vend:${v.id}`, label: v.name }));
+
+    // On a payment the vendor side is the one being settled; on a receipt, the customer.
+    const preferred = isReceipt ? ['cust', 'vend'] : ['vend', 'cust'];
+
+    const parties = [...byName.values()].map(({ sides, label }) => {
+      const side = preferred.find(k => sides[k]);
+      const both = sides.cust && sides.vend;
+      return {
+        ...sides[side],
+        label,
+        // Kept short. This sits beside the name in a narrow column, and a long tag costs
+        // the name the width it needs to stay readable.
+        hint: both ? (side === 'vend' ? 'Vendor +' : 'Customer +')
+                   : (side === 'vend' ? 'Vendor' : 'Customer'),
+      };
+    }).sort((a, b) => a.label.localeCompare(b.label));
+
+    return [
+      ...parties,
+      ...dastiAccounts.map(a => ({
+        value: `dasti:${a.account_id}`,
+        label: a.account_name,
+        hint: 'Dasti',
+        search: a.account_code,
+      })),
+      ...expenseAccounts.map(a => ({
+        value: `exp:${a.account_id}`,
+        label: a.account_name,
+        hint: 'Expense',
+        search: a.account_code,
+      })),
+    ];
+  }, [customers, vendors, dastiAccounts, expenseAccounts, isReceipt]);
 
   const partyByValue  = new Map(partyOptions.map(o => [o.value, o]));
   const pocketByValue = new Map(pocketOptions.map(o => [o.value, o]));
