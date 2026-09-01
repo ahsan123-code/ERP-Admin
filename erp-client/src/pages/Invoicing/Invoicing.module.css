@@ -303,3 +303,22 @@
 .bookCell:hover .bookCellIcon {
   opacity: 0.65;
 }
+
+/* Auto-filing bar — what the shop PC's agent is doing with the backlog.
+   Shares the service bar's shape so the two read as one status strip. */
+.queueBar {
+  composes: serviceBar;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.queueBar_waiting {
+  background: var(--orange-muted);
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.queueNote {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}

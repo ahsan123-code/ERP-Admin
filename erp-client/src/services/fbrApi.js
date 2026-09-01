@@ -50,6 +50,29 @@ export async function submitInvoiceCloud(invoice, lineItems, options = {}, sandb
 }
 
 /**
+ * How many invoices are waiting to be filed, and what the agent's last run did.
+ *
+ * The shop PC is switched off after hours but the ERP is not, so invoices raised in
+ * the evening sit as 'pending' until the agent next runs. This is how the Invoicing
+ * screen can say so rather than looking like nothing happened.
+ *
+ * @returns {{ enabled, configured, running, pending, intervalMinutes, requireLocal, lastRun }}
+ */
+export async function getFbrQueueStatus() {
+  const res = await fetch(`${BASE}/queue`);
+  return handleResponse(res);
+}
+
+/**
+ * File the backlog now instead of waiting for the agent's next pass.
+ * @returns {{ found, synced, failed, errors } | { skipped }}
+ */
+export async function runFbrQueue() {
+  const res = await fetch(`${BASE}/queue/run`, { method: 'POST' });
+  return handleResponse(res);
+}
+
+/**
  * Preview the AJK-IRD payload without submitting.
  * Useful for debugging the invoice format before going live.
  */

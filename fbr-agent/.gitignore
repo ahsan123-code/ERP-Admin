@@ -1,4 +1,11 @@
 node_modules/
 logs/
-# Carries FBR_ENV for this machine; install.ps1 creates it from .env.example.
+
+# Carries FBR_ENV and this machine's Supabase key; the installer creates it
+# from .env.example.
 .env
+
+# Build output of build.ps1. dist/ holds an 80 MB executable — it is a release
+# artefact to copy to the shop PC, not something to keep in the repository.
+build/
+dist/

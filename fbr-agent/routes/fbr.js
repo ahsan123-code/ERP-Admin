@@ -1,7 +1,14 @@
 const express = require('express');
 const router  = express.Router();
 const { buildInvoicePayload }  = require('../utils/invoiceBuilder');
+const { normaliseInvoice, syntheticLineItems } = require('../utils/normalise');
 const { checkLocalService, submitInvoice, submitToCloud } = require('../services/fbrService');
+const queue = require('../services/queue');
+
+/** Line items as given, or a synthetic single line when the invoice has none. */
+function itemsFor(norm, lineItems) {
+  return Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : syntheticLineItems(norm);
+}
 
 // GET /api/fbr/status
 // Check if AJK-IRD local fiscal service is running
@@ -10,40 +17,25 @@ router.get('/status', async (req, res) => {
   res.json(result);
 });
 
-/**
- * Normalise an invoice row to the camelCase shape buildInvoicePayload expects.
- * Accepts both snake_case (from DB) and camelCase (from frontend form).
- */
-function normaliseInvoice(inv) {
-  return {
-    invoiceId:    inv.invoice_id    ?? inv.invoiceId    ?? '',
-    invoiceDate:  inv.invoice_date  ?? inv.invoiceDate  ?? new Date().toISOString().split('T')[0],
-    customerName: inv.customer_name ?? inv.customerName ?? '',
-    cnic:         inv.cnic          ?? '',
-    ntn:          inv.ntn           ?? '',
-    contact:      inv.contact       ?? '',
-    subtotal:     parseFloat(inv.subtotal   ?? 0),
-    taxAmount:    parseFloat(inv.tax_amount ?? inv.taxAmount ?? 0),
-    totalValue:   parseFloat(inv.total_value ?? inv.totalValue ?? 0),
-    invoiceType:  inv.invoice_type  ?? inv.invoiceType  ?? 1,
-  };
-}
+// GET /api/fbr/queue
+// How many invoices are waiting to be filed, and what the last run did.
+router.get('/queue', async (req, res) => {
+  try {
+    res.json(await queue.status());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-/**
- * Build a synthetic single-line item from invoice totals when no itemised
- * line items are available (common for imported / legacy invoices).
- */
-function syntheticLineItems(inv) {
-  const totalPrice = inv.totalValue || inv.subtotal + inv.taxAmount || 0;
-  return [{
-    itemCode:   'STEEL-GENERAL',
-    itemName:   'Steel Products',
-    category:   'Steel',
-    quantity:   1,
-    totalPrice,
-    discount:   0,
-  }];
-}
+// POST /api/fbr/queue/run
+// File the backlog now instead of waiting for the next interval.
+router.post('/queue/run', async (req, res) => {
+  try {
+    res.json(await queue.drain('manual'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // POST /api/fbr/submit
 router.post('/submit', async (req, res) => {
@@ -54,12 +46,8 @@ router.post('/submit', async (req, res) => {
   }
 
   try {
-    const norm  = normaliseInvoice(invoice);
-    const items = Array.isArray(lineItems) && lineItems.length > 0
-      ? lineItems
-      : syntheticLineItems(norm);
-
-    const payload = buildInvoicePayload(norm, items, options);
+    const norm    = normaliseInvoice(invoice);
+    const payload = buildInvoicePayload(norm, itemsFor(norm, lineItems), options);
     const result  = await submitInvoice(payload);
 
     res.json({ invoiceId: norm.invoiceId, ...result, submittedAt: new Date().toISOString() });
@@ -77,12 +65,8 @@ router.post('/submit-cloud', async (req, res) => {
   }
 
   try {
-    const norm  = normaliseInvoice(invoice);
-    const items = Array.isArray(lineItems) && lineItems.length > 0
-      ? lineItems
-      : syntheticLineItems(norm);
-
-    const payload = buildInvoicePayload(norm, items, options);
+    const norm    = normaliseInvoice(invoice);
+    const payload = buildInvoicePayload(norm, itemsFor(norm, lineItems), options);
     const result  = await submitToCloud(payload, sandbox);
 
     res.json({ invoiceId: norm.invoiceId, ...result, submittedAt: new Date().toISOString() });
@@ -100,13 +84,8 @@ router.post('/preview', (req, res) => {
   }
 
   try {
-    const norm  = normaliseInvoice(invoice);
-    const items = Array.isArray(lineItems) && lineItems.length > 0
-      ? lineItems
-      : syntheticLineItems(norm);
-
-    const payload = buildInvoicePayload(norm, items, options);
-    res.json(payload);
+    const norm = normaliseInvoice(invoice);
+    res.json(buildInvoicePayload(norm, itemsFor(norm, lineItems), options));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

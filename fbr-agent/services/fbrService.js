@@ -81,6 +81,21 @@ async function submitToCloud(payload, sandbox = !IS_PRODUCTION) {
   const url   = sandbox ? CLOUD_SANDBOX_URL : CLOUD_PRODUCTION_URL;
   const token = sandbox ? SANDBOX_TOKEN      : PRODUCTION_TOKEN;
 
+  // AJK issue the production token against one POS ID. A machine told which POS it is
+  // but not given the matching token would otherwise authenticate as whoever the built-in
+  // fallback token belongs to and file this shop's invoices against their registration —
+  // accepted by AJK, wrong in their records, and invisible from here. Refuse instead.
+  if (!sandbox && process.env.FBR_POS_ID && !process.env.FBR_PRODUCTION_TOKEN) {
+    return {
+      success: false,
+      code: 'CONFIG',
+      error: `FBR_POS_ID is set to ${process.env.FBR_POS_ID} but FBR_PRODUCTION_TOKEN is not set. `
+           + 'Get this POS ID\'s production token from the POS Clients menu on the IRIS-AJK portal '
+           + '(it is not the Access Code) and add it to .env.',
+      environment: 'production',
+    };
+  }
+
   try {
     const res = await axios.post(url, payload, {
       headers: {

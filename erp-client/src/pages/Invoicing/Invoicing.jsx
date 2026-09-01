@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   BadgeCheck, AlertCircle, RefreshCw, ReceiptText, Plus, CloudUpload, Wifi, WifiOff, FileText,
-  Trash2, FileDown, Eye, Pencil,
+  Trash2, FileDown, Eye, Pencil, Clock,
 } from 'lucide-react';
 import { buildSalesInvoiceDoc } from '../../utils/salesInvoiceDoc';
 import { downloadWordDoc } from '../../utils/wordExport';
@@ -20,7 +20,7 @@ import { useCompany } from '../../context/CompanyContext';
 import { useToast } from '../../components/shared/Toast';
 import { formatDate, formatDateTime, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
-import { checkFbrServiceStatus, submitInvoice } from '../../services/fbrApi';
+import { checkFbrServiceStatus, submitInvoice, getFbrQueueStatus, runFbrQueue } from '../../services/fbrApi';
 import styles from './Invoicing.module.css';
 
 const SEG_TO_TAB = { '': 'invoices', list: 'invoices', invoices: 'invoices', fbr: 'fbr', 'sale-return': 'returns' };
@@ -80,13 +80,15 @@ export default function Invoicing() {
   const [deletingFbrId, setDeletingFbrId] = useState(null);
   const [busyDocId, setBusyDocId] = useState(null);
   const [bookInv, setBookInv] = useState(null);
+  const [queueInfo, setQueueInfo] = useState(null);
+  const [queueRunning, setQueueRunning] = useState(false);
   const toast = useToast();
   const { showPreview, previewNode } = useWordPreview();
 
   const { data: salesInvoices, loading: loadSales } =
     useDb(() => salesDb.getSalesInvoices(companyId), [companyId]);
 
-  const { data: dbFbrInvoices, loading: loadFbr } = useDb(() => invoicingDb.getInvoices());
+  const { data: dbFbrInvoices, loading: loadFbr, refetch: refetchFbr } = useDb(() => invoicingDb.getInvoices());
   const { data: saleReturnInvoices, loading: loadReturns } = useDb(() => invoicingDb.getSaleReturnInvoices());
 
   const [salesInvoiceList, setSalesInvoiceList] = useState([]);
@@ -164,7 +166,10 @@ export default function Invoicing() {
   const postedCount = salesInvoiceList.filter(i => i.status === 'posted').length;
   const fbrSynced = fbrInvoiceList.filter(i => i.fbr_status === 'synced').length;
   const fbrFailed = fbrInvoiceList.filter(i => i.fbr_status === 'failed').length;
-  const fbrQueue = fbrInvoiceList.filter(i => i.fbr_status === 'failed');
+  const fbrPending = fbrInvoiceList.filter(i => i.fbr_status === 'pending').length;
+  // Both statuses are waiting to be filed, and the agent picks up both. Keeping them
+  // in one queue means a failure is not quietly dropped from what is still outstanding.
+  const fbrQueue = fbrInvoiceList.filter(i => i.fbr_status === 'failed' || i.fbr_status === 'pending');
 
   const displayedSales = statusFilter === 'all'
     ? salesInvoiceList
@@ -180,7 +185,44 @@ export default function Invoicing() {
     }
   }, []);
 
-  useEffect(() => { checkService(); }, [checkService]);
+  // The agent files pending invoices on its own; this only reports what it is doing.
+  // It fails silently because the agent is unreachable on every machine except the
+  // shop PC, and that is normal rather than an error worth a toast.
+  const refreshQueue = useCallback(async () => {
+    try {
+      setQueueInfo(await getFbrQueueStatus());
+    } catch {
+      setQueueInfo(null);
+    }
+  }, []);
+
+  useEffect(() => { checkService(); refreshQueue(); }, [checkService, refreshQueue]);
+
+  const handleRunQueue = async () => {
+    setQueueRunning(true);
+    try {
+      const res = await runFbrQueue();
+      if (res.skipped === 'component-offline') {
+        toast.error('AJK fiscal service is not responding — nothing was filed.');
+      } else if (res.skipped === 'not-configured') {
+        toast.error('The FBR agent is not connected to the database.');
+      } else if (res.skipped === 'already-running') {
+        toast.info('A run is already in progress.');
+      } else if (res.error) {
+        toast.error(`Filing failed: ${res.error}`);
+      } else if (res.found === 0) {
+        toast.success('Nothing waiting — every invoice is filed.');
+      } else {
+        toast.success(`Filed ${res.synced} of ${res.found} invoice(s)${res.failed ? `, ${res.failed} failed` : ''}.`);
+        refetchFbr();
+      }
+    } catch (err) {
+      toast.error(`Could not reach the FBR agent: ${err.message}`);
+    } finally {
+      setQueueRunning(false);
+      refreshQueue();
+    }
+  };
 
   const handleFbrSubmit = async (invoice) => {
     setSubmitting(p => ({ ...p, [invoice.invoice_id]: true }));
@@ -393,6 +435,7 @@ export default function Invoicing() {
           { icon: FileText, label: 'Sales Invoices', value: totalSales, color: 'blue' },
           { icon: ReceiptText, label: 'Posted', value: postedCount, color: 'green' },
           { icon: BadgeCheck, label: 'FBR Synced', value: fbrSynced, color: 'purple' },
+          { icon: Clock, label: 'FBR Pending', value: fbrPending, color: 'orange' },
           { icon: AlertCircle, label: 'FBR Failed', value: fbrFailed, color: 'red' },
         ].map((s) => (
           <div key={s.label} className={styles.summaryCard}>
@@ -449,6 +492,38 @@ export default function Invoicing() {
               Recheck
             </Button>
           </div>
+
+          {/* Only rendered where the agent actually answers. On every other machine the
+              fetch fails and queueInfo stays null, because "no agent here" is the normal
+              case away from the shop PC, not a fault worth reporting. */}
+          {queueInfo?.configured && queueInfo.enabled && (
+            <div className={`${styles.queueBar} ${queueInfo.pending > 0 ? styles.queueBar_waiting : ''}`}>
+              <span className={styles.serviceIcon}>
+                <Clock size={16} strokeWidth={1.75} />
+              </span>
+              <span className={styles.serviceText}>
+                {queueInfo.pending > 0
+                  ? `${queueInfo.pending} invoice(s) waiting to be filed — this happens automatically every ${queueInfo.intervalMinutes} minutes.`
+                  : 'Every invoice has been filed with AJK-IRD.'}
+                {queueInfo.lastRun?.finishedAt && (
+                  <span className={styles.queueNote}>
+                    {'  Last run '}{formatDateTime(queueInfo.lastRun.finishedAt)}
+                    {queueInfo.lastRun.synced != null && ` — ${queueInfo.lastRun.synced} filed`}
+                    {queueInfo.lastRun.failed ? `, ${queueInfo.lastRun.failed} failed` : ''}
+                  </span>
+                )}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<CloudUpload size={13} strokeWidth={1.75} />}
+                onClick={handleRunQueue}
+                disabled={queueRunning || queueInfo.running}
+              >
+                {queueRunning || queueInfo.running ? 'Filing…' : 'File now'}
+              </Button>
+            </div>
+          )}
           <Card padding={false}>
             <CardHeader
               title="FBR Invoice Queue"
@@ -459,9 +534,19 @@ export default function Invoicing() {
           {fbrQueue.length > 0 && (
             <Card padding={false}>
               <CardHeader
-                title="Retry Queue"
-                subtitle={`${fbrQueue.length} invoice(s) failed FBR submission`}
-                actions={<Button variant="secondary" icon={<RefreshCw size={13} strokeWidth={1.75} />} size="sm">Retry All</Button>}
+                title="Waiting to be Filed"
+                subtitle={`${fbrQueue.length} invoice(s) not yet accepted by AJK-IRD`}
+                actions={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<RefreshCw size={13} strokeWidth={1.75} />}
+                    onClick={handleRunQueue}
+                    disabled={queueRunning}
+                  >
+                    {queueRunning ? 'Filing…' : 'File All Now'}
+                  </Button>
+                }
               />
               <DataTable columns={RETRY_COLS} data={fbrQueue} loading={loadFbr} keyField="invoice_id" searchable={false} />
             </Card>
