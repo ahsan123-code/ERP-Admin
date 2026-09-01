@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
-import SelectField from '../../components/ui/SelectField';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
+import { bankAccountOptions } from '../../utils/paymentSources';
 import { useCompany } from '../../context/CompanyContext';
 import { formatCurrency } from '../../utils/format';
 
@@ -95,20 +96,26 @@ export default function NewTransferModal({ open, onClose, onSave, bankAccounts, 
         <Input label="Date *" type="date" value={form.date} onChange={set('date')} required />
         <div />
         <div className="ff">
-          <SelectField label="From Account *" value={form.from_account_id} onChange={set('from_account_id')} required>
-            <option value="">— Select source bank account —</option>
-            {bankAccounts.map(b => (
-              <option key={b.account_id} value={b.account_id}>{b.bank_name} ({b.account_no})</option>
-            ))}
-          </SelectField>
+          <SearchableSelect
+            label="From Account"
+            required
+            placeholder="Search the bank the money leaves…"
+            emptyText="No bank accounts found"
+            value={form.from_account_id}
+            onChange={(val) => setForm(f => ({ ...f, from_account_id: val }))}
+            options={bankAccountOptions(bankAccounts)}
+          />
         </div>
         <div className="ff">
-          <SelectField label="To Account *" value={form.to_account_id} onChange={set('to_account_id')} required>
-            <option value="">— Select destination bank account —</option>
-            {bankAccounts.map(b => (
-              <option key={b.account_id} value={b.account_id}>{b.bank_name} ({b.account_no})</option>
-            ))}
-          </SelectField>
+          <SearchableSelect
+            label="To Account"
+            required
+            placeholder="Search the bank the money arrives in…"
+            emptyText="No bank accounts found"
+            value={form.to_account_id}
+            onChange={(val) => setForm(f => ({ ...f, to_account_id: val }))}
+            options={bankAccountOptions(bankAccounts)}
+          />
         </div>
         <Input label="Amount (PKR) *" type="number" min="0.01" step="0.01" value={form.amount} onChange={set('amount')} placeholder="0.00" required />
         <Input label="Narration" value={form.narration} onChange={set('narration')} placeholder="Reason for transfer" />

@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
 import { useCompany } from '../../context/CompanyContext';
+import { bankAccountOptions } from '../../utils/paymentSources';
 
 const today = new Date().toISOString().split('T')[0];
 const genId = (prefix) => `${prefix}-` + String(Date.now()).slice(-6);
@@ -106,12 +107,15 @@ export default function NewCashReceiptModal({ open, onClose, onSave, bankAccount
           {MODES.map(m => <option key={m} value={m}>{m}</option>)}
         </SelectField>
         {form.mode !== 'Cash' && (
-          <SelectField label="Received Into (Bank) *" value={form.bank_account_id} onChange={set('bank_account_id')} required>
-            <option value="">— Select bank account —</option>
-            {bankAccounts.map(b => (
-              <option key={b.account_id} value={b.account_id}>{b.bank_name} ({b.account_no})</option>
-            ))}
-          </SelectField>
+          <SearchableSelect
+            label="Received Into (Bank)"
+            required
+            placeholder="Search bank or account number…"
+            emptyText="No bank accounts found"
+            value={form.bank_account_id}
+            onChange={(val) => setForm(f => ({ ...f, bank_account_id: val }))}
+            options={bankAccountOptions(bankAccounts)}
+          />
         )}
         {form.mode === 'Cheque' && (
           <Input label="Cheque No." value={form.cheque_no} onChange={set('cheque_no')} placeholder="Cheque number" />

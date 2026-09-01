@@ -6,6 +6,7 @@ import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
+import { bankAccountOptions } from '../../utils/paymentSources';
 
 const today = new Date().toISOString().split('T')[0];
 const genId = (prefix) => `${prefix}-` + String(Date.now()).slice(-6);
@@ -88,12 +89,15 @@ export default function NewChequeModal({ open, onClose, onSave, bankAccounts, ch
         <Input label="Due Date *" type="date" value={form.due_date} onChange={set('due_date')} required />
 
         <div className="ff">
-          <SelectField label="Bank Account *" value={form.bank_account_id} onChange={set('bank_account_id')} required>
-            <option value="">— Select bank account —</option>
-            {bankAccounts.map(b => (
-              <option key={b.account_id} value={b.account_id}>{b.bank_name} ({b.account_no})</option>
-            ))}
-          </SelectField>
+          <SearchableSelect
+            label="Bank Account"
+            required
+            placeholder="Search bank or account number…"
+            emptyText="No bank accounts found"
+            value={form.bank_account_id}
+            onChange={(val) => setForm(f => ({ ...f, bank_account_id: val }))}
+            options={bankAccountOptions(bankAccounts)}
+          />
         </div>
 
         <div className="ff">

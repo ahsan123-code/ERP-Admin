@@ -4,9 +4,11 @@ import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
 import SelectField from '../../components/ui/SelectField';
 import MultiSearchableSelect from '../../components/ui/MultiSearchableSelect';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
+import { bankAccountOptions } from '../../utils/paymentSources';
 import { useCompany } from '../../context/CompanyContext';
 import { formatCurrency } from '../../utils/format';
 
@@ -225,12 +227,17 @@ export default function NewPettyCashModal({ open, onClose, onSave, bankAccounts,
           )}
         </div>
 
-        <SelectField label="Paid From *" value={form.source_account_id} onChange={set('source_account_id')} required>
-          <option value="CASH">Cash In Hand</option>
-          {bankAccounts.map(b => (
-            <option key={b.account_id} value={b.account_id}>{b.bank_name} ({b.account_no})</option>
-          ))}
-        </SelectField>
+        {/* CASH is not a bank row — it is the literal the submit path checks for to post
+            against Cash In Hand, so it is prepended rather than coming from the helper. */}
+        <SearchableSelect
+          label="Paid From"
+          required
+          placeholder="Search cash or bank…"
+          emptyText="No accounts found"
+          value={form.source_account_id}
+          onChange={(val) => setForm(f => ({ ...f, source_account_id: val }))}
+          options={[{ value: 'CASH', label: 'Cash In Hand', hint: 'Cash' }, ...bankAccountOptions(bankAccounts)]}
+        />
 
         <Input label="Approved By" value={form.approved_by} onChange={set('approved_by')} placeholder="Name" />
 
