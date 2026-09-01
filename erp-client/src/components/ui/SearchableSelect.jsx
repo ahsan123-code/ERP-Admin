@@ -75,6 +75,9 @@ export default function SearchableSelect({
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={selected ? selected.label : placeholder}
+          // The open list wraps long names in full; the closed field is one line of input
+          // and cannot, so the whole name stays readable on hover.
+          title={selected?.label || undefined}
         />
         <ChevronDown size={14} className={styles.chevron} />
       </div>
