@@ -564,18 +564,35 @@ export const financeDb = {
   },
 
   // Posts a Payment (PV) or Receipt (RV) voucher as a balanced double entry.
-  //   Receipt (money IN):  pocket DEBIT, parties CREDIT  (each party shown by name)
-  //   Payment (money OUT): parties DEBIT, pocket CREDIT
+  //   Receipt (money IN):  pockets DEBIT, parties CREDIT  (each party shown by name)
+  //   Payment (money OUT): parties DEBIT, pockets CREDIT
   // One voucher can settle several parties at once (a customer paying against three
-  // invoices, one cash withdrawal paying five vendors): each party gets its own leg, and
-  // the single cash/bank leg carries their total so the entry still balances.
+  // invoices, one cash withdrawal paying five vendors): each party gets its own leg.
   // Each party leg posts to a control account (AR for customers, AP for vendors) but is
   // *displayed* under the party's name so per-party reports match by account_name.
+  //
+  // The money side is a list too, because a payment run does not always come out of one
+  // account: three vendors settled from the HBL account and two from Meezan is one
+  // decision and one voucher, and forcing it into two vouchers made the screen slower to
+  // use and the run harder to read back. Each pocket gets its own leg carrying its own
+  // subtotal, so the entry balances however many accounts it spans.
+  //
   // parties: [{ controlAccount, name, amount, narration? }, ...]
-  addPaymentReceipt: async ({ type, date, pocketAccount, parties, narration, companyId }) => {
+  // pockets: [{ account, amount }, ...]  — one per distinct cash/bank account
+  addPaymentReceipt: async ({ type, date, pockets, parties, narration, companyId }) => {
     const isReceipt = type === 'Receipt';
     const voucherId = (isReceipt ? 'RV-' : 'PV-') + String(Date.now()).slice(-6);
     const total = parties.reduce((s, p) => s + p.amount, 0);
+    const pocketTotal = pockets.reduce((s, p) => s + p.amount, 0);
+
+    // A voucher whose two sides disagree is a corrupt ledger, not a validation message.
+    // Rounding on the party side is the realistic way this goes wrong, so the guard is a
+    // tolerance rather than an equality test.
+    if (Math.abs(pocketTotal - total) > 0.005) {
+      throw new Error(
+        `Entry does not balance: parties total ${total.toFixed(2)}, accounts total ${pocketTotal.toFixed(2)}.`,
+      );
+    }
 
     const partyLegs = parties.map(p => ({
       account: p.controlAccount,
@@ -584,15 +601,15 @@ export const financeDb = {
       displayName: p.name,
       narration: p.narration || null,
     }));
-    const pocketLeg = {
-      account: pocketAccount,
-      debit:  isReceipt ? total : 0,
-      credit: isReceipt ? 0 : total,
-    };
+    const pocketLegs = pockets.map(p => ({
+      account: p.account,
+      debit:  isReceipt ? p.amount : 0,
+      credit: isReceipt ? 0 : p.amount,
+    }));
 
     // Cash side first on a receipt, last on a payment — keeps the ledger reading
     // debit-before-credit either way.
-    const legs = isReceipt ? [pocketLeg, ...partyLegs] : [...partyLegs, pocketLeg];
+    const legs = isReceipt ? [...pocketLegs, ...partyLegs] : [...partyLegs, ...pocketLegs];
 
     const verb = isReceipt ? 'Received from' : 'Paid to';
     const summary = parties.length === 1

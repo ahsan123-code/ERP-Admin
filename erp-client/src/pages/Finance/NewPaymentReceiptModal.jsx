@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
-import SelectField from '../../components/ui/SelectField';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
@@ -11,8 +10,13 @@ import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { formatCurrency } from '../../utils/format';
+import { bankAccountOptions } from '../../utils/paymentSources';
 
 const today = new Date().toISOString().split('T')[0];
+
+// Party | account | narration | amount | remove. Shared by the header row and the lines
+// so the two can never fall out of step.
+const ROW_COLS = '2fr 2fr 1.6fr 1fr 32px';
 
 // The fixed "pockets" the money moves through — mapped to the REAL existing cash ledger
 // accounts in the chart of accounts (group 11-01-001), not invented ones.
@@ -31,11 +35,16 @@ const AR = { code: '11-03-001-000001', name: 'Accounts Receivable', type: 'Asset
 // nothing needed repairing, but the next one would have landed there.
 const AP = { code: '14-01-001-000000', name: 'Trade Creditors', type: 'Liability', parent: '14-01-001' };
 
-// One row of the voucher: which party, how much, and why. The cash/bank side lives on
-// the voucher header, not the line — a voucher moves money through one pocket only.
-const emptyLine = () => ({ party: '', amount: '', narration: '' });
+// One row of the voucher: which party, out of which account, how much, and why.
+//
+// The account sits on the row rather than on the header because a payment run is not
+// always one pocket: some vendors are settled from one bank and some from another, and
+// that is still one decision the office makes at one time. Rows are addressed by index,
+// not by party — the same customer can legitimately appear twice, paid out of two
+// different accounts.
+const emptyLine = (pocket = '') => ({ party: '', pocket, amount: '', narration: '' });
 
-const EMPTY = { date: today, pocket: '', narration: '' };
+const EMPTY = { date: today, narration: '' };
 
 // mode: 'cash' = cash/wallet only (PV/RV), 'bank' = bank accounts only (BPV/BRV)
 export default function NewPaymentReceiptModal({ open, onClose, onSave, type = 'Receipt', mode = 'cash', bankAccounts = [], chartOfAccounts = [] }) {
@@ -58,14 +67,22 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const setLine = (i, key, value) =>
-    setLines(prev => prev.map((l, idx) => idx === i ? { ...l, [key]: value } : l));
+    setLines(prev => prev.map((l, idx) => (idx === i ? { ...l, [key]: value } : l)));
 
-  const addLine = () => setLines(prev => [...prev, emptyLine()]);
-  const removeLine = (i) => setLines(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev);
+  // A new row inherits the account the row above used. Most runs are paid out of one
+  // account with the odd exception, so carrying it down means the account is picked once
+  // and only changed where it actually differs.
+  const addLine = () => setLines(prev => [...prev, emptyLine(prev[prev.length - 1]?.pocket ?? '')]);
+  const removeLine = (i) => setLines(prev => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev));
 
-  // Pocket dropdown — cash/wallet for PV/RV, bank accounts for BPV/BRV
+  // Pocket dropdown — cash/wallet for PV/RV, bank accounts for BPV/BRV.
+  //
+  // The bank list comes from the shared builder so a bank reads the same here as in
+  // every other picker. The cash list stays local: these three carry the names new
+  // ledger accounts are created under below, which is not something to read from the
+  // chart when the point is to create the account when it is missing.
   const pocketOptions = mode === 'bank'
-    ? (bankAccounts || []).map(b => ({ value: `bank:${b.account_id}`, label: `${b.bank_name} — ${b.account_no}` }))
+    ? bankAccountOptions(bankAccounts, { prefix: 'bank:' })
     : CASH_POCKETS.map(p => ({ value: `cash:${p.code}`, label: p.name }));
 
   // Expense heads a payment can be made straight to — group 12 of the chart, the same
@@ -110,48 +127,74 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
     })),
   ];
 
-  const selectedPocket = pocketOptions.find(o => o.value === form.pocket);
+  const partyByValue  = new Map(partyOptions.map(o => [o.value, o]));
+  const pocketByValue = new Map(pocketOptions.map(o => [o.value, o]));
 
-  // Lines the user has actually filled in — a half-typed row at the bottom is ignored
-  // rather than treated as an error.
-  const filledLines = lines
-    .map(l => ({ ...l, amountNum: parseFloat(l.amount) || 0 }))
-    .filter(l => l.party && l.amountNum > 0);
+  const pocketLabel = (value) => {
+    const o = pocketByValue.get(value);
+    return o ? [o.label, o.hint].filter(Boolean).join(' - ') : value;
+  };
+
+  // A row counts as started once anything has been touched on it, and every started row
+  // has to be complete before the voucher posts. A trailing row left entirely blank is
+  // just the next empty line, not an error.
+  const startedLines = lines.filter(l => l.party || l.pocket || String(l.amount).trim());
+  const isComplete = (l) => Boolean(l.party) && Boolean(l.pocket) && (parseFloat(l.amount) || 0) > 0;
+
+  const filledLines = startedLines
+    .filter(isComplete)
+    .map(l => ({ ...l, amountNum: parseFloat(l.amount) || 0 }));
   const total = filledLines.reduce((s, l) => s + l.amountNum, 0);
+
+  // What each account contributes, in the order the accounts first appear down the rows.
+  // Two rows paid out of the same bank are one leg on the voucher carrying their sum,
+  // not two legs against the same account.
+  const pocketTotals = filledLines.reduce((map, l) => {
+    map.set(l.pocket, (map.get(l.pocket) || 0) + l.amountNum);
+    return map;
+  }, new Map());
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.pocket) {
-      toast.error(isReceipt ? 'Pick the account the money came into.' : 'Pick the account the money was paid from.');
+    if (!startedLines.length) {
+      toast.error(isReceipt ? 'Add a line saying who paid, and into which account.' : 'Add a line saying who was paid, and out of which account.');
       return;
     }
-    if (!filledLines.length) {
-      toast.error('Add at least one line with a party and an amount.');
-      return;
-    }
-    // A row with an amount but no party (or vice-versa) is a mistake, not an empty row.
-    const halfFilled = lines.some(l => (!!l.party) !== ((parseFloat(l.amount) || 0) > 0));
-    if (halfFilled) {
-      toast.error('Every line needs both a party and an amount.');
+    // Point at the row and say what is missing from it. "Check your lines" is no help
+    // once a dozen are on screen.
+    const firstBad = startedLines.findIndex(l => !isComplete(l));
+    if (firstBad !== -1) {
+      const l = startedLines[firstBad];
+      const where = `Line ${firstBad + 1}`;
+      const what = !l.party
+        ? (isReceipt ? 'needs a party.' : 'needs a party or expense account.')
+        : !l.pocket
+          ? (isReceipt ? 'needs the account the money came into.' : 'needs the account it was paid from.')
+          : 'needs an amount.';
+      toast.error(`${where} ${what}`);
       return;
     }
     setSaving(true);
     try {
-      // Resolve the pocket ledger account (auto-create if missing)
-      let pocketAccount;
-      if (form.pocket.startsWith('cash:')) {
-        const code = form.pocket.slice(5);
-        const def = CASH_POCKETS.find(p => p.code === code);
-        pocketAccount = await financeDb.ensureLedgerAccount({ code, name: def.name, type: 'Asset', parent: '11-01-001', companyId });
-      } else {
-        const bankId = form.pocket.slice(5);
-        const bank = bankAccounts.find(b => b.account_id === bankId);
-        pocketAccount = financeDb.bankCodeToAccount(chartOfAccounts, bankId, bankAccounts) || await financeDb.ensureBankLedgerAccount(bank, companyId);
-      }
-
-      if (!pocketAccount) {
-        throw new Error('Could not resolve a ledger account for this entry.');
-      }
+      // One ledger account per distinct pocket, resolved once however many rows use it
+      // (auto-created if missing). Distinct pockets are distinct account codes, so these
+      // cannot race each other.
+      const pockets = await Promise.all([...pocketTotals].map(async ([value, amount]) => {
+        let account;
+        if (value.startsWith('cash:')) {
+          const code = value.slice(5);
+          const def = CASH_POCKETS.find(p => p.code === code);
+          account = await financeDb.ensureLedgerAccount({ code, name: def.name, type: 'Asset', parent: '11-01-001', companyId });
+        } else {
+          const bankId = value.slice(5);
+          const bank = bankAccounts.find(b => b.account_id === bankId);
+          account = financeDb.bankCodeToAccount(chartOfAccounts, bankId, bankAccounts) || await financeDb.ensureBankLedgerAccount(bank, companyId);
+        }
+        if (!account) {
+          throw new Error(`Could not resolve a ledger account for ${pocketLabel(value)}.`);
+        }
+        return { account, amount };
+      }));
 
       // Resolve the control accounts once (AR for customers, AP for vendors) rather than
       // per line — a voucher with ten customer lines still only needs AR looked up once.
@@ -174,7 +217,7 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
         const sep  = l.party.indexOf(':');
         const kind = l.party.slice(0, sep);
         const id   = l.party.slice(sep + 1);
-        const label = partyOptions.find(o => o.value === l.party)?.label ?? l.party;
+        const label = partyByValue.get(l.party)?.label ?? l.party;
 
         // Expense heads and dasti parties both post to their own chart account — each is
         // already in the chart, so there is nothing to resolve or create. The leg's
@@ -206,7 +249,7 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
       const { voucherId } = await financeDb.addPaymentReceipt({
         type,
         date: form.date,
-        pocketAccount,
+        pockets,
         parties,
         narration: form.narration.trim(),
         companyId,
@@ -225,21 +268,23 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
     }
   };
 
-  // Live double-entry preview: one leg per filled line, plus the single cash/bank leg
-  // carrying their total.
-  const preview = selectedPocket && filledLines.length
+  // Live double-entry preview: one leg per filled row, and one cash/bank leg per account
+  // used, each carrying that account's own subtotal. Showing the money side split the way
+  // it will actually post is the point — it is how you catch a row left on the wrong bank
+  // before the voucher is written rather than afterwards.
+  const preview = filledLines.length
     ? (() => {
       const partyLegs = filledLines.map(l => ({
-        name: partyOptions.find(o => o.value === l.party)?.label || '—',
+        name: partyByValue.get(l.party)?.label || '—',
         dr: isReceipt ? 0 : l.amountNum,
         cr: isReceipt ? l.amountNum : 0,
       }));
-      const pocketLeg = {
-        name: selectedPocket.label,
-        dr: isReceipt ? total : 0,
-        cr: isReceipt ? 0 : total,
-      };
-      return isReceipt ? [pocketLeg, ...partyLegs] : [...partyLegs, pocketLeg];
+      const pocketLegs = [...pocketTotals].map(([value, amount]) => ({
+        name: pocketLabel(value),
+        dr: isReceipt ? amount : 0,
+        cr: isReceipt ? 0 : amount,
+      }));
+      return isReceipt ? [...pocketLegs, ...partyLegs] : [...partyLegs, ...pocketLegs];
     })()
     : null;
 
@@ -275,41 +320,35 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
         <Input label="Date *" type="date" value={form.date} onChange={set('date')} required />
         <div />
         <div className="ff">
-          <SelectField
-            label={
-              mode === 'bank'
-                ? (isReceipt ? 'Receive Into (Bank Account) *' : 'Pay From (Bank Account) *')
-                : (isReceipt ? 'Receive Into (Account) *' : 'Pay From (Account) *')
-            }
-            value={form.pocket}
-            onChange={set('pocket')}
-            required
-          >
-            <option value="">— Select account —</option>
-            {pocketOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </SelectField>
-        </div>
-        <div className="ff">
           <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
             {isReceipt
-              ? 'Received From — add a line per party'
-              : `Paid To — add a line per party or expense head (${expenseAccounts.length} expense accounts available)`}
+              ? 'One line per party — and the account their money came into'
+              : `One line per party or expense head — and the account it was paid from (${expenseAccounts.length} expense accounts available)`}
           </label>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: 8, padding: '0 2px 6px', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-            <span>{isReceipt ? 'Party' : 'Party / Expense Account'}</span><span>Narration</span>
+          <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '0 2px 6px', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            <span>{isReceipt ? 'Party' : 'Party / Expense Account'}</span>
+            <span>{mode === 'bank' ? 'Bank Account' : 'Cash Account'}</span>
+            <span>Narration</span>
             <span style={{ textAlign: 'right' }}>Amount</span>
             <span />
           </div>
 
           {lines.map((l, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <SearchableSelect
                 placeholder={isReceipt ? 'Search customer or vendor…' : 'Search customer, vendor or expense account…'}
                 emptyText={isReceipt ? 'No parties found' : 'No parties or expense accounts found'}
                 value={l.party}
                 onChange={(val) => setLine(i, 'party', val)}
                 options={partyOptions}
+              />
+              <SearchableSelect
+                placeholder={mode === 'bank' ? 'Search bank…' : 'Search cash account…'}
+                emptyText={mode === 'bank' ? 'No bank accounts found' : 'No cash accounts found'}
+                value={l.pocket}
+                onChange={(val) => setLine(i, 'pocket', val)}
+                options={pocketOptions}
               />
               <Input placeholder="Invoice / reason" value={l.narration} onChange={e => setLine(i, 'narration', e.target.value)} />
               <Input type="number" min="0" step="0.01" placeholder="0.00" value={l.amount} onChange={e => setLine(i, 'amount', e.target.value)} />
@@ -334,6 +373,23 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
           <Button type="button" variant="secondary" size="sm" icon={<Plus size={14} />} onClick={addLine} style={{ marginTop: 2 }}>
             Add Line
           </Button>
+
+          {/* What each account will be credited (or debited) once the rows are grouped.
+              Only worth showing when more than one is in play — with a single account it
+              just repeats the total below. */}
+          {pocketTotals.size > 1 && (
+            <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>
+                {isReceipt ? 'Into' : 'Out of'} {pocketTotals.size} accounts
+              </div>
+              {[...pocketTotals].map(([value, amount]) => (
+                <div key={value} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, padding: '2px 0' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{pocketLabel(value)}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-subtle)', fontSize: 13, fontWeight: 700 }}>
             <span style={{ color: 'var(--text-secondary)' }}>{isReceipt ? 'Total Received' : 'Total Paid'}</span>
