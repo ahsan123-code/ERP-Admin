@@ -136,8 +136,16 @@ export function buildSalesInvoiceDoc(inv, lineItems = [], context = {}) {
     </table>`;
 
   // Sits under the right-hand end of the item grid, where the printed bill puts it.
-  const chargesTable = `
-    <table class="chg" width="40%" align="right" style="border-collapse:collapse">
+  //
+  // Carried in a layout row rather than floated with align="right" on the table itself.
+  // A browser reads that align as a float, and since the item grid above is full width
+  // the float has nowhere to sit but below it — which looked correct in the preview.
+  // Word does not float it: align makes it a text-wrapped table, which Word anchors to
+  // the following paragraph and lifts ABOVE the grid, so the downloaded bill came out
+  // with its totals over the items they total. In a normal-flow cell both renderers put
+  // it in the same place.
+  const chargesInner = `
+    <table class="chg" width="100%" style="border-collapse:collapse">
       <colgroup><col width="62%"><col width="38%"></colgroup>
       ${chargeLines(inv).map(([label, value]) => `
         <tr><td>${esc(label)}</td><td align="right">${num(value)}</td></tr>`).join('')}
@@ -146,6 +154,7 @@ export function buildSalesInvoiceDoc(inv, lineItems = [], context = {}) {
         <td class="net" align="right">${num(inv.grand_total)}</td>
       </tr>
     </table>`;
+  const chargesTable = layoutTable(['', chargesInner], { widths: ['60%', '40%'] });
 
   const companyBlock = `
     <div style="font-size:17px;font-weight:700">${esc(COMPANY.name)}</div>
@@ -215,7 +224,6 @@ export function buildSalesInvoiceDoc(inv, lineItems = [], context = {}) {
     <div style="height:12px"></div>
     ${itemsTable}
     ${chargesTable}
-    <div style="clear:both"></div>
     ${documentFooter('This is a computer generated document and does not require a physical signature.')}`;
 
   return {
