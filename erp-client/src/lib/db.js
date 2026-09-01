@@ -1472,6 +1472,41 @@ export const salesDb = {
     supabase.from('sales_invoice_items')
       .select('*').eq('sale_inv_id', saleInvId).order('line_no'),
 
+  // What a sales voucher says in the ledger's Narration column.
+  //
+  // The Book # belongs in it. It is the number written in the physical bill book and it
+  // is what the office quotes when checking a bill against the ledger, but it lived only
+  // on sales_invoices — the ledger reads vouchers/voucher_lines, so it could never
+  // appear there however carefully it was entered.
+  //
+  // Shared with updateSalesInvoiceVoucherNarration so a Book # filled in after dispatch
+  // rewrites the line to exactly what posting it up front would have written.
+  salesVoucherNarration: (invoice) => {
+    const base = `Sales invoice ${invoice.sale_inv_id} — ${invoice.customer_name}`;
+    const book = String(invoice.manual_bill_no ?? '').trim();
+    return book ? `${base} (Book # ${book})` : base;
+  },
+
+  // Rewrites the narration on an already-posted sales voucher.
+  //
+  // The Book # is usually not to hand at dispatch and is filled in afterwards from the
+  // Invoicing list. That wrote to sales_invoices alone, so the bill printed its Book #
+  // while the ledger — posted at dispatch, when the field was still blank — never showed
+  // it. Both the voucher rows and their lines are rewritten: the ledger prefers the line
+  // narration and falls back to the voucher's, and the customer ledger view coalesces the
+  // two, so leaving either behind leaves the old text on screen.
+  updateSalesInvoiceVoucherNarration: async ({ saleInvId, narration, companyId = 1 }) => {
+    const [{ error: vErr }, { error: lErr }] = await Promise.all([
+      supabase.from('vouchers').update({ narration })
+        .eq('reference', saleInvId).eq('company_id', companyId),
+      // postJournalEntry gives each leg its own `${voucherId}-N` id and no reference of
+      // its own, so the legs are found by that prefix.
+      supabase.from('voucher_lines').update({ narration })
+        .like('voucher_id', `${saleInvId}-%`).eq('company_id', companyId),
+    ]);
+    return { error: vErr || lErr || null };
+  },
+
   // Posts a sales invoice to the ledger as a balanced double entry:
   //   Accounts Receivable  DEBIT   grand_total   (shown under the customer's name)
   //   Goods Sales          CREDIT  subtotal
@@ -1549,7 +1584,7 @@ export const salesDb = {
         { account: customerAccount, debit: grandTotal, credit: 0, displayName: invoice.customer_name },
         ...creditAccounts.map((account, i) => ({ account, debit: 0, credit: creditParts[i].amount })),
       ],
-      narration: `Sales invoice ${voucherId} — ${invoice.customer_name}`,
+      narration: salesDb.salesVoucherNarration(invoice),
       reference: voucherId,
     });
     return { voucherId };

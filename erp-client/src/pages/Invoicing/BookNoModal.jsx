@@ -4,6 +4,7 @@ import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { salesDb } from '../../lib/db';
+import { useCompany } from '../../context/CompanyContext';
 import { formatDate, formatCurrency } from '../../utils/format';
 
 const MAX = 20;
@@ -16,6 +17,7 @@ const MAX = 20;
 // the row it opened on instead of needing an effect to resync on every change of invoice.
 export default function BookNoModal({ invoice, onClose, onSaved }) {
   const toast = useToast();
+  const { companyId } = useCompany();
   const [value, setValue] = useState(invoice.manual_bill_no ?? '');
   const [saving, setSaving] = useState(false);
 
@@ -32,12 +34,31 @@ export default function BookNoModal({ invoice, onClose, onSaved }) {
         manual_bill_no: trimmed || null,
       });
       if (error) throw new Error(error.message);
-      toast.success(
-        clearing
-          ? `Book # cleared on ${invoice.sale_inv_id}.`
-          : `Book # ${trimmed} saved on ${invoice.sale_inv_id}.`,
-        'Bill Updated',
-      );
+
+      // The voucher was posted at dispatch, usually before this number was known, so its
+      // narration still reads without a Book #. Rewriting it here is what makes the
+      // number show up in the ledger — saving the bill alone never reached it.
+      const { error: ledgerError } = await salesDb.updateSalesInvoiceVoucherNarration({
+        saleInvId: invoice.sale_inv_id,
+        narration: salesDb.salesVoucherNarration({ ...invoice, manual_bill_no: trimmed || null }),
+        companyId: invoice.company_id ?? companyId,
+      });
+
+      if (ledgerError) {
+        // The bill itself is saved and will print correctly; only the ledger's wording is
+        // stale, which is worth saying plainly rather than reporting a clean save.
+        toast.warning(
+          `Book # saved on ${invoice.sale_inv_id}, but the ledger entry still shows the old text: ${ledgerError.message}`,
+          'Ledger Not Updated',
+        );
+      } else {
+        toast.success(
+          clearing
+            ? `Book # cleared on ${invoice.sale_inv_id}.`
+            : `Book # ${trimmed} saved on ${invoice.sale_inv_id}.`,
+          'Bill Updated',
+        );
+      }
       onSaved(data || { ...invoice, manual_bill_no: trimmed || null });
       onClose();
     } catch (err) {
