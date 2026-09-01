@@ -265,13 +265,58 @@ export const financeDb = {
   // The account is therefore always created flat, and the opening amount goes through
   // postJournalEntry, which writes both legs AND maintains the balances. Passing a
   // non-zero balance here as well would count it twice.
+  // The bank group. An account created under it needs a bank_accounts row as well as a
+  // ledger one — see ensureBankRowForLedgerAccount.
+  BANK_GROUP: '11-05-001',
+
+  // The other half of ensureBankLedgerAccount.
+  //
+  // Every screen that pays or receives money lists banks from bank_accounts, while the
+  // chart of accounts is a separate table linked to it by account_code. Adding a "Bank
+  // Account" from the chart wrote only the ledger row, so the account existed, could be
+  // posted against by hand, and appeared nowhere in any bank dropdown — created, and
+  // unusable, with nothing to say why.
+  //
+  // Idempotent on account_code, which is the link (never parse the BANK-<n> digits).
+  ensureBankRowForLedgerAccount: async (chartAccount, companyId = 1) => {
+    const code = chartAccount?.account_code;
+    if (!code) return { data: null, error: new Error('Account has no code to link a bank row to.') };
+
+    const { data: existing } = await supabase
+      .from('bank_accounts').select('*')
+      .eq('account_code', code).eq('company_id', companyId).maybeSingle();
+    if (existing) return { data: existing, error: null };
+
+    const { data, error } = await supabase.from('bank_accounts').insert([{
+      // Mirrors the import's shape so a hand-added bank sorts and reads with the rest.
+      account_id:    `BANK-C${companyId}-${code.split('-').pop()}`,
+      account_code:  code,
+      bank_name:     chartAccount.account_name,
+      account_title: chartAccount.account_name,
+      account_type:  'Current',
+      balance:       0,
+      status:        'active',
+      company_id:    companyId,
+    }]).select().single();
+    return { data: data || null, error: error || null };
+  },
+
   addChartAccountWithOpening: async ({ account, openingBalance = 0, date = null, companyId = 1 }) => {
     const { data: created, error } = await supabase
       .from('chart_of_accounts').insert([{ ...account, balance: 0 }]).select().single();
     if (error || !created) return { data: null, error };
 
+    // A bank needs its bank_accounts row or it will not appear in a single payment,
+    // receipt, cheque or transfer screen. Reported rather than thrown: the ledger account
+    // is already created and correct, and the caller can say which half is missing.
+    let bankRowFailed = null;
+    if (String(created.account_code || '').startsWith(`${financeDb.BANK_GROUP}-`)) {
+      const { error: bankErr } = await financeDb.ensureBankRowForLedgerAccount(created, companyId);
+      if (bankErr) bankRowFailed = bankErr;
+    }
+
     const amount = Math.abs(parseFloat(openingBalance) || 0);
-    if (amount === 0) return { data: created, error: null, voucherId: null };
+    if (amount === 0) return { data: created, error: null, voucherId: null, bankRowFailed };
 
     const contra = await financeDb.ensureLedgerAccount({
       code: financeDb.OPENING_BALANCE_CONTRA,
@@ -280,7 +325,7 @@ export const financeDb = {
     // Without the other side this would repeat the very bug it replaces, so the account
     // stays at zero and the caller is told the opening balance did not post.
     if (!contra) {
-      return { data: created, error: null, voucherId: null, openingFailed: true };
+      return { data: created, error: null, voucherId: null, openingFailed: true, bankRowFailed };
     }
 
     // Which way round depends on the new account's normal side: an asset or expense opens
@@ -302,7 +347,7 @@ export const financeDb = {
       reference: voucherId,
     });
 
-    return { data: created, error: null, voucherId };
+    return { data: created, error: null, voucherId, bankRowFailed };
   },
 
   // How many transactions reference this account (by name on vouchers, by code on

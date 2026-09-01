@@ -74,7 +74,7 @@ export default function NewAccountModal({ open, onClose, onSave, existingAccount
             // The opening balance posts as a real Journal voucher against Capital rather
             // than being written straight onto the account row — see
             // financeDb.addChartAccountWithOpening.
-            const { error, voucherId, openingFailed } = await financeDb.addChartAccountWithOpening({
+            const { error, voucherId, openingFailed, bankRowFailed } = await financeDb.addChartAccountWithOpening({
                 account: {
                     account_id: accountId,
                     account_code: code,
@@ -92,7 +92,15 @@ export default function NewAccountModal({ open, onClose, onSave, existingAccount
             if (error) throw new Error(error.message);
 
             const name = form.name.trim();
-            if (openingFailed) {
+            // Worth its own message: the account is in the chart and looks created, but
+            // without the bank row it appears in no payment or receipt screen, which is
+            // exactly the puzzle this used to leave behind.
+            if (bankRowFailed) {
+                toast.error(
+                    `Account "${name}" was created, but it could not be registered as a bank account: ${bankRowFailed.message}. It will not appear in payment or receipt screens until that is fixed.`,
+                    'Bank Account Not Registered',
+                );
+            } else if (openingFailed) {
                 toast.error(`Account "${name}" was created, but the opening balance could not be posted. Enter it as a journal voucher.`, 'Opening Balance Not Posted');
             } else if (voucherId) {
                 toast.success(`Account "${name}" created. Opening balance posted as ${voucherId}.`, 'Account Added');
