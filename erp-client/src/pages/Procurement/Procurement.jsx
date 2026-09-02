@@ -47,6 +47,7 @@ export default function Procurement() {
   // Delete / confirm states
   const [deletingId,    setDeletingId]    = useState(null);
   const [deletingVendorId, setDeletingVendorId] = useState(null);
+  const [deletingBillId, setDeletingBillId] = useState(null);
   const [confirmingPoId, setConfirmingPoId] = useState(null);
 
   // PO filter tab
@@ -115,7 +116,7 @@ export default function Procurement() {
     const billIds = pinvList.filter(b => poSet.has(b.po_ref) || grnSet.has(b.grn_ref)).map(b => b.bill_id);
 
     try {
-      const { error } = await procurementDb.deletePdn(row.id, row.pdn_id, { prIds, poIds, gpIds, grnIds, billIds });
+      const { error } = await procurementDb.deletePdn(row.id, row.pdn_id, { prIds, poIds, gpIds, grnIds, billIds }, companyId);
       if (error) throw new Error(error.message);
       setPdnList(prev => prev.filter(p => p.id !== row.id));
       setPrList(prev  => prev.filter(p => !prSet.has(p.pr_id)));
@@ -149,6 +150,28 @@ export default function Procurement() {
       toast.error(err.message, 'Confirm Failed');
     } finally {
       setConfirmingPoId(null);
+    }
+  };
+
+  // A bill carries a posted double entry, so this reverses the ledger as well as
+  // removing the record. Confirmed first for that reason — the same rule the account
+  // history in Reports follows before deleting a voucher.
+  const handleDeletePinv = async (row) => {
+    if (!window.confirm(
+      `Delete purchase invoice "${row.bill_id}" for ${formatCurrency(row.grand_total)}?\n\n` +
+      `Its ledger entry will be reversed and the vendor's payable reduced by the same amount. This cannot be undone.`
+    )) return;
+
+    setDeletingBillId(row.id);
+    try {
+      const { error } = await procurementDb.deletePurchaseInvoice(row.id, row.bill_id, companyId);
+      if (error) throw new Error(error.message);
+      setPinvList(prev => prev.filter(b => b.id !== row.id));
+      toast.success(`Purchase invoice "${row.bill_id}" deleted and its ledger entry reversed.`);
+    } catch (err) {
+      toast.error(err.message, 'Delete Failed');
+    } finally {
+      setDeletingBillId(null);
     }
   };
 
@@ -291,6 +314,19 @@ export default function Procurement() {
       render: v => <span className={`${styles.mono} ${styles.totalVal}`}>{formatCurrency(v)}</span> },
     { key: 'status',      label: 'Status',     width: 110,
       render: v => { const s = getStatus(v); return <Badge variant={s.variant}>{s.label}</Badge>; } },
+    {
+      key: '_del', label: '', width: 48, sortable: false,
+      render: (_, row) => (
+        <button
+          className={styles.rowDeleteBtn}
+          disabled={deletingBillId === row.id}
+          onClick={(e) => { e.stopPropagation(); handleDeletePinv(row); }}
+          title={`Delete "${row.bill_id}"`}
+        >
+          {deletingBillId === row.id ? <span className={styles.rowDeleteSpinner}>…</span> : <Trash2 size={13} strokeWidth={2} />}
+        </button>
+      ),
+    },
   ];
 
   const VENDOR_COLS = [

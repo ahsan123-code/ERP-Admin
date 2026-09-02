@@ -1772,14 +1772,43 @@ export const procurementDb = {
   // Full downstream cascade: PDN → PR → PO → Gate Pass → GRN → Purchase Invoice.
   // Caller passes the linked IDs it already holds in local state (most reliable);
   // we still run pdn_ref/po_ref sweeps as a safety net for anything created elsewhere.
-  deletePdn: async (id, pdnId, refs = {}) => {
+  deletePdn: async (id, pdnId, refs = {}, companyId = 1) => {
     const { prIds = [], poIds = [], gpIds = [], grnIds = [], billIds = [] } = refs;
+
+    // Bills carry a posted double entry, so the cascade has to reverse the ledger too,
+    // not just drop the rows. It didn't, and PBILL-27310 is what that leaves behind: a
+    // Purchase voucher pair for 2,426,107.96 still crediting Trade Creditors with no
+    // bill in front of it. See server/cleanup-orphan-purchase-invoice-vouchers.js.
+    //
+    // Local state only knows the bills the page can see, so re-read what the billIds
+    // and po_ref deletes below will actually remove — a bill recorded in another
+    // session is just as capable of stranding its voucher.
+    const billLookups = [];
+    if (billIds.length) {
+      billLookups.push(supabase.from('purchase_invoices').select('bill_id')
+        .eq('company_id', companyId).in('bill_id', billIds));
+    }
+    if (poIds.length) {
+      billLookups.push(supabase.from('purchase_invoices').select('bill_id')
+        .eq('company_id', companyId).in('po_ref', poIds));
+    }
+    const doomedBills = [...new Set(
+      (await Promise.all(billLookups)).flatMap(r => (r.data || []).map(b => b.bill_id)).filter(Boolean)
+    )];
+    // One at a time: deleteVoucherGroup reads a balance and writes it back, so two bills
+    // landing on the same account (Purchases, and Trade Creditors on every one of them)
+    // would both read the pre-delete figure and only one reversal would survive.
+    for (const billId of doomedBills) {
+      const { error: voucherError } = await financeDb.deleteVoucherGroup(billId, companyId);
+      if (voucherError) return { error: voucherError };
+    }
 
     // No DB foreign keys force an order here, so fire every child delete at once.
     const ops = [
       supabase.from('purchase_requisitions').delete().eq('pdn_ref', pdnId),
       supabase.from('pdn_line_items').delete().eq('pdn_id', pdnId),
     ];
+    if (doomedBills.length) ops.push(supabase.from('purchase_invoice_items').delete().in('bill_id', doomedBills));
     if (billIds.length) ops.push(supabase.from('purchase_invoices').delete().in('bill_id', billIds));
     if (grnIds.length) {
       ops.push(supabase.from('grn_line_items').delete().in('grn_id', grnIds));
@@ -1893,6 +1922,28 @@ export const procurementDb = {
 
   addPurchaseInvoiceItems: (items) =>
     supabase.from('purchase_invoice_items').insert(items).select(),
+
+  // Removes a recorded bill in full: the ledger voucher first, then the item detail,
+  // then the header. postPurchaseInvoiceVoucher posts the legs under `${bill_id}-1`,
+  // `${bill_id}-2` …, so the bill id IS the voucher group id, and deleteVoucherGroup
+  // reverses each leg's balance before removing the rows.
+  //
+  // The voucher has to go with the bill. Deleting the header alone leaves the credit
+  // standing on Trade Creditors with no document behind it — PBILL-27310 is exactly
+  // that, a Purchase voucher pair for 2,426,107.96 whose purchase_invoices row is gone,
+  // left by the PDN cascade back when it dropped bills without touching their vouchers.
+  //
+  // Voucher removal is not fatal on its own: an imported or never-posted bill has no
+  // voucher group, and deleteVoucherGroup is a no-op on an empty match.
+  deletePurchaseInvoice: async (id, billId, companyId = 1) => {
+    if (billId) {
+      const { error: voucherError } = await financeDb.deleteVoucherGroup(billId, companyId);
+      if (voucherError) return { error: voucherError };
+      await supabase.from('purchase_invoice_items').delete().eq('bill_id', billId);
+    }
+    const { error } = await supabase.from('purchase_invoices').delete().eq('id', id);
+    return { error };
+  },
 
   // Posts a vendor bill to the ledger as a balanced double entry — the mirror of
   // postSalesInvoiceVoucher on the sales side:

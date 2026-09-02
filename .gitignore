@@ -67,3 +67,6 @@ CUSTOMER LIST.pdf
 
 # Local agent/session files
 .claude/
+
+# Ledger backups written by the server cleanup scripts
+server/backup-*.json
