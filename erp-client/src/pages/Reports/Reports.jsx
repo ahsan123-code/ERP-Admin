@@ -420,7 +420,10 @@ function LedgerReport({ chartOfAccounts = [], companyId = 1 }) {
           Select an account to view its ledger
         </div>
       ) : (
-        <div ref={printRef}>
+        // Same clipping as the Vendor Ledger had: twelve columns and no overflow-x, so
+        // Debit, Credit and Balance ran off the right-hand edge with no way to scroll to
+        // them. (printRef is attached here but never read by anything.)
+        <div ref={printRef} className={styles.reportTable}>
           <table className={styles.tbl}>
             <thead>
               <tr>
@@ -2165,12 +2168,20 @@ function VendorLedger({ vendors, companyId = 1 }) {
   const [toDate,   setTo]     = useState('');
   const [page, setPage] = useState(1);
 
+  // The selected vendor's own account code(s). Passing these makes the ledger select by
+  // account rather than by name — the name is a label copied onto each line, not a key, so
+  // matching on it pulled in whatever else happened to carry the same text.
+  const vendorCodes = useMemo(
+    () => [...new Set((vendors || []).filter(v => v.name === vendor).map(v => v.account_code).filter(Boolean))],
+    [vendors, vendor]);
+  const vendorCodeKey = vendorCodes.join(',');
+
   // Ledger first. A vendor with no creditor line still has voucher-header activity worth
   // showing, so those fall back to the header query rather than reading as an empty ledger.
   const { data: rawVouchers } = useDb(
     async () => {
       if (!vendor) return { data: [], error: null };
-      const res = await financeDb.getVendorLedgerEntries(vendor, fromDate, toDate, companyId);
+      const res = await financeDb.getVendorLedgerEntries(vendor, fromDate, toDate, companyId, vendorCodes);
       if (res.error || (res.data && res.data.length)) return res;
       const fallback = await financeDb.getVouchersByAccount(vendor, fromDate, toDate, companyId);
       return {
@@ -2178,7 +2189,7 @@ function VendorLedger({ vendors, companyId = 1 }) {
         error: fallback.error,
       };
     },
-    [vendor, fromDate, toDate, companyId]
+    [vendor, fromDate, toDate, companyId, vendorCodeKey]
   );
 
   const entries = useMemo(() => {
@@ -2345,7 +2356,11 @@ function VendorLedger({ vendors, companyId = 1 }) {
           Select a vendor to view its ledger
         </div>
       ) : (
-        <div>
+        // .reportTable carries the overflow-x that lets a wide table scroll. This one was
+        // a bare div, so its eleven columns had nowhere to go and the right-hand ones —
+        // Debit, Credit, Balance — were clipped off the edge. Every other report table on
+        // this page already uses it.
+        <div className={styles.reportTable}>
           <table className={styles.tbl}>
             <thead>
               <tr>

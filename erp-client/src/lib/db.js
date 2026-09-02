@@ -664,6 +664,41 @@ export const financeDb = {
     return account || fallback;
   },
 
+  // The purchase-side mirror of customerLedgerAccount, and it exists for the same reason.
+  //
+  // Every vendor report reads the sub-ledger: vendor_balances aggregates voucher_lines by
+  // `vendors.account_code`, so a posting left on the Trade Creditors control account
+  // (14-01-001-000000) never reaches the vendor it names. It is still in the books and the
+  // Trial Balance still balances — it is simply filed under "Trade Creditors" rather than
+  // under the supplier, so their balance is wrong by that amount.
+  //
+  // That is what made the Vendor Ledger and the Vendor Current Balance report disagree:
+  // the ledger matched by account_title, so it picked those control lines up, while the
+  // balance report matched by account_code, so it did not. SHAMOON SB (Karachi) read nil
+  // in one and 1.00 in the other for exactly that reason.
+  //
+  // Returns `fallback` when the vendor has no code of their own, so a vendor added through
+  // the app — which does not create a chart account — never blocks a posting.
+  vendorLedgerAccount: async ({ vendor = null, vendorName = null, companyId = 1, fallback = null }) => {
+    let row = vendor;
+    if (!row?.account_code && vendorName) {
+      const { data } = await supabase
+        .from('vendors').select('name, account_code')
+        .eq('company_id', companyId).eq('name', vendorName)
+        .not('account_code', 'is', null).limit(1);
+      row = data?.[0] || null;
+    }
+    if (!row?.account_code) return fallback;
+    const account = await financeDb.ensureLedgerAccount({
+      code: row.account_code,
+      name: row.name || vendorName || row.account_code,
+      type: 'Liability',
+      parent: '14-01-001',
+      companyId,
+    });
+    return account || fallback;
+  },
+
   // Posts a Payment (PV) or Receipt (RV) voucher as a balanced double entry.
   //   Receipt (money IN):  pockets DEBIT, parties CREDIT  (each party shown by name)
   //   Payment (money OUT): parties DEBIT, pockets CREDIT
@@ -1064,20 +1099,28 @@ export const financeDb = {
   // ("Good Purchase", "Labour Charges") — so a vendor's bills never appeared and the
   // running balance was built from payments alone.
   //
-  // Selected by account_title: vendors has no account_code column, and the title is the
-  // vendor name the report already picks from.
+  // Selected by account_code when the vendor has one, and only by account_title when they
+  // do not. The title is not a key: it is a display name copied onto each line, so the
+  // same text appears on more than one account. Matching on it made this report disagree
+  // with vendor_balances — which aggregates by code — for 63 of the 202 vendors that have
+  // an account, and SHAMOON SB (Karachi) was the visible case: 749 lines on their own
+  // account netting 1.00, plus one line of -1.00 sitting on the Trade Creditors control
+  // account under the same name, so the ledger closed at nil while the balance report said
+  // 1.00. Both were reading the data correctly; they were reading different data.
+  //
   // Paged, for the same reason the customer one is.
-  getVendorLedgerEntries: async (vendorName, fromDate, toDate, companyId = 1) => {
-    if (!vendorName) return { data: [], error: null };
+  getVendorLedgerEntries: async (vendorName, fromDate, toDate, companyId = 1, accountCodes = null) => {
+    const codes = [...new Set((accountCodes || []).filter(Boolean))];
+    if (!vendorName && codes.length === 0) return { data: [], error: null };
     const PAGE = 1000;
     const all = [];
     for (let from = 0; ; from += PAGE) {
       let q = supabase.from('vendor_ledger_entries')
         .select('voucher_id, line_no, date, voucher_type, particulars, reference, debit, credit')
         .eq('company_id', companyId)
-        .eq('account_title', vendorName)
         .order('date').order('voucher_id').order('line_no')
         .range(from, from + PAGE - 1);
+      q = codes.length ? q.in('account_code', codes) : q.eq('account_title', vendorName);
       if (fromDate) q = q.gte('date', fromDate);
       if (toDate)   q = q.lte('date', toDate);
       const { data, error } = await q;
@@ -2057,11 +2100,17 @@ export const procurementDb = {
       debitParts.push({ code: '12-01-030-000000', name: 'Charges On Purchase', parent: '12-01-030', amount: remainder });
     }
 
-    // 14-01-001-000000 "Trade Creditors" is the control account that heads the 206
-    // per-vendor accounts under 14-01-001-*, so it is the AP analogue of
-    // 11-03-001-000001 on the receivable side. Do NOT use 14-01-001-000001 — that
-    // is a real supplier (BASHIR PIPE INDUSTRY), and posting every vendor's bills
-    // there would corrupt that one supplier's balance.
+    // The credit belongs on the VENDOR's own sub-ledger account, the way a sales invoice
+    // credits the customer's. It used to go to 14-01-001-000000 "Trade Creditors", the
+    // control account heading the per-vendor accounts, tagged with the vendor's name — so
+    // the bill was in the books and the Trial Balance balanced, but it never reached the
+    // supplier it named. vendor_balances aggregates by account_code and so missed it,
+    // while the Vendor Ledger matched by account_title and found it, which is why the two
+    // reports disagreed about SHAMOON SB (Karachi) and seven others.
+    //
+    // The control account stays as the fallback for a vendor with no code of their own —
+    // a bill must never be blocked — and 14-01-001-000001 is still not it: that is a real
+    // supplier (BASHIR PIPE INDUSTRY) and posting there would corrupt their balance.
     const [apAccount, ...debitAccounts] = await Promise.all([
       financeDb.ensureLedgerAccount({ code: '14-01-001-000000', name: 'Trade Creditors', type: 'Liability', parent: '14-01-001', companyId }),
       ...debitParts.map(p => financeDb.ensureLedgerAccount({ code: p.code, name: p.name, type: 'Expense', parent: p.parent, companyId })),
@@ -2069,6 +2118,9 @@ export const procurementDb = {
     if (!apAccount || debitAccounts.some(a => !a)) {
       throw new Error('Could not resolve the ledger accounts for this bill.');
     }
+    const vendorAccount = await financeDb.vendorLedgerAccount({
+      vendorName: invoice.vendor_name, companyId, fallback: apAccount,
+    });
 
     const voucherId = invoice.bill_id;
     await financeDb.postJournalEntry({
@@ -2078,7 +2130,7 @@ export const procurementDb = {
       companyId,
       legs: [
         ...debitAccounts.map((account, i) => ({ account, debit: debitParts[i].amount, credit: 0 })),
-        { account: apAccount, debit: 0, credit: grandTotal, displayName: invoice.vendor_name },
+        { account: vendorAccount, debit: 0, credit: grandTotal, displayName: invoice.vendor_name },
       ],
       narration: `Purchase invoice ${voucherId} — ${invoice.vendor_name}`,
       reference: voucherId,

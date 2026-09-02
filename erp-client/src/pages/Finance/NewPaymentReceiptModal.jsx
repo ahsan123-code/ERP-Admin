@@ -278,11 +278,19 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
         const customer = kind === 'cust'
           ? (customers || []).find(c => String(c.id) === id) || null
           : null;
+        const vendor = kind === 'vend'
+          ? (vendors || []).find(v => String(v.id) === id) || null
+          : null;
         return {
+          // Each party leg goes to that party's OWN sub-ledger account, not to the AR/AP
+          // control account. Vendors used to be the exception — they always got apAccount
+          // — so a payment against a supplier never reached their balance, and the Vendor
+          // Ledger and the Vendor Current Balance report disagreed about them. The control
+          // account remains the fallback for a party who has no code of their own.
           controlAccount: directAccount
             ? directAccount
             : kind === 'vend'
-              ? apAccount
+              ? await financeDb.vendorLedgerAccount({ vendor, companyId, fallback: apAccount })
               : await financeDb.customerLedgerAccount({ customer, companyId, fallback: arAccount }),
           name: label,
           amount: l.amountNum,
