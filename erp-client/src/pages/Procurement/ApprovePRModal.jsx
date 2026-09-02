@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '../../components/shared/Modal';
 import Input from '../../components/ui/Input';
-import SelectField from '../../components/ui/SelectField';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { procurementDb } from '../../lib/db';
@@ -14,6 +14,11 @@ const today = new Date().toISOString().split('T')[0];
 export default function ApprovePRModal({ open, pr, vendors, onClose, onApproved }) {
   const toast = useToast();
   const { companyId } = useCompany();
+  // vendor_id drives the picker; the PO records its vendor by name, so both are held.
+  // Keying on the id rather than the name matters here — Shop #41 has three vendor
+  // names carried by two rows each ("Abdul Wahab Sb (Karachi)" among them), and a
+  // name-keyed list would collide on those.
+  const [vendorId, setVendorId]         = useState('');
   const [vendorName, setVendorName]     = useState('');
   const [deliveryDate, setDeliveryDate] = useState('');
   const [lines, setLines]               = useState([]);   // { item_name, unit, quantity, rate }
@@ -43,7 +48,18 @@ export default function ApprovePRModal({ open, pr, vendors, onClose, onApproved 
   const lineTotal = (l) => (Number(l.quantity) || 0) * (parseFloat(l.rate) || 0);
   const grandTotal = lines.reduce((s, l) => s + lineTotal(l), 0);
 
+  const vendorOptions = (vendors || []).map(v => ({
+    value: v.id, label: v.name, hint: v.category,
+  }));
+
+  const handleVendorSelect = (id) => {
+    const v = (vendors || []).find(v => v.id === id || v.id === Number(id));
+    setVendorId(id);
+    setVendorName(v?.name || '');
+  };
+
   const handleClose = () => {
+    setVendorId('');
     setVendorName('');
     setDeliveryDate('');
     setLines([]);
@@ -52,7 +68,7 @@ export default function ApprovePRModal({ open, pr, vendors, onClose, onApproved 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!vendorName) { toast.error('Please select a vendor.'); return; }
+    if (!vendorId) { toast.error('Please select a vendor.'); return; }
     if (!deliveryDate) { toast.error('Please set a delivery due date.'); return; }
     if (lines.length && lines.some(l => !l.rate || parseFloat(l.rate) <= 0)) {
       toast.error('Enter a rate for every item.'); return;
@@ -118,17 +134,15 @@ export default function ApprovePRModal({ open, pr, vendors, onClose, onApproved 
       }
     >
       <form className="fg" onSubmit={handleSubmit}>
-        <SelectField
-          label="Vendor *"
-          value={vendorName}
-          onChange={e => setVendorName(e.target.value)}
+        <SearchableSelect
+          label="Vendor"
           required
-        >
-          <option value="">— Select vendor —</option>
-          {(vendors || []).map(v => (
-            <option key={v.id} value={v.name}>{v.name}</option>
-          ))}
-        </SelectField>
+          placeholder="Search vendors..."
+          emptyText="No vendors found"
+          value={vendorId}
+          onChange={handleVendorSelect}
+          options={vendorOptions}
+        />
         <Input
           label="Delivery Due Date *"
           type="date"
