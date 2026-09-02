@@ -38,6 +38,45 @@ function sliceByLength(ids) {
   return out;
 }
 
+// Reads a whole list, however long, by paging past the 1,000-row ceiling.
+//
+// Supabase truncates a select at 1,000 rows and says nothing about it — no error, no
+// flag, just a short array. Every register read below orders by date descending, so what
+// came back was the newest 1,000 and the rest of the history simply was not there. The
+// comment on getSalesOrderRefs records what that cost: the invoice list "reached back
+// only to Jul-2025", and every ledger row older than that lost its item detail.
+//
+// `build` must return a FRESH query each call — a PostgREST builder cannot be re-ranged
+// once sent. An explicit tiebreak on the primary key goes with the caller's own ordering,
+// because paging over a non-unique sort is not stable: rows tied on the sort column may
+// come back in a different order per page, which both repeats and skips records.
+//
+// The same shape as getChartOfAccounts (which pages the 1,774-row chart) and as each
+// slice inside inChunks, generalised so the registers can share it.
+// Pages are fetched a wave at a time rather than one after another, for the same reason
+// inChunks pools its slices: sales_invoices is 19,555 rows for Shop #41, and twenty
+// round trips taken in turn measured 5.2s where the whole Sales page needs three such
+// lists. A wave overshoots by at most POOL-1 empty requests at the tail, which costs far
+// less than the serial wait it removes.
+async function fetchAllPaged(build) {
+  const PAGE = 1000;
+  const all = [];
+  for (let wave = 0; ; wave += POOL) {
+    const offsets = Array.from({ length: POOL }, (_, i) => (wave + i) * PAGE);
+    const results = await mapPool(offsets, (from) => build().range(from, from + PAGE - 1));
+    // mapPool preserves input order, so the pages concatenate in offset order and only
+    // the final one can come back short.
+    let reachedEnd = false;
+    for (const { data, error } of results) {
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < PAGE) reachedEnd = true;
+    }
+    if (reachedEnd) break;
+  }
+  return { data: all, error: null };
+}
+
 // One .in() query per slice, all in flight together, concatenated in order.
 //
 // Each slice is paged, because the 1,000-row ceiling applies per request and not per id:
@@ -1331,8 +1370,11 @@ export const salesDb = {
   // Scoped to the selected branch, like every other list in the app. Without the
   // filter both shops saw one merged pool of customers, so switching branch
   // changed the orders and invoices on screen but not the customers they were for.
+  // Paged though it sits just under the ceiling today — 980 of the 1,000 rows Supabase
+  // will return. One more customer and the newest would start dropping off the list
+  // with no error, which is exactly the failure this helper exists to prevent.
   getCustomers: (companyId = 1) =>
-    supabase.from('customers')
+    fetchAllPaged(() => supabase.from('customers')
       // account_code links the customer to their sub-ledger account, which is where
       // the Customer Current Balance report reads the real position from. Leaving it
       // out of this list silently falls the report back to invoice totals.
@@ -1340,7 +1382,7 @@ export const salesDb = {
       // flag the row instead of the same person reading as two unrelated accounts.
       .select('id, customer_id, name, cnic, ntn, region, status, contact, address, credit_limit, outstanding_balance, opening_balance, opening_balance_date, account_code, party_id')
       .eq('company_id', companyId)
-      .order('id', { ascending: false }),
+      .order('id', { ascending: false })),
 
   searchCustomers: (query, companyId = 1) =>
     supabase.from('customers')
@@ -1458,10 +1500,11 @@ export const salesDb = {
     supabase.from('customers').delete().eq('id', id),
 
   getSalesOrders: (companyId = 1) =>
-    supabase.from('sales_orders')
+    fetchAllPaged(() => supabase.from('sales_orders')
       .select('id, so_id, customer_name, customer_id, order_date, delivery_date, total_amount, item_count, status, company_id')
       .eq('company_id', companyId)
-      .order('order_date', { ascending: false }),
+      .order('order_date', { ascending: false })
+      .order('id')),
 
   addSalesOrder: (so) =>
     supabase.from('sales_orders').insert([so]).select().single(),
@@ -1481,7 +1524,10 @@ export const salesDb = {
     supabase.from('sales_orders').update({ status }).eq('id', id).select().single(),
 
   getDeliveryNotes: (companyId = 1) =>
-    supabase.from('delivery_notes').select('*').eq('company_id', companyId).order('delivery_date', { ascending: false }),
+    fetchAllPaged(() => supabase.from('delivery_notes').select('*')
+      .eq('company_id', companyId)
+      .order('delivery_date', { ascending: false })
+      .order('id')),
 
   addDeliveryNote: (dn) =>
     supabase.from('delivery_notes').insert([dn]).select().single(),
@@ -1508,10 +1554,11 @@ export const salesDb = {
     supabase.from('gate_passes').insert([gp]).select().single(),
 
   getSalesInvoices: (companyId = 1) =>
-    supabase.from('sales_invoices')
+    fetchAllPaged(() => supabase.from('sales_invoices')
       .select('*')
       .eq('company_id', companyId)
-      .order('date', { ascending: false }),
+      .order('date', { ascending: false })
+      .order('id')),
 
   // Maps sales-invoice ids to the order they were raised from — the hop a ledger row makes
   // on its way to its item detail.
@@ -1741,7 +1788,10 @@ export const procurementDb = {
     supabase.from('vendors').delete().eq('id', id),
 
   getPdns: (companyId = 1) =>
-    supabase.from('pdns').select('*').eq('company_id', companyId).order('pdn_date', { ascending: false }),
+    fetchAllPaged(() => supabase.from('pdns').select('*')
+      .eq('company_id', companyId)
+      .order('pdn_date', { ascending: false })
+      .order('id')),
 
   addPdn: (pdn) =>
     supabase.from('pdns').insert([pdn]).select().single(),
