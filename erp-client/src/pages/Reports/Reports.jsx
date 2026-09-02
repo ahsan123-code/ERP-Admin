@@ -1752,8 +1752,10 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
   const balLabel = (b) => b >= 0
     ? `${formatCurrency(b)} Payable`
     : `${formatCurrency(Math.abs(b))} Advance`;
-  // A vendor squared off at nil reads better as a dash than as "0.00 Payable".
-  const rowBal = (b) => (b === 0 ? '—' : balLabel(b));
+  // Nil shows the figure, not a dash. A dash reads as "no data" — and on this report a
+  // lot of the nil rows genuinely have none, so the two states looked identical. The
+  // amount is printed bare, without "Payable" or "Advance", because zero is neither.
+  const rowBal = (b) => (b === 0 ? formatCurrency(0) : balLabel(b));
 
   const { showPreview, previewNode } = useWordPreview();
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
