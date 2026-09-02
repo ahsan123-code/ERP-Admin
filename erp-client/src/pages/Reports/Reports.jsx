@@ -1697,6 +1697,10 @@ function DailyDayBook({ vouchers }) {
 /* ── Vendor Current Balance ───────────────────────────────────────────── */
 function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
   const [search, setSearch] = useState('');
+  // Settled vendors are hidden by default and the tick brings them back, the same way the
+  // customer report works. There are a lot of them here: a vendor added through the app
+  // gets no ledger account, so they sit at nil however much they have actually traded.
+  const [showNil, setShowNil] = useState(false);
 
   // Vendors who are also customers. vendor_balances carries no party_id, so the link is
   // read off the vendor master rows the page already has.
@@ -1728,11 +1732,18 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
     // they stay on the report rather than being filtered out of existence.
   }, [vendorBalances, partyByVendorId]);
 
+  const nilCount = useMemo(() => report.filter(r => r.balance === 0).length, [report]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return report;
-    return report.filter(r => (r.name || '').toLowerCase().includes(q));
-  }, [report, search]);
+    return report.filter(r => {
+      if (q && !(r.name || '').toLowerCase().includes(q)) return false;
+      // A search is a hunt for one named vendor, so it reaches the settled ones too even
+      // while they are hidden — looking one up and getting nothing back reads as "this
+      // vendor has been deleted". Same rule as the customer report.
+      return q ? true : (showNil || r.balance !== 0);
+    });
+  }, [report, search, showNil]);
 
   const totalPurchases = filtered.reduce((s, r) => s + r.purchases, 0);
   const totalPaid      = filtered.reduce((s, r) => s + r.paid, 0);
@@ -1761,7 +1772,10 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
     return buildReportDoc({
       filename: 'Vendor Current Balance',
       title: 'Vendor Current Balance',
-      meta: `${filtered.length} vendors &nbsp;|&nbsp; Purchases: <strong>${formatCurrency(totalPurchases)}</strong> &nbsp;|&nbsp; Payable: <strong>${formatCurrency(totalPayable)}</strong>`,
+      // The printed sheet says what it is not showing. A reader who cannot see the screen
+      // has no other way to tell a short list from a complete one.
+      meta: `${filtered.length} vendors &nbsp;|&nbsp; Purchases: <strong>${formatCurrency(totalPurchases)}</strong> &nbsp;|&nbsp; Payable: <strong>${formatCurrency(totalPayable)}</strong>`
+        + (!showNil && nilCount > 0 ? ` &nbsp;|&nbsp; ${nilCount} nil-balance ${nilCount === 1 ? 'vendor' : 'vendors'} not shown` : ''),
       table: `<table class="rpt">
         <thead><tr><th width="30">#</th><th>Vendor</th><th width="100">Category</th>
           <th class="right" width="105">Total Purchases</th><th class="right" width="95">Total Paid</th>
@@ -1784,13 +1798,28 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor..."
           style={{ flex: 1, maxWidth: 280, background: 'var(--input-bg)', border: '1px solid var(--input-border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', padding: '7px 12px', fontSize: 13 }} />
+        {nilCount > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={showNil} onChange={e => setShowNil(e.target.checked)} />
+            Show nil balances ({nilCount})
+          </label>
+        )}
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{filtered.length} vendors · Purchases: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPurchases)}</strong> · Payable: <strong style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)' }}>{formatCurrency(totalPayable)}</strong></span>
         <Button variant="secondary" icon={<Eye size={14} />} onClick={handlePreview} style={{ marginLeft: 'auto' }}>Preview</Button>
         <Button variant="primary" icon={<FileDown size={14} />} onClick={handleDownload}>Download Word</Button>
         {previewNode}
       </div>
       {filtered.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>No vendor balances found{search ? ` for "${search}"` : ''}.</div>
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>
+          {search
+            ? `No vendor balances found for "${search}".`
+            : nilCount > 0
+              // Not "settled": a vendor also reads nil when they have no ledger account of
+              // their own, which is every vendor added through the app. Saying they are
+              // squared off would be a claim about their trading, not about the data.
+              ? `No vendor is carrying a balance. ${nilCount} ${nilCount === 1 ? 'vendor' : 'vendors'} at nil ${nilCount === 1 ? 'is' : 'are'} hidden — tick "Show nil balances" to see them.`
+              : 'No vendor balances found.'}
+        </div>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
