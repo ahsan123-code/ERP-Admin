@@ -1021,20 +1021,29 @@ export const financeDb = {
     return { data: all, error: null };
   },
 
-  // Every movement against one customer's sub-ledger account — sales, receipts,
-  // cheques, payments, journals, returns. The Customer Ledger was built from
-  // sales_invoices alone and so could only ever show bills; this is what makes the
-  // receipts and cheques visible, and the running balance correct.
+  // Every movement against a party's sub-ledger account(s) — sales, receipts, cheques,
+  // payments, journals, returns. The Customer Ledger was built from sales_invoices alone
+  // and so could only ever show bills; this is what makes the receipts and cheques
+  // visible, and the running balance correct.
+  //
+  // Takes one account code or several. Several, because a party who both buys and sells
+  // has an account on each side — AHMAD ISRAR ARSHAD SB is 11-01-003-000185 as a customer
+  // and 14-01-001-000168 as a vendor — and reading only one of them tells half the story.
+  // Passing both gives one statement covering everything that person did.
+  //
   // Paged: a busy account runs to ~20,000 lines and a single request stops at 1,000.
   getCustomerLedgerEntries: async (accountCode, fromDate, toDate, companyId = 1) => {
-    if (!accountCode) return { data: [], error: null };
+    const codes = [...new Set((Array.isArray(accountCode) ? accountCode : [accountCode]).filter(Boolean))];
+    if (codes.length === 0) return { data: [], error: null };
     const PAGE = 1000;
     const all = [];
     for (let from = 0; ; from += PAGE) {
       let q = supabase.from('customer_ledger_entries')
-        .select('voucher_id, line_no, date, voucher_type, particulars, debit, credit')
+        .select('voucher_id, line_no, date, voucher_type, particulars, debit, credit, account_code')
         .eq('company_id', companyId)
-        .eq('account_code', accountCode)
+        .in('account_code', codes)
+        // Ordered by date first so a statement spanning two accounts reads as one
+        // chronological run rather than one account's history after the other's.
         .order('date').order('voucher_id').order('line_no')
         .range(from, from + PAGE - 1);
       if (fromDate) q = q.gte('date', fromDate);

@@ -692,7 +692,7 @@ const TYPE_LABEL = {
   PI: 'Purchase', PR: 'Purch. Return',
 };
 
-function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
+function CustomerLedger({ salesInvoices, customers = [], vendors = [], companyId = 1 }) {
   // Every registered customer, not only those who already have an invoice — one
   // carried over with an opening balance has none yet, and building the list from
   // invoices alone made them unselectable.
@@ -712,15 +712,37 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
   const custRow = useMemo(
     () => (customers || []).find(c => c.name === customer) || null,
     [customers, customer]);
-  const accountCode = custRow?.account_code || null;
+
+  // Every account belonging to this person, not only the one their customer row names.
+  //
+  // A party who both buys and sells has two sub-ledger accounts — one under Trade Debtors,
+  // one under Trade Creditors — and the ledger of either alone is half their history. They
+  // are tied together by parties.party_id (server/migrate-party-links.js); the name is the
+  // fallback for rows the linker has not paired, so a match is never missed just because
+  // the link is absent.
+  const accountCodes = useMemo(() => {
+    if (!custRow) return [];
+    const nameKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const mine = nameKey(custRow.name);
+    const sameParty = (row) => (
+      (custRow.party_id != null && row.party_id === custRow.party_id) || nameKey(row.name) === mine
+    );
+    return [...new Set([
+      ...(customers || []).filter(sameParty).map(c => c.account_code),
+      ...(vendors   || []).filter(sameParty).map(v => v.account_code),
+    ].filter(Boolean))];
+  }, [custRow, customers, vendors]);
+
+  const accountCode = accountCodes[0] || null;
+  const accountKey  = accountCodes.join(',');
 
   // Deliberately unfiltered: the opening balance is the sum of everything before
   // `fromDate`, so the rows preceding the period have to be in hand. Filtering in
   // the query would hide them and the brought-forward figure would silently read
   // zero, taking every running balance below it with it.
   const { data: allEntries, loading } = useDb(
-    () => financeDb.getCustomerLedgerEntries(accountCode, null, null, companyId),
-    [accountCode, companyId]);
+    () => financeDb.getCustomerLedgerEntries(accountCodes, null, null, companyId),
+    [accountKey, companyId]);
 
   const inPeriod = (d) => {
     const day = (d || '').slice(0, 10);
@@ -919,6 +941,21 @@ function CustomerLedger({ salesInvoices, customers = [], companyId = 1 }) {
         </Button>
         {previewNode}
       </div>
+
+      {accountCodes.length > 1 && customer && !loading && (
+        <div style={{ padding: '10px 14px', margin: '0 0 12px', fontSize: 12.5,
+                      background: 'var(--blue-muted)', border: '1px solid var(--blue-dim)',
+                      borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)' }}>
+          <strong>{customer}</strong> both buys and sells, so they hold {accountCodes.length} ledger
+          accounts. This statement combines all of them:{' '}
+          {accountCodes.map((code, i) => (
+            <span key={code}>
+              {i > 0 && ', '}
+              <code>{code}</code>
+            </span>
+          ))}.
+        </div>
+      )}
 
       {accountCode === null && customer && !loading && (
         <div style={{ padding: '10px 14px', margin: '0 0 12px', fontSize: 12.5,
@@ -2448,7 +2485,7 @@ export default function Reports() {
       {pageTab === 'customer-ledger' && (
         <Card padding={false}>
           <CardHeader title="Customer Sales Ledger" subtitle="Customer-wise invoice history with AG-DAYS aging" />
-          <div className={styles.cardBody}><CustomerLedger salesInvoices={salesInvoices} customers={customers} companyId={companyId} /></div>
+          <div className={styles.cardBody}><CustomerLedger salesInvoices={salesInvoices} customers={customers} vendors={vendors} companyId={companyId} /></div>
         </Card>
       )}
       {pageTab === 'vendor-ledger' && (
