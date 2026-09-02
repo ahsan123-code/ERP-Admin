@@ -15,7 +15,7 @@ import DataTable from '../../components/shared/DataTable';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { invoicingDb, salesDb } from '../../lib/db';
-import { useDb } from '../../hooks/useDb';
+import { useScopedDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
 import { useToast } from '../../components/shared/Toast';
 import { formatDate, formatDateTime, formatCurrency } from '../../utils/format';
@@ -86,10 +86,10 @@ export default function Invoicing() {
   const { showPreview, previewNode } = useWordPreview();
 
   const { data: salesInvoices, loading: loadSales } =
-    useDb(() => salesDb.getSalesInvoices(companyId), [companyId]);
+    useScopedDb(s => salesDb.getSalesInvoices(companyId, s), [companyId]);
 
-  const { data: dbFbrInvoices, loading: loadFbr, refetch: refetchFbr } = useDb(() => invoicingDb.getInvoices());
-  const { data: saleReturnInvoices, loading: loadReturns } = useDb(() => invoicingDb.getSaleReturnInvoices());
+  const { data: dbFbrInvoices, loading: loadFbr, refetch: refetchFbr } = useScopedDb(s => invoicingDb.getInvoices(s));
+  const { data: saleReturnInvoices, loading: loadReturns } = useScopedDb(s => invoicingDb.getSaleReturnInvoices(s));
 
   const [salesInvoiceList, setSalesInvoiceList] = useState([]);
   const [fbrInvoiceList, setFbrInvoiceList] = useState([]);

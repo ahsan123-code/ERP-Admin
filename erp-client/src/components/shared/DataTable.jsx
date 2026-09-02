@@ -1,10 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo, useDeferredValue } from 'react';
 import { Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import EmptyState from './EmptyState';
 import { SkeletonTable } from './Skeleton';
 import styles from './DataTable.module.css';
 
 const PAGE_SIZE = 12;
+
+// A stable empty array. `data || []` would hand every memo below a fresh identity on
+// each render and defeat the caching entirely.
+const EMPTY = [];
+
+// Joins a row's values for searching. Not a space: the separator has to be something a
+// user cannot type, or a query spanning the end of one field and the start of the next
+// would match, which searching value-by-value never did.
+const SEP = '\u0001';
 
 export default function DataTable({
   columns,
@@ -19,34 +28,51 @@ export default function DataTable({
   onRowClick,
   loading = false,
   skeletonRows = 6,
+  pageSize = PAGE_SIZE,
 }) {
   const [query,   setQuery]   = useState('');
   const [page,    setPage]    = useState(1);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
 
-  const rows = data || [];
+  const rows = data || EMPTY;
 
-  const filtered = searchable && query.trim()
-    ? rows.filter(row =>
-        Object.values(row).some(v =>
-          String(v ?? '').toLowerCase().includes(query.toLowerCase())
-        )
-      )
-    : rows;
+  // Typing stays instant while the filtering of a large list happens at lower priority,
+  // so a keystroke never waits on 20,000 rows before it appears in the box.
+  const deferredQuery = useDeferredValue(query);
 
-  const sorted = sortKey
-    ? [...filtered].sort((a, b) => {
-        const av = a[sortKey] ?? '';
-        const bv = b[sortKey] ?? '';
-        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
-        return sortDir === 'asc' ? cmp : -cmp;
-      })
-    : filtered;
+  // Each row flattened and lower-cased once per data change, instead of once per row per
+  // keystroke. The old predicate rebuilt Object.values(row) and re-lower-cased the query
+  // for every cell it looked at — roughly 300,000 string allocations per keystroke on
+  // Shop #41's invoice list, all on the main thread.
+  const haystacks = useMemo(
+    () => rows.map(row => Object.values(row).map(v => String(v ?? '')).join(SEP).toLowerCase()),
+    [rows],
+  );
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const filtered = useMemo(() => {
+    const q = deferredQuery.trim().toLowerCase();
+    if (!searchable || !q) return rows;
+    return rows.filter((_, i) => haystacks[i].includes(q));
+  }, [rows, haystacks, deferredQuery, searchable]);
+
+  // Sorting was re-running on EVERY render, not only when the sort changed: `filtered`
+  // was a fresh array each time, so [...filtered].sort() copied and sorted the whole
+  // list again on any parent state change.
+  const sorted = useMemo(() => {
+    if (!sortKey) return filtered;
+    return [...filtered].sort((a, b) => {
+      const av = a[sortKey] ?? '';
+      const bv = b[sortKey] ?? '';
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [filtered, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const safePage   = Math.min(page, totalPages);
-  const slice      = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const firstIndex = (safePage - 1) * pageSize;
+  const slice      = sorted.slice(firstIndex, firstIndex + pageSize);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -136,7 +162,10 @@ export default function DataTable({
             ) : (
               slice.map((row, i) => (
                 <tr
-                  key={row[keyField] ?? i}
+                  // Absolute, not the slice index: a row with no keyField fell back to
+                  // its position within the page, so the third row of page 2 reused the
+                  // key of the third row of page 1 and React kept the old row's state.
+                  key={row[keyField] ?? `row-${firstIndex + i}`}
                   className={onRowClick ? styles.clickableRow : ''}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                 >
@@ -156,7 +185,7 @@ export default function DataTable({
       {totalPages > 1 && (
         <div className={styles.pagination}>
           <span className={styles.pageInfo}>
-            Showing {((safePage - 1) * PAGE_SIZE) + 1}–{Math.min(safePage * PAGE_SIZE, sorted.length)} of {sorted.length} results
+            Showing {firstIndex + 1}–{Math.min(firstIndex + pageSize, sorted.length)} of {sorted.length} results
           </span>
           <div className={styles.pageButtons}>
             <button

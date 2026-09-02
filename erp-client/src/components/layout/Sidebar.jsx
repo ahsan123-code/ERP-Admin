@@ -4,7 +4,7 @@ import {
   Receipt, Wallet, UserCheck, ChevronRight,
   BarChart3, TrendingUp,
   PanelLeftClose, PanelLeftOpen,
-  Coins, Settings as SettingsIcon,
+  Coins, Settings as SettingsIcon, Archive,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAdminProfile } from '../../context/AdminProfileContext';
@@ -145,6 +145,7 @@ const NAV = [
   {
     label: 'System',
     items: [
+      { path: '/manage-data', label: 'Manage Data', icon: Archive },
       { path: '/settings', label: 'Settings', icon: SettingsIcon },
     ],
   },

@@ -1,4 +1,4 @@
-import { Sun, Moon, Maximize2, Minimize2, LogOut, ChevronDown, Bell, Check, Building2, MapPin, CalendarDays, Menu, HelpCircle } from 'lucide-react';
+import { Sun, Moon, Maximize2, Minimize2, LogOut, ChevronDown, Bell, Check, Building2, MapPin, CalendarDays, Menu, HelpCircle, Archive } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { branches } from '../../data/masters';
@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useCompany } from '../../context/CompanyContext';
 import { useFiscalYear } from '../../context/FiscalYearContext';
+import { useDataScope } from '../../context/DataScopeContext';
 import { useAdminProfile } from '../../context/AdminProfileContext';
 import Tooltip from '../ui/Tooltip';
 import styles from './TopBar.module.css';
@@ -71,6 +72,7 @@ export default function TopBar({ collapsed, onMenuOpen }) {
   const { theme, toggleTheme } = useTheme();
   const { companyId, setCompanyId } = useCompany();
   const { fiscalYears, fiscalYearId, setFiscalYearId } = useFiscalYear();
+  const { hasArchive, showingAll } = useDataScope();
   const { name, role, photo, initials } = useAdminProfile();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -127,6 +129,28 @@ export default function TopBar({ collapsed, onMenuOpen }) {
           value={fiscalYearId}
           onChange={setFiscalYearId}
         />
+        {/* Only for a branch that actually has archived years, so Shop #58 is never told
+            about a cut-off that does not apply to it. Without this a user who left the
+            toggle on has no way to tell why a list holds ten years of rows. */}
+        {hasArchive && (
+          <>
+            <span className={styles.divider} />
+            <Tooltip
+              content={showingAll
+                ? 'Lists include the archived years. Click to manage.'
+                : 'Older years are in Manage Data. Click to view them.'}
+              placement="bottom"
+            >
+              <button
+                className={`${styles.scopePill} ${showingAll ? styles.scopePillAll : ''}`}
+                onClick={() => navigate('/manage-data')}
+              >
+                <Archive size={13} strokeWidth={2} />
+                {showingAll ? 'All data' : 'Recent data'}
+              </button>
+            </Tooltip>
+          </>
+        )}
       </div>
 
       <div className={styles.right}>

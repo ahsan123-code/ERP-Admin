@@ -14,7 +14,7 @@ import DataTable                     from '../../components/shared/DataTable';
 import Badge                         from '../../components/ui/Badge';
 import Button                        from '../../components/ui/Button';
 import { procurementDb }             from '../../lib/db';
-import { useDb }                     from '../../hooks/useDb';
+import { useDb, useScopedDb }        from '../../hooks/useDb';
 import { useCompany }                from '../../context/CompanyContext';
 import { useToast }                  from '../../components/shared/Toast';
 import { formatDate, formatCurrency }from '../../utils/format';
@@ -55,12 +55,15 @@ export default function Procurement() {
 
   // Data fetches
   const { data: vendors, loading: loadVendors, refetch: refetchVendors } = useDb(() => procurementDb.getVendors(companyId), [companyId]);
-  const { data: dbPOs, loading: loadPO }            = useDb(() => procurementDb.getPurchaseOrders(companyId),       [companyId]);
-  const { data: dbGrns, loading: loadGrn }           = useDb(() => procurementDb.getGrns(companyId),                [companyId]);
-  const { data: dbPdns, loading: loadPdn }           = useDb(() => procurementDb.getPdns(companyId),                [companyId]);
-  const { data: dbPrs, loading: loadPr }            = useDb(() => procurementDb.getPurchaseRequisitions());
-  const { data: dbGPs, loading: loadGp }            = useDb(() => procurementDb.getGatePassesInward(companyId),    [companyId]);
-  const { data: dbPinvs, loading: loadPinv }          = useDb(() => procurementDb.getPurchaseInvoices(companyId),    [companyId]);
+  // The pipeline listings are registers, so they take the archive cutoff. The document
+  // pickers inside this page's modals call the same readers WITHOUT a scope, on purpose —
+  // an unbilled 2016-17 GRN has to stay selectable whatever the toggle says.
+  const { data: dbPOs, loading: loadPO }    = useScopedDb(s => procurementDb.getPurchaseOrders(companyId, s),    [companyId]);
+  const { data: dbGrns, loading: loadGrn }  = useScopedDb(s => procurementDb.getGrns(companyId, s),              [companyId]);
+  const { data: dbPdns, loading: loadPdn }  = useScopedDb(s => procurementDb.getPdns(companyId, s),              [companyId]);
+  const { data: dbPrs, loading: loadPr }    = useScopedDb(s => procurementDb.getPurchaseRequisitions(s));
+  const { data: dbGPs, loading: loadGp }    = useScopedDb(s => procurementDb.getGatePassesInward(companyId, s),  [companyId]);
+  const { data: dbPinvs, loading: loadPinv } = useScopedDb(s => procurementDb.getPurchaseInvoices(companyId, s), [companyId]);
 
   // Local lists (so new items appear immediately)
   const [pdnList,  setPdnList]  = useState([]);

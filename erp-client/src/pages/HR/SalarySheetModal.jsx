@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import Button from '../../components/ui/Button';
 import { useToast } from '../../components/shared/Toast';
 import { formatCurrency } from '../../utils/format';
+import { sheetName } from '../../utils/xlsx';
 import { downloadWordDoc, esc, companyHeader, documentFooter } from '../../utils/wordExport';
 import { useWordPreview } from '../../hooks/useWordPreview';
 import { useEmployeeSections } from '../../context/EmployeeSectionsContext';
@@ -67,22 +68,6 @@ const groupBySection = (rows, order = []) => {
     const pb = positionOf(b);
     return pa !== pb ? pa - pb : a.localeCompare(b);
   }));
-};
-
-/**
- * Excel tab names cap at 31 chars, reject [ ] : * ? / \ and must be unique —
- * so this cleans the label only; the Section column inside keeps the raw value.
- */
-const sheetName = (label, used) => {
-  let base = label.replace(/[[\]:*?/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Section';
-  let name = base;
-  let n = 2;
-  while (used.has(name)) {
-    const suffix = ` (${n++})`;
-    name = base.slice(0, 31 - suffix.length) + suffix;
-  }
-  used.add(name);
-  return name;
 };
 
 // loans and employees now passed as props (fetched from Supabase in HR.jsx)

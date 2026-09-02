@@ -2,6 +2,7 @@
 // Every function returns { data, error } from Supabase.
 import { supabase } from './supabase';
 import { isCreditNormal } from '../utils/accounts';
+import { applyScope } from './dataScope';
 
 // Supabase caps one select at 1,000 rows, and PostgREST puts an .in() list in the query
 // string where the gateway stops at roughly 8 KB. Both force long reads to be split.
@@ -404,12 +405,28 @@ export const financeDb = {
   deleteChartAccount: (id) =>
     supabase.from('chart_of_accounts').delete().eq('id', id),
 
-  getVouchers: (companyId = 1) =>
-    supabase.from('vouchers')
+  // The limit(500) this used to carry was a stand-in for a cutoff: the ledger is 57,585
+  // rows and something had to bound it, so it showed the newest 500 and no more — the
+  // Daily Day Book could not open a date older than that. Scoped and paged, the Finance
+  // register is bounded by the archive cutoff instead, which is a rule a user can see
+  // and switch off. Callers that pass no scope (Dashboard, Reports) now get every row.
+  getVouchers: (companyId = 1, scope = null) =>
+    fetchAllPaged(() => applyScope(supabase.from('vouchers')
       .select('id, voucher_id, voucher_type, date, account_name, debit, credit, narration, reference, company_id')
       .eq('company_id', companyId)
       .order('date', { ascending: false })
-      .limit(500),
+      .order('id'), 'vouchers', scope)),
+
+  // How many vouchers exist, without transferring them. The Dashboard tile wants a
+  // number, and it was reading `.length` off getVouchers — so it fetched rows to count
+  // them, and reported 500 however many there really were. head:true asks PostgREST for
+  // the count header and no body at all.
+  countVouchers: async (companyId = 1) => {
+    const { count, error } = await supabase.from('vouchers')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId);
+    return { data: count ?? 0, error };
+  },
 
   addVoucher: (v) =>
     supabase.from('vouchers').insert([v]).select().single(),
@@ -755,8 +772,9 @@ export const financeDb = {
   deleteBankAccount: (id) =>
     supabase.from('bank_accounts').delete().eq('id', id),
 
-  getCashReceived: () =>
-    supabase.from('cash_received').select('*').order('date', { ascending: false }),
+  getCashReceived: (scope = null) =>
+    applyScope(supabase.from('cash_received').select('*')
+      .order('date', { ascending: false }), 'cash_received', scope),
 
   getReceiptVouchers: (companyId = 1) =>
     supabase.from('vouchers')
@@ -779,8 +797,9 @@ export const financeDb = {
     return supabase.from('cash_received').insert([cr]).select().single();
   },
 
-  getInterBankTransfers: () =>
-    supabase.from('inter_bank_transfers').select('*').order('date', { ascending: false }),
+  getInterBankTransfers: (scope = null) =>
+    applyScope(supabase.from('inter_bank_transfers').select('*')
+      .order('date', { ascending: false }), 'inter_bank_transfers', scope),
 
   // Real inter-bank transfer = a Contra entry between two of the company's own banks.
   // To account is DEBITED (money in), From account is CREDITED (money out), equal amount.
@@ -828,8 +847,9 @@ export const financeDb = {
     return { error: null };
   },
 
-  getPettyCash: () =>
-    supabase.from('petty_cash').select('*').order('date', { ascending: false }),
+  getPettyCash: (scope = null) =>
+    applyScope(supabase.from('petty_cash').select('*')
+      .order('date', { ascending: false }), 'petty_cash', scope),
 
   getPettyCashLines: (pcId) =>
     supabase.from('petty_cash_lines').select('*').eq('pc_id', pcId).order('line_no'),
@@ -909,8 +929,9 @@ export const financeDb = {
   getDailyCash: (companyId = 1) =>
     supabase.from('daily_cash_summary').select('*').eq('company_id', companyId).order('date', { ascending: false }).limit(180),
 
-  getChequeTracking: () =>
-    supabase.from('cheque_tracking').select('*').order('due_date'),
+  getChequeTracking: (scope = null) =>
+    applyScope(supabase.from('cheque_tracking').select('*')
+      .order('due_date'), 'cheque_tracking', scope),
 
   addCheque: (c) =>
     supabase.from('cheque_tracking').insert([{ ...c, status: 'pending' }]).select().single(),
@@ -1499,12 +1520,12 @@ export const salesDb = {
   deleteCustomer: (id) =>
     supabase.from('customers').delete().eq('id', id),
 
-  getSalesOrders: (companyId = 1) =>
-    fetchAllPaged(() => supabase.from('sales_orders')
+  getSalesOrders: (companyId = 1, scope = null) =>
+    fetchAllPaged(() => applyScope(supabase.from('sales_orders')
       .select('id, so_id, customer_name, customer_id, order_date, delivery_date, total_amount, item_count, status, company_id')
       .eq('company_id', companyId)
       .order('order_date', { ascending: false })
-      .order('id')),
+      .order('id'), 'sales_orders', scope)),
 
   addSalesOrder: (so) =>
     supabase.from('sales_orders').insert([so]).select().single(),
@@ -1523,23 +1544,25 @@ export const salesDb = {
   updateSalesOrderStatus: (id, status) =>
     supabase.from('sales_orders').update({ status }).eq('id', id).select().single(),
 
-  getDeliveryNotes: (companyId = 1) =>
-    fetchAllPaged(() => supabase.from('delivery_notes').select('*')
+  getDeliveryNotes: (companyId = 1, scope = null) =>
+    fetchAllPaged(() => applyScope(supabase.from('delivery_notes').select('*')
       .eq('company_id', companyId)
       .order('delivery_date', { ascending: false })
-      .order('id')),
+      .order('id'), 'delivery_notes', scope)),
 
   addDeliveryNote: (dn) =>
     supabase.from('delivery_notes').insert([dn]).select().single(),
 
-  getOrderConfirmations: () =>
-    supabase.from('order_confirmations').select('*').order('confirm_date', { ascending: false }),
+  getOrderConfirmations: (scope = null) =>
+    applyScope(supabase.from('order_confirmations').select('*')
+      .order('confirm_date', { ascending: false }), 'order_confirmations', scope),
 
   addOrderConfirmation: (oc) =>
     supabase.from('order_confirmations').insert([oc]).select().single(),
 
-  getWorkOrders: () =>
-    supabase.from('work_orders').select('*').order('work_order_date', { ascending: false }),
+  getWorkOrders: (scope = null) =>
+    applyScope(supabase.from('work_orders').select('*')
+      .order('work_order_date', { ascending: false }), 'work_orders', scope),
 
   addWorkOrder: (wo) =>
     supabase.from('work_orders').insert([wo]).select().single(),
@@ -1547,18 +1570,23 @@ export const salesDb = {
   updateWorkOrderStatus: (id, status) =>
     supabase.from('work_orders').update({ status }).eq('id', id).select().single(),
 
-  getGatePasses: (companyId = 1) =>
-    supabase.from('gate_passes').select('*').eq('company_id', companyId).order('date', { ascending: false }),
+  getGatePasses: (companyId = 1, scope = null) =>
+    applyScope(supabase.from('gate_passes').select('*')
+      .eq('company_id', companyId)
+      .order('date', { ascending: false }), 'gate_passes', scope),
 
   addGatePass: (gp) =>
     supabase.from('gate_passes').insert([gp]).select().single(),
 
-  getSalesInvoices: (companyId = 1) =>
-    fetchAllPaged(() => supabase.from('sales_invoices')
+  // `scope` is the archive cutoff and is OPTIONAL on purpose: omitted, this returns every
+  // year, which is what the Dashboard's revenue total and three of the reports need. Only
+  // the Sales and Invoicing registers pass one. Same for every reader below that takes it.
+  getSalesInvoices: (companyId = 1, scope = null) =>
+    fetchAllPaged(() => applyScope(supabase.from('sales_invoices')
       .select('*')
       .eq('company_id', companyId)
       .order('date', { ascending: false })
-      .order('id')),
+      .order('id'), 'sales_invoices', scope)),
 
   // Maps sales-invoice ids to the order they were raised from — the hop a ledger row makes
   // on its way to its item detail.
@@ -1757,8 +1785,10 @@ export const salesDb = {
     return { voucherId };
   },
 
-  getSalesReturns: (companyId = 1) =>
-    supabase.from('sales_returns').select('*').eq('company_id', companyId).order('return_date', { ascending: false }),
+  getSalesReturns: (companyId = 1, scope = null) =>
+    applyScope(supabase.from('sales_returns').select('*')
+      .eq('company_id', companyId)
+      .order('return_date', { ascending: false }), 'sales_returns', scope),
 
   deleteSalesInvoice: (id) =>
     supabase.from('sales_invoices').delete().eq('id', id),
@@ -1787,11 +1817,11 @@ export const procurementDb = {
   deleteVendor: (id) =>
     supabase.from('vendors').delete().eq('id', id),
 
-  getPdns: (companyId = 1) =>
-    fetchAllPaged(() => supabase.from('pdns').select('*')
+  getPdns: (companyId = 1, scope = null) =>
+    fetchAllPaged(() => applyScope(supabase.from('pdns').select('*')
       .eq('company_id', companyId)
       .order('pdn_date', { ascending: false })
-      .order('id')),
+      .order('id'), 'pdns', scope)),
 
   addPdn: (pdn) =>
     supabase.from('pdns').insert([pdn]).select().single(),
@@ -1890,8 +1920,9 @@ export const procurementDb = {
   updatePurchaseOrderStatus: (poId, status) =>
     supabase.from('purchase_orders').update({ status }).eq('po_id', poId),
 
-  getPurchaseRequisitions: () =>
-    supabase.from('purchase_requisitions').select('*').order('date', { ascending: false }),
+  getPurchaseRequisitions: (scope = null) =>
+    applyScope(supabase.from('purchase_requisitions').select('*')
+      .order('date', { ascending: false }), 'purchase_requisitions', scope),
 
   addPurchaseRequisition: (pr) =>
     supabase.from('purchase_requisitions').insert([pr]).select().single(),
@@ -1903,21 +1934,16 @@ export const procurementDb = {
   // at the newest 1,000 — which reached back only to 2018, so the purchase-bill picker
   // could offer 122 of the 310 orders still open, and the Procurement listing showed a
   // truncated history without saying so.
-  getPurchaseOrders: async (companyId = 1) => {
-    const PAGE = 1000;
-    const all = [];
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase.from('purchase_orders')
-        .select('id, po_id, vendor_name, po_date, delivery_due_date, item_count, total_amount, status, company_id, pr_ref')
-        .eq('company_id', companyId)
-        .order('po_date', { ascending: false })
-        .range(from, from + PAGE - 1);
-      if (error) return { data: null, error };
-      all.push(...(data || []));
-      if (!data || data.length < PAGE) break;
-    }
-    return { data: all, error: null };
-  },
+  // `scope` must stay optional here above all: the Procurement listing passes it, but the
+  // pickers in NewPurchaseInvoiceModal, NewGrnModal and NewGatePassInwardModal do not, and
+  // must not — an open order from 2017 still needs to be billable however the archive
+  // toggle is set. That is the same reason this reader is paged, one comment up.
+  getPurchaseOrders: (companyId = 1, scope = null) =>
+    fetchAllPaged(() => applyScope(supabase.from('purchase_orders')
+      .select('id, po_id, vendor_name, po_date, delivery_due_date, item_count, total_amount, status, company_id, pr_ref')
+      .eq('company_id', companyId)
+      .order('po_date', { ascending: false })
+      .order('id'), 'purchase_orders', scope)),
 
   addPurchaseOrder: (po) =>
     supabase.from('purchase_orders').insert([po]).select().single(),
@@ -1929,8 +1955,10 @@ export const procurementDb = {
     supabase.from('po_line_items')
       .select('*').eq('po_id', poId).order('line_no'),
 
-  getGatePassesInward: (companyId = 1) =>
-    supabase.from('gate_passes_inward').select('*').eq('company_id', companyId).order('gate_date', { ascending: false }),
+  getGatePassesInward: (companyId = 1, scope = null) =>
+    applyScope(supabase.from('gate_passes_inward').select('*')
+      .eq('company_id', companyId)
+      .order('gate_date', { ascending: false }), 'gate_passes_inward', scope),
 
   addGatePassInward: (gp) =>
     supabase.from('gate_passes_inward').insert([gp]).select().single(),
@@ -1938,21 +1966,12 @@ export const procurementDb = {
   // Paged for the same reason as getPurchaseOrders: 15 of the 20 goods receipts still
   // waiting to be billed are from 2016-17, so the newest 1,000 rows contained only 5 of
   // them and the bill screen's GRN picker looked almost empty.
-  getGrns: async (companyId = 1) => {
-    const PAGE = 1000;
-    const all = [];
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase.from('grns')
-        .select('*')
-        .eq('company_id', companyId)
-        .order('received_date', { ascending: false })
-        .range(from, from + PAGE - 1);
-      if (error) return { data: null, error };
-      all.push(...(data || []));
-      if (!data || data.length < PAGE) break;
-    }
-    return { data: all, error: null };
-  },
+  getGrns: (companyId = 1, scope = null) =>
+    fetchAllPaged(() => applyScope(supabase.from('grns')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('received_date', { ascending: false })
+      .order('id'), 'grns', scope)),
 
   addGrn: (grn) =>
     supabase.from('grns').insert([grn]).select().single(),
@@ -1964,8 +1983,10 @@ export const procurementDb = {
     supabase.from('grn_line_items')
       .select('*').eq('grn_id', grnId).order('line_no'),
 
-  getPurchaseInvoices: (companyId = 1) =>
-    supabase.from('purchase_invoices').select('*').eq('company_id', companyId).order('bill_date', { ascending: false }),
+  getPurchaseInvoices: (companyId = 1, scope = null) =>
+    applyScope(supabase.from('purchase_invoices').select('*')
+      .eq('company_id', companyId)
+      .order('bill_date', { ascending: false }), 'purchase_invoices', scope),
 
   addPurchaseInvoice: (pinv) =>
     supabase.from('purchase_invoices').insert([pinv]).select().single(),
@@ -2134,8 +2155,9 @@ export const productionDb = {
 // ── INVOICING / FBR ───────────────────────────────────────────────────────
 
 export const invoicingDb = {
-  getInvoices: () =>
-    supabase.from('invoices').select('*').order('invoice_date', { ascending: false }),
+  getInvoices: (scope = null) =>
+    applyScope(supabase.from('invoices').select('*')
+      .order('invoice_date', { ascending: false }), 'invoices', scope),
 
   addInvoice: (inv) =>
     supabase.from('invoices').insert([inv]).select().single(),
@@ -2157,8 +2179,9 @@ export const invoicingDb = {
       ...(fiscalInvoiceNumber ? { fiscal_invoice_number: fiscalInvoiceNumber } : {}),
     }).eq('invoice_id', invoiceId),
 
-  getSaleReturnInvoices: () =>
-    supabase.from('sale_return_invoices').select('*').order('date', { ascending: false }),
+  getSaleReturnInvoices: (scope = null) =>
+    applyScope(supabase.from('sale_return_invoices').select('*')
+      .order('date', { ascending: false }), 'sale_return_invoices', scope),
 
   getFbrLog: () =>
     supabase.from('fbr_submission_log').select('*').order('attempted_at', { ascending: false }),
@@ -2277,4 +2300,54 @@ export const dashboardDb = {
       .select('id, action, module, user_name, timestamp')
       .order('timestamp', { ascending: false })
       .limit(8),
+};
+
+// ── MANAGE DATA (ARCHIVE) ─────────────────────────────────────────────────
+//
+// Reads the years the everyday screens leave out. READ ONLY, deliberately: nothing here
+// deletes, and nothing here writes. "No data gets lost" is the requirement this page was
+// built for, so the absence of a writer is the guarantee, not a promise in the UI.
+
+// The datasets Manage Data can show. `label` names it the way the rest of the app does;
+// `date` must match DATE_COLUMN in lib/dataScope.js or the count and the rows disagree.
+export const ARCHIVE_DATASETS = [
+  { table: 'vouchers',           label: 'Vouchers',           date: 'date',          key: 'voucher_id' },
+  { table: 'sales_invoices',     label: 'Sales Invoices',     date: 'date',          key: 'sale_inv_id' },
+  { table: 'sales_orders',       label: 'Sales Orders',       date: 'order_date',    key: 'so_id' },
+  { table: 'delivery_notes',     label: 'Delivery Notes',     date: 'delivery_date', key: 'delivery_id' },
+  { table: 'sales_returns',      label: 'Sales Returns',      date: 'return_date',   key: 'id' },
+  { table: 'purchase_orders',    label: 'Purchase Orders',    date: 'po_date',       key: 'po_id' },
+  { table: 'pdns',               label: 'Purchase Demand Notes', date: 'pdn_date',   key: 'pdn_id' },
+  { table: 'grns',               label: 'Goods Received Notes',  date: 'received_date', key: 'grn_id' },
+  { table: 'purchase_invoices',  label: 'Purchase Invoices',  date: 'bill_date',     key: 'bill_id' },
+  { table: 'gate_passes',        label: 'Gate Passes',        date: 'date',          key: 'id' },
+];
+
+export const archiveDb = {
+  // One count per dataset, fired together. head:true asks PostgREST for the Content-Range
+  // count and no rows at all, so this stays fast however large the archive is.
+  getSummary: async (companyId = 1, cutoff) => {
+    if (!cutoff) return { data: [], error: null };
+    const results = await mapPool(ARCHIVE_DATASETS, async (ds) => {
+      const { count, error } = await supabase.from(ds.table)
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
+        .lt(ds.date, cutoff);
+      return { ...ds, count: count ?? 0, error };
+    });
+    const failed = results.find(r => r.error);
+    if (failed) return { data: null, error: failed.error };
+    return { data: results, error: null };
+  },
+
+  // Archived rows for one dataset. Paged, because the archive is the largest thing in the
+  // database — Shop #41 has 15,295 vouchers before the cutoff — and an unpaged read here
+  // would reproduce the exact 1,000-row truncation this whole change set removes.
+  getRows: (table, companyId = 1, cutoff, dateColumn) =>
+    fetchAllPaged(() => supabase.from(table)
+      .select('*')
+      .eq('company_id', companyId)
+      .lt(dateColumn, cutoff)
+      .order(dateColumn, { ascending: false })
+      .order('id')),
 };

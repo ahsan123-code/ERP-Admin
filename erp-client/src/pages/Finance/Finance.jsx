@@ -15,7 +15,7 @@ import Card, { CardHeader } from '../../components/shared/Card';
 import DataTable from '../../components/shared/DataTable';
 import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
-import { useDb } from '../../hooks/useDb';
+import { useDb, useScopedDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
 import { formatDate, formatCurrency } from '../../utils/format';
 import { getStatus } from '../../utils/statusConfig';
@@ -134,14 +134,20 @@ export default function Finance() {
   const [deletingBankId, setDeletingBankId] = useState(null);
   const [deletingAcctId, setDeletingAcctId] = useState(null);
 
-  const { data: dbVouchers, loading: loadVouchers, refetch: refetchVouchers } = useDb(() => financeDb.getVouchers(companyId), [companyId]);
+  // Scoped: the day-to-day registers on this page.
+  const { data: dbVouchers, loading: loadVouchers, refetch: refetchVouchers } = useScopedDb(s => financeDb.getVouchers(companyId, s), [companyId]);
+  const { data: chequeTracking, loading: loadCheques, refetch: refetchCheques } = useScopedDb(s => financeDb.getChequeTracking(s));
+  const { data: cashReceived, loading: loadCash, refetch: refetchCash } = useScopedDb(s => financeDb.getCashReceived(s));
+  const { data: interBankTransfers, loading: loadIBT, refetch: refetchIBT } = useScopedDb(s => financeDb.getInterBankTransfers(s));
+  const { data: pettyCash, loading: loadPetty, refetch: refetchPetty } = useScopedDb(s => financeDb.getPettyCash(s));
+
+  // Unscoped, and must stay so: bank and chart balances are lifetime running totals with
+  // no date dimension, the aging view carries its own 180-day window, and daily_cash_summary
+  // builds its opening/closing columns from a running total over the whole date-ordered
+  // history — cutting rows out of that would restate every day's opening balance.
   const { data: bankAccounts, loading: loadBanks, refetch: refetchBanks } = useDb(() => financeDb.getBankAccounts(companyId), [companyId]);
-  const { data: chequeTracking, loading: loadCheques, refetch: refetchCheques } = useDb(() => financeDb.getChequeTracking());
   const { data: chartOfAccounts, loading: loadCOA, refetch: refetchCOA } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
   const { data: agingReport, loading: loadAging } = useDb(() => financeDb.getAgingReport(companyId), [companyId]);
-  const { data: cashReceived, loading: loadCash, refetch: refetchCash } = useDb(() => financeDb.getCashReceived());
-  const { data: interBankTransfers, loading: loadIBT, refetch: refetchIBT } = useDb(() => financeDb.getInterBankTransfers());
-  const { data: pettyCash, loading: loadPetty, refetch: refetchPetty } = useDb(() => financeDb.getPettyCash());
 
   // The expense split behind each entry. Keyed on the loaded ids and memoised so the
   // fetch reruns when the entry list changes, not on every render.

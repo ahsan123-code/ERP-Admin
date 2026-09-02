@@ -11,7 +11,7 @@ import DataTable from '../../components/shared/DataTable';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { salesDb } from '../../lib/db';
-import { useDb } from '../../hooks/useDb';
+import { useScopedDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { useToast } from '../../components/shared/Toast';
@@ -110,13 +110,15 @@ export default function Sales() {
   const [deletingId,    setDeletingId]    = useState(null);
 
   const { customers, loading: loadCustomers, addCustomer: addCustomerToContext, removeCustomer } = useCustomers();
-  const { data: dbOrders, loading: loadOrders }             = useDb(() => salesDb.getSalesOrders(companyId),    [companyId]);
-  const { data: dbDeliveryNotes, loading: loadDN }      = useDb(() => salesDb.getDeliveryNotes(companyId),  [companyId]);
-  const { data: dbOrderConfirmations, loading: loadOC } = useDb(() => salesDb.getOrderConfirmations());
-  const { data: dbWorkOrders, loading: loadWO }         = useDb(() => salesDb.getWorkOrders());
-  const { data: dbGatePasses, loading: loadGP }         = useDb(() => salesDb.getGatePasses(companyId),     [companyId]);
-  const { data: dbSalesInvoices, loading: loadInv }      = useDb(() => salesDb.getSalesInvoices(companyId),  [companyId]);
-  const { data: salesReturns, loading: loadSR }         = useDb(() => salesDb.getSalesReturns(companyId),   [companyId]);
+  // Registers, so they honour the archive cutoff — useScopedDb passes the scope through
+  // and keeps it in the dependency key, so the Manage Data toggle refetches them.
+  const { data: dbOrders, loading: loadOrders }         = useScopedDb(s => salesDb.getSalesOrders(companyId, s),   [companyId]);
+  const { data: dbDeliveryNotes, loading: loadDN }      = useScopedDb(s => salesDb.getDeliveryNotes(companyId, s), [companyId]);
+  const { data: dbOrderConfirmations, loading: loadOC } = useScopedDb(s => salesDb.getOrderConfirmations(s));
+  const { data: dbWorkOrders, loading: loadWO }         = useScopedDb(s => salesDb.getWorkOrders(s));
+  const { data: dbGatePasses, loading: loadGP }         = useScopedDb(s => salesDb.getGatePasses(companyId, s),    [companyId]);
+  const { data: dbSalesInvoices, loading: loadInv }     = useScopedDb(s => salesDb.getSalesInvoices(companyId, s), [companyId]);
+  const { data: salesReturns, loading: loadSR }         = useScopedDb(s => salesDb.getSalesReturns(companyId, s),  [companyId]);
 
   const [orders,             setOrders]             = useState([]);
   const [orderConfirmations, setOrderConfirmations] = useState([]);

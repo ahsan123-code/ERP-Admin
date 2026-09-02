@@ -1,6 +1,7 @@
 // Generic async data hook for Supabase queries.
 // Usage: const { data, loading, error, refetch } = useDb(() => hrDb.getEmployees());
 import { useState, useEffect, useCallback } from 'react';
+import { useDataScope } from '../context/DataScopeContext';
 
 export function useDb(fetcher, deps = []) {
   const [data, setData]       = useState([]);
@@ -36,6 +37,29 @@ export function useDb(fetcher, deps = []) {
   // Also false while a fetch is in flight, so an explicit refetch() - which reuses the
   // same key - still reads as unsettled rather than instantly "done".
   return { data, loading, error, refetch: fetch, settled: !loading && settledKey === key };
+}
+
+// useDb for a list that honours the archive cutoff.
+//
+//   useScopedDb(scope => salesDb.getSalesInvoices(companyId, scope), [companyId])
+//
+// The fetcher receives the current scope and hands it to the db function; the scope's
+// mode and company are appended to `deps` here, so flipping "include archived years"
+// refetches every scoped list on its own.
+//
+// Appending the dep is the point of the wrapper. useDb re-runs on a change to `deps`
+// and on nothing else, and a missing dep produces no error — just a list that quietly
+// keeps showing the previous scope's rows. Callers cannot forget what they do not write.
+//
+// Use plain useDb wherever the cutoff must NOT apply: report aggregates, ledger reports
+// with their own date range, and every document picker. The distinction is visible at
+// the call site, which is the only place that knows which kind of read it is making.
+export function useScopedDb(fetcher, deps = []) {
+  const { scope } = useDataScope();
+  return useDb(
+    () => fetcher(scope),
+    [...deps, scope?.mode, scope?.companyId],
+  );
 }
 
 export function useDbSingle(fetcher, deps = []) {

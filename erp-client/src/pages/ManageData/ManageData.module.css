@@ -1,0 +1,147 @@
+.stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+.cardBody { padding: var(--sp-5); }
+
+.mono { font-family: var(--font-mono); }
+.date { color: var(--text-secondary); white-space: nowrap; }
+
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Archived record tiles ───────────────────────────────────────────────── */
+.totalLine {
+  margin: 0 0 var(--sp-4);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.totalLine strong {
+  font-size: 20px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  margin-right: 4px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--sp-3);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+}
+.tileLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-tertiary);
+}
+.tileValue {
+  font-size: 19px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.tileBtn {
+  align-self: flex-start;
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.tileBtn:hover:not(:disabled) {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+.tileBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Include-archive toggle ──────────────────────────────────────────────── */
+.toggleRow { display: flex; align-items: flex-start; gap: var(--sp-4); }
+
+.toggle {
+  flex: 0 0 auto;
+  position: relative;
+  width: 44px;
+  height: 24px;
+  margin-top: 2px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s;
+}
+.toggleOn { background: var(--blue); border-color: var(--blue); }
+
+.knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.18s;
+}
+.toggleOn .knob { transform: translateX(20px); }
+
+.toggleTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 3px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.toggleHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ── Browse ──────────────────────────────────────────────────────────────── */
+/* The dataset picker sits in the card header, where it has no room for the label
+   spacing SelectField normally reserves. */
+.pickerWrap { min-width: 220px; }
+.pickerWrap > div { margin: 0; }
+
+/* ── Empty (a branch with nothing archived) ──────────────────────────────── */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8) var(--sp-5);
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.emptyState h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.emptyState p {
+  margin: 0;
+  max-width: 460px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}

@@ -9,7 +9,7 @@ import StatCard from '../../components/shared/StatCard';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Badge from '../../components/ui/Badge';
 import DataTable from '../../components/shared/DataTable';
-import { useDb } from '../../hooks/useDb';
+import { useDb, useDbSingle } from '../../hooks/useDb';
 import { dashboardDb, salesDb, inventoryDb, financeDb, procurementDb } from '../../lib/db';
 import { useCompany } from '../../context/CompanyContext';
 import { useCustomers } from '../../context/CustomerContext';
@@ -270,7 +270,10 @@ export default function Dashboard() {
   const { data: dbStockItems, loading: loadStock }    = useDb(() => inventoryDb.getStockItems(companyId),     [companyId]);
   const { data: dbSalesInvoices, loading: loadInvoices } = useDb(() => salesDb.getSalesInvoices(companyId),      [companyId]);
   const { customers: dbCustomers } = useCustomers();
-  const { data: dbVouchers }      = useDb(() => financeDb.getVouchers(companyId),         [companyId]);
+  // A count, not the rows: this tile only ever showed dbVouchers.length, so fetching the
+  // whole ledger to measure it was wasted transfer — and it under-reported, because the
+  // list it measured was capped.
+  const { data: voucherCount }    = useDbSingle(() => financeDb.countVouchers(companyId), [companyId]);
   const { data: dbPOs }           = useDb(() => procurementDb.getPurchaseOrders(companyId),[companyId]);
 
   const activeEmployees = empRows.length;
@@ -298,7 +301,7 @@ export default function Dashboard() {
     { id: 'production',  label: 'Production',   path: '/production',  accentVar: '--orange', stat1Label: 'Work Orders', stat1Value: '—',              stat2Label: 'This Month', stat2Value: '—',           stat2Warn: false },
     { id: 'sales',       label: 'Sales & CRM',  path: '/sales',       accentVar: '--green',  stat1Label: 'Orders',      stat1Value: dbOrders.length,     stat2Label: 'Customers',  stat2Value: dbCustomers.length, stat2Warn: false },
     { id: 'invoicing',   label: 'Invoicing',    path: '/invoicing',   accentVar: '--cyan',   stat1Label: 'Invoices',    stat1Value: dbSalesInvoices.length, stat2Label: 'Total Value', stat2Value: formatCurrency(totalRevenue), stat2Warn: false },
-    { id: 'finance',     label: 'Finance',      path: '/finance',     accentVar: '--blue',   stat1Label: 'Vouchers',    stat1Value: dbVouchers.length,   stat2Label: 'Overdue',    stat2Value: '—',           stat2Warn: false },
+    { id: 'finance',     label: 'Finance',      path: '/finance',     accentVar: '--blue',   stat1Label: 'Vouchers',    stat1Value: voucherCount ?? 0,   stat2Label: 'Overdue',    stat2Value: '—',           stat2Warn: false },
     { id: 'hr',          label: 'HR & Payroll', path: '/hr',          accentVar: '--purple', stat1Label: 'Employees',   stat1Value: activeEmployees,     stat2Label: 'On Leave',   stat2Value: '—',           stat2Warn: false },
   ];
 

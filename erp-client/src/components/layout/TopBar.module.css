@@ -317,3 +317,37 @@
   object-fit: cover;
   display: block;
 }
+
+/* ── Archive scope pill ──────────────────────────────────────────────────── */
+/* Shown only for a branch with archived years. Says which of the two views the
+   lists are currently in, and goes to Manage Data to change it. */
+.scopePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.scopePill:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+/* Showing everything is the exceptional state, so it is the one that is tinted. */
+.scopePillAll {
+  border-color: var(--orange-dim);
+  color: var(--orange-dim);
+}
+.scopePillAll:hover {
+  background: var(--orange-dim);
+  border-color: var(--orange-dim);
+  color: #fff;
+}

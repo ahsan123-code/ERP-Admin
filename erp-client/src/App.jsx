@@ -5,6 +5,7 @@ import { ToastProvider } from './components/shared/Toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { CompanyProvider } from './context/CompanyContext';
+import { DataScopeProvider } from './context/DataScopeContext';
 import { CatalogueProvider } from './context/CatalogueContext';
 import { CustomerProvider } from './context/CustomerContext';
 import { FiscalYearProvider } from './context/FiscalYearContext';
@@ -20,6 +21,7 @@ import Sales       from './pages/Sales/Sales';
 import Invoicing   from './pages/Invoicing/Invoicing';
 import ExpenseAccounts from './pages/ExpenseAccounts/ExpenseAccounts';
 import Settings from './pages/Settings/Settings';
+import ManageData from './pages/ManageData/ManageData';
 import Finance     from './pages/Finance/Finance';
 import HR          from './pages/HR/HR';
 import Reports     from './pages/Reports/Reports';
@@ -79,6 +81,8 @@ function AppRoutes() {
 
               <Route path="settings" element={<PageWrap><Settings /></PageWrap>} />
 
+              <Route path="manage-data" element={<PageWrap><ManageData /></PageWrap>} />
+
               <Route path="help"   element={<PageWrap><Help /></PageWrap>} />
               <Route path="help/*" element={<PageWrap><Help /></PageWrap>} />
 
@@ -97,15 +101,19 @@ export default function App() {
       <AuthProvider>
         <AdminProfileProvider>
           <CompanyProvider>
-            <FiscalYearProvider>
-              <CatalogueProvider>
-                <CustomerProvider>
-                  <EmployeeSectionsProvider>
-                    <AppRoutes />
-                  </EmployeeSectionsProvider>
-                </CustomerProvider>
-              </CatalogueProvider>
-            </FiscalYearProvider>
+            {/* Inside CompanyProvider: the cutoff is per company, so the scope has to
+                know which branch is selected. */}
+            <DataScopeProvider>
+              <FiscalYearProvider>
+                <CatalogueProvider>
+                  <CustomerProvider>
+                    <EmployeeSectionsProvider>
+                      <AppRoutes />
+                    </EmployeeSectionsProvider>
+                  </CustomerProvider>
+                </CatalogueProvider>
+              </FiscalYearProvider>
+            </DataScopeProvider>
           </CompanyProvider>
         </AdminProfileProvider>
       </AuthProvider>
