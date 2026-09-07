@@ -8,7 +8,7 @@ import { useToast } from '../../components/shared/Toast';
 import { financeDb } from '../../lib/db';
 import { useDb } from '../../hooks/useDb';
 import { useCompany } from '../../context/CompanyContext';
-import { formatCurrency } from '../../utils/format';
+import { formatAmount, formatCurrency } from '../../utils/format';
 
 const today = new Date().toISOString().split('T')[0];
 const genVoucherId = () => 'VCH-' + String(Date.now()).slice(-6);
@@ -27,6 +27,13 @@ export default function NewVoucherModal({ open, onClose, onSave, editVoucher }) 
   const [lines, setLines] = useState([emptyLine(), emptyLine()]);
 
   const { data: chartOfAccounts } = useDb(() => financeDb.getChartOfAccounts(companyId), [companyId]);
+
+  // What each account stands at, so the figure is in front of you while the line is being
+  // keyed instead of needing the Account Ledger opened in another tab. Summed from the
+  // voucher lines, which is what the Ledger report shows — see getAccountLedgerBalances
+  // for why chart_of_accounts.balance is not the number to print here.
+  const { data: accountBalances, loading: balancesLoading } =
+    useDb(() => financeDb.getAccountLedgerBalances(companyId), [companyId]);
 
   useEffect(() => {
     if (!open) return;
@@ -72,6 +79,16 @@ export default function NewVoucherModal({ open, onClose, onSave, editVoucher }) 
     hint: a.account_type,
     search: a.account_code,
   }));
+
+  // Reads the same way as the Account Ledger's Balance column: the amount on its side,
+  // never a minus sign. An account with no lines yet has no ledger position rather than a
+  // zero one, and says so — "0 Dr" would claim postings that balanced out.
+  const balanceOf = (accountId) => {
+    const code = (chartOfAccounts || []).find(a => a.account_id === accountId)?.account_code;
+    const value = code ? accountBalances?.[code] : undefined;
+    if (typeof value !== 'number') return balancesLoading ? '' : 'No entries';
+    return `${formatAmount(Math.abs(value))} ${value >= 0 ? 'Dr' : 'Cr'}`;
+  };
 
   const setLine = (i, key, value) =>
     setLines(prev => prev.map((l, idx) => idx === i ? { ...l, [key]: value } : l));
@@ -147,7 +164,7 @@ export default function NewVoucherModal({ open, onClose, onSave, editVoucher }) 
       onClose={onClose}
       title={isEdit ? 'Edit Journal Voucher' : 'New Journal Voucher'}
       subtitle="Manual double-entry — add lines until Debit equals Credit"
-      size="lg"
+      size="xl"
       footer={
         <div className="factions">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -168,21 +185,31 @@ export default function NewVoucherModal({ open, onClose, onSave, editVoucher }) 
         <div />
 
         <div className="ff">
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 32px', gap: 8, padding: '0 2px 6px', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-            <span>Account</span><span>Narration</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.25fr 1.35fr 0.95fr 0.95fr 32px', gap: 8, padding: '0 2px 6px', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            <span>Account</span><span>Balance</span><span>Narration</span>
             <span style={{ textAlign: 'right' }}>Debit</span>
             <span style={{ textAlign: 'right' }}>Credit</span>
             <span />
           </div>
 
           {lines.map((l, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.25fr 1.35fr 0.95fr 0.95fr 32px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <SearchableSelect
                 placeholder="Search account…"
                 emptyText="No accounts"
                 value={l.account_id}
                 onChange={(val) => setLine(i, 'account_id', val)}
                 options={acctOptions}
+              />
+              <Input
+                readOnly
+                placeholder={l.account_id ? '' : 'Balance'}
+                value={l.account_id ? balanceOf(l.account_id) : ''}
+                title={l.account_id ? `Ledger balance: ${balanceOf(l.account_id)}` : undefined}
+                style={{
+                  background: 'var(--bg-tertiary)', fontFamily: 'var(--font-mono)',
+                  textAlign: 'right', fontSize: 12.5, padding: '10px 10px',
+                }}
               />
               <Input placeholder="Line narration" value={l.narration} onChange={e => setLine(i, 'narration', e.target.value)} />
               <Input type="number" min="0" step="0.01" placeholder="0.00" value={l.debit} onChange={setAmount(i, 'debit')} />
@@ -209,8 +236,9 @@ export default function NewVoucherModal({ open, onClose, onSave, editVoucher }) 
             Add Line
           </Button>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 32px', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-subtle)', fontSize: 13, fontWeight: 700 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.25fr 1.35fr 0.95fr 0.95fr 32px', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-subtle)', fontSize: 13, fontWeight: 700 }}>
             <span style={{ color: 'var(--text-secondary)' }}>Totals</span>
+            <span />
             <span style={{ textAlign: 'right', color: balanced ? 'var(--green)' : 'var(--text-tertiary)' }}>
               {balanced ? 'Balanced ✓' : 'Unbalanced'}
             </span>
