@@ -1299,6 +1299,78 @@ const partyTagStyle = {
   whiteSpace: 'nowrap',
 };
 
+// The bill-book number and the document number off a ledger row's narration. Both
+// balance reports print these, and both get them the same way: shortParticulars()
+// already reduces every narration shape the books hold to either "Bill#65-3" or the
+// document's own number, so this just splits that one result into the two columns.
+// Only a document-shaped token belongs in the Bill Ref column: two to six letters, a
+// separator, then the number. shortParticulars() hands back the narration untouched when
+// nothing parses — that is right in the ledger, where the remark IS the record, but here
+// it put "Rent received china scheme house by BAL" under a column headed Bill Ref.
+const DOC_REF = /^[A-Za-z]{2,6}[- ][\w./-]{1,18}$/;
+
+const billRef = (row) => {
+  const short = shortParticulars(row?.last_bill_narration || '');
+  const book  = /^Bill#(.+)$/i.exec(short);
+  const ref   = row?.last_bill_reference || '';
+  return {
+    // The column prefers the document the voucher names over anything parsed out of
+    // prose — the reference is what the app wrote, the narration is what it said.
+    invoice: (/^(INV|PBILL|GRN|DM)-/i.test(ref) ? ref
+              : (!book && DOC_REF.test(short) ? short : '')) || '',
+    bill:    book ? book[1].trim() : '',
+  };
+};
+
+// The letterhead the shop prints on this report. The old system put the branch's own
+// block at the top of every page and the two shops' copies are read side by side, so the
+// header follows the selected branch instead of always naming Shop #41. Shop #41's
+// contact details are the ones already on the issued bill (utils/salesInvoiceDoc.js).
+const BAL_LETTERHEAD = {
+  1: { name: 'Allied Steel Center - Shop 41', address: 'Shop No. 41, Steel Sheet Market',
+       city: 'Lahore', country: 'Pakistan', email: 'maqsud_ahmad@yahoo.com', phone: '042-37664375' },
+  2: { name: 'Ahsan Brothers - Shop 58',      address: 'Shop No. 58, Steel Sheet Market',
+       city: 'Lahore', country: 'Pakistan', email: 'maqsud_ahmad@yahoo.com', phone: '042-37664375' },
+};
+
+// This one report is printed to match the sheet the office has read for years, so it does
+// not use REPORT_CSS or the standard letterhead: the rules are hairlines in black on white
+// rather than a dark header band, the title sits centred under a left-aligned branch block,
+// and the balance carries its Dr/Cr marker in a cell of its own with the rule between the
+// two removed, so "322,927  - Dr" reads as one figure.
+const BAL_DOC_CSS = `
+  .lh-name  { font-size:14.5px; font-weight:700; margin-bottom:3px; }
+  .lh td    { font-size:10px; padding:0 0 1px 0; }
+  .bal-title{ text-align:center; font-size:19px; font-weight:700; margin:8px 0 4px; }
+  .bal-when { text-align:center; font-size:12.5px; font-weight:700; margin-bottom:10px; }
+  /* The closing date is the one a reader checks first — it sets what the whole sheet is
+     as at — so it prints a step larger than the date the books open on, as it does on the
+     sheet this is copied from. */
+  .bal-when .to { font-size:14.5px; }
+  .bal-unit td      { font-size:11px; padding-bottom:5px; }
+  .bal-unit td.unit { font-size:12.5px; font-weight:700; }
+  .bal       { width:100%; border:2px solid #000; }
+  .bal th    { border:2px solid #000; padding:3px 4px; font-size:9px; font-weight:700;
+               text-align:center; }
+  .bal td    { border:2px solid #000; padding:3px 4px; font-size:10px; vertical-align:top; }
+  .bal td.r  { text-align:right; }
+  .bal td.c  { text-align:center; }
+  .bal td.v  { text-align:right; border-right:none; font-weight:700; }
+  .bal td.dc { text-align:left; border-left:none; font-size:9px; padding-left:2px;
+               white-space:nowrap; }
+  .bal .nm   { font-weight:700; font-size:10.5px; }
+  .bal .ct   { font-size:9px; }
+  .bal tr.gt td   { font-weight:700; font-size:11.5px; padding:6px 4px; }
+  .bal tr.gt td.c { text-align:right; padding-right:16px; }
+`;
+
+// Figures print the way the old report printed them: grouped thousands, no decimals and
+// no currency prefix, with the sign left on so a credit row reads "-700".
+const balNum  = (v) => Math.round(Number(v) || 0).toLocaleString('en-PK');
+// dd/mm/yyyy, and blank rather than a dash where there is nothing - the printed sheet
+// leaves the cell empty.
+const balDate = (d) => (d ? formatDateNumeric(d).replace(/-/g, '/') : '');
+
 function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, companyId = 1 }) {
   const [search, setSearch] = useState('');
   // Customers squared off at nil, hidden by default at the client's request: of Shop
@@ -1317,6 +1389,16 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
   // Customers who are also vendors. Flagged rather than merged — see PartyNetPosition.
   const { data: parties } = useDb(() => financeDb.getPartyPositions(companyId), [companyId]);
 
+  // The date the books open on, for the period line on the printed sheet. The balances
+  // themselves are cumulative and are not filtered by it — it states the span they cover.
+  const { data: ledgerStart } = useDb(() => financeDb.getLedgerStartDate(companyId), [companyId]);
+
+  // Last payment and last bill, straight off each customer's own sub-ledger. This
+  // replaces a scan of receipt vouchers for one whose account_name or narration
+  // *contained* the customer's name: that found a payment for a few dozen customers and
+  // left the column blank on the rest, where the ledger has one for 629 of 632.
+  const { data: lastActivity } = useDb(() => financeDb.getPartyLastActivity(companyId), [companyId]);
+
   const report = useMemo(() => {
     if (!customers || balancesLoading) return [];
     return customers.map(c => {
@@ -1329,13 +1411,18 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
       const lastInv = custInvs[0];
       const totalInvoiced = custInvs.reduce((s, inv) => s + (parseFloat(inv.grand_total) || 0), 0);
 
-      // All receipt vouchers matching this customer
+      // Receipt vouchers naming this customer. Still summed for `totalPaid`, which only
+      // feeds the invoice-derived fallback below; the *last* payment no longer comes from
+      // here — see `activity`.
       const custPay = (receiptVouchers || []).filter(v =>
         (v.account_name || '').toLowerCase().includes(cName) ||
         (v.narration    || '').toLowerCase().includes(cName)
       );
-      const lastPay = custPay[0];
       const totalPaid = custPay.reduce((s, v) => s + (parseFloat(v.credit) || 0), 0);
+
+      // The customer's own sub-ledger: the last money in, and the last bill out.
+      const activity = c.account_code ? lastActivity?.[c.account_code] : undefined;
+      const ref = billRef(activity);
 
       // Brought-forward balance for a customer carried over from the old system.
       const opening = parseFloat(c.opening_balance) || 0;
@@ -1370,17 +1457,23 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
         opening_balance:      opening,
         total_invoiced:       totalInvoiced,
         total_paid:           totalPaid,
-        last_payment_date:    lastPay?.date        || null,
-        last_payment_amount:  lastPay ? (parseFloat(lastPay.credit) || 0) : 0,
-        last_invoice_id:      lastInv?.sale_inv_id || null,
-        last_invoice_date:    lastInv?.date        || null,
-        last_invoice_amount:  parseFloat(lastInv?.grand_total) || 0,
+        last_payment_date:    activity?.last_payment_date || null,
+        last_payment_amount:  parseFloat(activity?.last_payment_amount) || 0,
+        // The invoice list is preferred where it has the customer, since it is the
+        // document itself; the ledger covers everyone it does not reach — Shop #58's
+        // sales were never raised as invoices at all, and neither was the imported history.
+        last_invoice_id:      lastInv?.sale_inv_id || ref.invoice || null,
+        // The number written in the physical bill book ("65-3"), which is what the
+        // office looks a sale up by - see the billNo notes at the top of this file.
+        last_bill_no:         lastInv?.manual_bill_no || ref.bill || null,
+        last_invoice_date:    lastInv?.date        || activity?.last_bill_date || null,
+        last_invoice_amount:  parseFloat(lastInv?.grand_total) || parseFloat(activity?.last_bill_amount) || 0,
       };
     });
     // Every customer on the books belongs in this report, including the ones sitting
     // at a nil balance with nothing invoiced yet — dropping them made accounts the
     // user knows exist look like they had been deleted.
-  }, [customers, salesInvoices, receiptVouchers, ledgerBalances, balancesLoading, parties]);
+  }, [customers, salesInvoices, receiptVouchers, ledgerBalances, balancesLoading, parties, lastActivity]);
 
   const nilCount = useMemo(() => report.filter(r => r.balance === 0).length, [report]);
 
@@ -1429,6 +1522,9 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
       <td className={styles.code}>
         {r.last_invoice_id || <span className={styles.nil}>—</span>}
       </td>
+      <td className={styles.code}>
+        {r.last_bill_no || <span className={styles.nil}>—</span>}
+      </td>
       <td className={`${styles.code} ${styles.right}`}>
         {r.last_invoice_date ? formatDate(r.last_invoice_date) : <span className={styles.nil}>—</span>}
       </td>
@@ -1442,50 +1538,98 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
   const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
 
+  // Built to match the sheet the office printed from the old system, so the two can be
+  // laid beside each other: the branch block top-left, the title centred under it, then
+  // one ruled grid running Sr# / Name / Balance / last payment / last bill. Debit rows
+  // come first with their own "Grand Total >>", then the credit rows, and the serial
+  // number carries on across the break rather than restarting.
   const buildDoc = () => {
+    const lh = BAL_LETTERHEAD[companyId] || BAL_LETTERHEAD[1];
     const allRows = [...drRows, ...crRows];
-    const tableRows = allRows.map((r, i) => `
+
+    const bodyRow = (r, i) => `
       <tr>
-        <td>${i + 1}</td>
-        <td><strong>${esc(r.name)}</strong>${r.contact ? `<br><span style="font-size:9px;color:#888">${esc(r.contact)}</span>` : ''}</td>
-        <td class="right" style="color:${r.balance > 0 ? '#1a5276' : r.balance < 0 ? '#922b21' : '#666'};font-weight:700">
-          ${r.balance === 0 ? '—' : r.balance > 0 ? formatCurrency(r.balance) + ' Dr' : formatCurrency(Math.abs(r.balance)) + ' Cr'}
+        <td class="c">${i + 1}</td>
+        <td>
+          <div class="nm">${esc(r.name)}</div>
+          <div class="ct">${esc(r.contact || '0')}</div>
         </td>
-        <td class="center">${r.last_payment_date ? formatDate(r.last_payment_date) : '—'}</td>
-        <td class="right">${r.last_payment_amount > 0 ? formatCurrency(r.last_payment_amount) : '—'}</td>
-        <td class="center">${esc(r.last_invoice_id || '—')}</td>
-        <td class="center">${r.last_invoice_date ? formatDate(r.last_invoice_date) : '—'}</td>
-        <td class="right">${r.last_invoice_amount > 0 ? formatCurrency(r.last_invoice_amount) : '—'}</td>
-      </tr>`).join('');
+        <td class="v">${balNum(r.balance)}</td>
+        <td class="dc">- ${r.balance < 0 ? 'Cr' : 'Dr'}</td>
+        <td class="c">${balDate(r.last_payment_date)}</td>
+        <td class="r">${r.last_payment_amount > 0 ? balNum(r.last_payment_amount) : '0'}</td>
+        <td class="c">${esc(r.last_invoice_id || '')}</td>
+        <td class="c">${esc(r.last_bill_no || '')}</td>
+        <td class="c">${balDate(r.last_invoice_date)}</td>
+        <td class="r">${r.last_invoice_amount > 0 ? balNum(r.last_invoice_amount) : ''}</td>
+      </tr>`;
 
-    const totalsTable = `
-      <table width="320" align="right" style="margin-top:12px">
-        <tr><td style="padding:4px 0;font-size:11px;border-bottom:1px solid #eee">Total Debit (Receivable)</td>
-            <td class="right" style="padding:4px 0;font-size:11px;border-bottom:1px solid #eee;color:#1a5276">${formatCurrency(totalDr)}</td></tr>
-        <tr><td style="padding:4px 0;font-size:11px;border-bottom:1px solid #eee">Total Credit (Advance)</td>
-            <td class="right" style="padding:4px 0;font-size:11px;border-bottom:1px solid #eee;color:#922b21">${formatCurrency(totalCr)}</td></tr>
-        <tr><td style="padding-top:7px;font-size:13px;font-weight:700;border-top:2px solid #000">Net Receivable</td>
-            <td class="right" style="padding-top:7px;font-size:13px;font-weight:700;border-top:2px solid #000">${formatCurrency(netBalance)}</td></tr>
-      </table>
-      <div style="clear:both"></div>`;
+    // The trailing cells are emitted one by one rather than merged, so the column rules
+    // carry on through the total row the way they do on the printed sheet.
+    const grandTotal = (total) => `
+      <tr class="gt">
+        <td colspan="2" class="c">Grand Total &gt;&gt;</td>
+        <td class="v">${balNum(total)}</td>
+        <td class="dc"></td>
+        ${'<td></td>'.repeat(6)}
+      </tr>`;
 
-    return buildReportDoc({
+    // The credit block's serial numbers continue from the debit block, so its rows are
+    // indexed by their position in the combined list, not within their own section.
+    const rowsHtml =
+        drRows.map((r, i) => bodyRow(r, i)).join('')
+      + (drRows.length ? grandTotal(totalDr) : '')
+      + crRows.map((r, i) => bodyRow(r, drRows.length + i)).join('')
+      + (crRows.length ? grandTotal(-totalCr) : '');
+
+    // Says what was left out, so a printed copy is not read as the whole customer list.
+    const omitted = !showNil && nilCount > 0
+      ? `${nilCount} nil-balance ${nilCount === 1 ? 'account' : 'accounts'} not shown`
+      : '';
+
+    const header = `
+      <div class="lh-name">${esc(lh.name)}</div>
+      <table class="lh"><tr>
+          <td width="230">${esc(lh.address)}</td>
+          <td width="70">${esc(lh.city)}</td>
+          <td>${esc(lh.country)}</td>
+        </tr><tr>
+          <td>${esc(lh.email)}</td>
+          <td colspan="2">${esc(lh.phone)}</td>
+        </tr></table>
+      <div class="bal-title">Customer Current Balance</div>
+      <div class="bal-when">
+        To: &nbsp; ${balDate(ledgerStart) || '&mdash;'} &nbsp;&nbsp;&nbsp;&nbsp;
+        From: &nbsp; <span class="to">${balDate(new Date().toISOString())}</span>
+      </div>
+      <table class="bal-unit" width="100%"><tr>
+          <td class="unit">Business Unit : &nbsp;&nbsp; General</td>
+          <td align="right">${allRows.length} customers${omitted ? ` &nbsp;|&nbsp; ${omitted}` : ''}</td>
+        </tr></table>`;
+
+    return {
       filename: 'Customer Current Balance',
-      title: 'Customer Current Balance Report',
-      landscape: true,
-      // Says what was left out, so a printed copy is not read as the whole customer list.
-      meta: `As of ${formatDate(new Date().toISOString())} &nbsp;|&nbsp; ${allRows.length} customers`
-          + (!showNil && nilCount > 0 ? ` &nbsp;|&nbsp; ${nilCount} nil-balance ${nilCount === 1 ? 'account' : 'accounts'} not shown` : ''),
-      table: `<table class="rpt">
+      title: 'Customer Current Balance',
+      landscape: false,
+      css: BAL_DOC_CSS,
+      body: `
+        ${header}
+        <table class="bal">
           <thead><tr>
-            <th width="34">Sr#</th><th>Customer</th><th class="right" width="120">Current Balance</th>
-            <th class="center" width="80">Last Pmt Date</th><th class="right" width="90">Last Pmt Amt</th>
-            <th class="center" width="85">Invoice #</th><th class="center" width="80">Invoice Date</th>
-            <th class="right" width="90">Invoice Amt</th>
+            <th width="26">Sr #</th>
+            <th>Name</th>
+            <th colspan="2" width="92">Current Balance</th>
+            <th width="58">Date</th>
+            <th width="62">Last Payment</th>
+            <th width="92">Invoice #</th>
+            <th width="42">Bill No</th>
+            <th width="58">Date</th>
+            <th width="60">Amount</th>
           </tr></thead>
-          <tbody>${tableRows || '<tr><td colspan="8" class="center" style="padding:18px;color:#666">No customers to report</td></tr>'}</tbody>
-        </table>${totalsTable}`,
-    });
+          <tbody>${rowsHtml || '<tr><td colspan="10" class="c" style="padding:18px">No customers to report</td></tr>'}</tbody>
+        </table>
+        ${documentFooter(null, COMPANY)}`,
+    };
   };
 
   const tblHead = (
@@ -1497,6 +1641,7 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
         <th className={styles.right} style={{ width: 130 }}>Last Pmt Date</th>
         <th className={styles.right} style={{ width: 140 }}>Last Pmt Amt</th>
         <th style={{ width: 120 }}>Invoice No.</th>
+        <th style={{ width: 90 }}>Bill No.</th>
         <th className={styles.right} style={{ width: 110 }}>Invoice Date</th>
         <th className={styles.right} style={{ width: 140 }}>Invoice Amt</th>
       </tr>
@@ -1558,7 +1703,7 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
                   <td className={`${styles.right} ${styles.mono}`} style={{ color: 'var(--blue)', fontWeight: 700 }}>
                     {formatCurrency(totalDr)} Dr
                   </td>
-                  <td colSpan={5}></td>
+                  <td colSpan={6}></td>
                 </tr>
               </tbody>
             </table>
@@ -1581,7 +1726,7 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
                   <td className={`${styles.right} ${styles.mono}`} style={{ color: 'var(--red)', fontWeight: 700 }}>
                     {formatCurrency(totalCr)} Cr
                   </td>
-                  <td colSpan={5}></td>
+                  <td colSpan={6}></td>
                 </tr>
               </tbody>
             </table>
@@ -1705,6 +1850,13 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
   // Vendors who are also customers. vendor_balances carries no party_id, so the link is
   // read off the vendor master rows the page already has.
   const { data: parties } = useDb(() => financeDb.getPartyPositions(companyId), [companyId]);
+
+  // Last payment and last bill off each vendor's own sub-ledger (14-01-001-*), the same
+  // source the Customer report uses. On a vendor the sides are the other way round: a
+  // payment is the debit and the bill is the credit — the view settles that, so this
+  // reads the same shape for both reports.
+  const { data: lastActivity } = useDb(() => financeDb.getPartyLastActivity(companyId), [companyId]);
+
   const partyByVendorId = useMemo(() => {
     const m = {};
     (vendors || []).forEach(v => { if (v.party_id) m[v.id] = parties?.byId?.[v.party_id]; });
@@ -1714,23 +1866,33 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
   // Ledger-derived: purchases credit the vendor (payable up), payments debit it.
   // A positive balance is a payable (we owe the vendor); negative is an advance.
   const report = useMemo(() => {
-    return (vendorBalances || []).map(v => ({
-      id:              v.vendor_id,
-      name:            v.vendor_name,
-      contact:         v.contact,
-      category:        v.category,
-      purchases:       parseFloat(v.total_purchases) || 0,
-      paid:            parseFloat(v.total_paid) || 0,
-      balance:         parseFloat(v.balance_payable) || 0,
-      last_txn_date:   v.last_txn_date || null,
-      txn_count:       Number(v.txn_count) || 0,
-      has_account:     !!v.account_code,
-      also_customer:   !!partyByVendorId[v.vendor_id],
-      party_receivable: partyByVendorId[v.vendor_id]?.receivable || 0,
-    }));
+    return (vendorBalances || []).map(v => {
+      const activity = v.account_code ? lastActivity?.[v.account_code] : undefined;
+      const ref = billRef(activity);
+      return {
+        id:              v.vendor_id,
+        name:            v.vendor_name,
+        contact:         v.contact,
+        category:        v.category,
+        purchases:       parseFloat(v.total_purchases) || 0,
+        paid:            parseFloat(v.total_paid) || 0,
+        balance:         parseFloat(v.balance_payable) || 0,
+        last_txn_date:   v.last_txn_date || null,
+        txn_count:       Number(v.txn_count) || 0,
+        has_account:     !!v.account_code,
+        also_customer:   !!partyByVendorId[v.vendor_id],
+        party_receivable: partyByVendorId[v.vendor_id]?.receivable || 0,
+        last_payment_date:   activity?.last_payment_date || null,
+        last_payment_amount: parseFloat(activity?.last_payment_amount) || 0,
+        last_bill_no:        ref.bill    || null,
+        last_bill_id:        ref.invoice || null,
+        last_bill_date:      activity?.last_bill_date || null,
+        last_bill_amount:    parseFloat(activity?.last_bill_amount) || 0,
+      };
+    });
     // Vendors with no ledger activity and a nil balance are still real vendors, so
     // they stay on the report rather than being filtered out of existence.
-  }, [vendorBalances, partyByVendorId]);
+  }, [vendorBalances, partyByVendorId, lastActivity]);
 
   const nilCount = useMemo(() => report.filter(r => r.balance === 0).length, [report]);
 
@@ -1768,7 +1930,12 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
         <td class="right">${formatCurrency(r.purchases)}</td>
         <td class="right">${formatCurrency(r.paid)}</td>
         <td class="right" style="color:${r.balance > 0 ? '#922b21' : r.balance < 0 ? '#1e7d34' : '#666'};font-weight:700">${rowBal(r.balance)}</td>
-        <td>${r.last_txn_date ? formatDate(r.last_txn_date) : '—'}</td>
+        <td class="center">${r.last_payment_date ? formatDateNumeric(r.last_payment_date) : '—'}</td>
+        <td class="right">${r.last_payment_amount > 0 ? formatAmount(r.last_payment_amount) : '—'}</td>
+        <td class="center">${esc(r.last_bill_id || '—')}</td>
+        <td class="center">${esc(r.last_bill_no || '—')}</td>
+        <td class="center">${r.last_bill_date ? formatDateNumeric(r.last_bill_date) : '—'}</td>
+        <td class="right">${r.last_bill_amount > 0 ? formatAmount(r.last_bill_amount) : '—'}</td>
       </tr>`).join('');
 
     return buildReportDoc({
@@ -1778,16 +1945,21 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
       // has no other way to tell a short list from a complete one.
       meta: `${filtered.length} vendors &nbsp;|&nbsp; Purchases: <strong>${formatCurrency(totalPurchases)}</strong> &nbsp;|&nbsp; Payable: <strong>${formatCurrency(totalPayable)}</strong>`
         + (!showNil && nilCount > 0 ? ` &nbsp;|&nbsp; ${nilCount} nil-balance ${nilCount === 1 ? 'vendor' : 'vendors'} not shown` : ''),
+      // Wide enough now that portrait would clip the bill columns off the right edge.
+      landscape: true,
       table: `<table class="rpt">
-        <thead><tr><th width="30">#</th><th>Vendor</th><th width="100">Category</th>
-          <th class="right" width="105">Total Purchases</th><th class="right" width="95">Total Paid</th>
-          <th class="right" width="105">Balance</th><th width="80">Last Txn</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="7" class="center" style="padding:18px;color:#666">No vendor balances found</td></tr>'}</tbody>
+        <thead><tr><th width="30">#</th><th>Vendor</th><th width="86">Category</th>
+          <th class="right" width="98">Total Purchases</th><th class="right" width="88">Total Paid</th>
+          <th class="right" width="98">Balance</th>
+          <th class="center" width="66">Last Pmt Date</th><th class="right" width="80">Last Pmt Amt</th>
+          <th class="center" width="92">Bill Ref</th><th class="center" width="52">Bill No</th>
+          <th class="center" width="66">Bill Date</th><th class="right" width="80">Bill Amt</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="12" class="center" style="padding:18px;color:#666">No vendor balances found</td></tr>'}</tbody>
         <tfoot><tr><td colspan="3" class="right">Totals</td>
           <td class="right">${formatCurrency(totalPurchases)}</td>
           <td class="right">${formatCurrency(totalPaid)}</td>
           <td class="right" style="color:#922b21">${balLabel(totalPayable)}</td>
-          <td></td></tr></tfoot>
+          <td colspan="6"></td></tr></tfoot>
       </table>`,
     });
   };
@@ -1832,7 +2004,12 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
               <th style={thRight}>Total Purchases</th>
               <th style={thRight}>Total Paid</th>
               <th style={thRight}>Balance</th>
-              <th style={thLeft}>Last Txn</th>
+              <th style={thLeft}>Last Pmt Date</th>
+              <th style={thRight}>Last Pmt Amt</th>
+              <th style={thLeft}>Bill Ref</th>
+              <th style={thLeft}>Bill No</th>
+              <th style={thLeft}>Bill Date</th>
+              <th style={thRight}>Bill Amt</th>
             </tr>
           </thead>
           <tbody>
@@ -1852,7 +2029,12 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
                 <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.purchases > 0 ? formatCurrency(r.purchases) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                 <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.paid > 0 ? formatCurrency(r.paid) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                 <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: r.balance > 0 ? 'var(--red)' : r.balance < 0 ? 'var(--green)' : 'var(--text-muted)', fontWeight: 700 }}>{rowBal(r.balance)}</td>
-                <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.last_txn_date ? formatDate(r.last_txn_date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.last_payment_date ? formatDate(r.last_payment_date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.last_payment_amount > 0 ? formatCurrency(r.last_payment_amount) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, fontFamily: 'var(--font-mono)' }}>{r.last_bill_id || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12, fontFamily: 'var(--font-mono)' }}>{r.last_bill_no || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', fontSize: 12 }}>{r.last_bill_date ? formatDate(r.last_bill_date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                <td style={{ padding: '7px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{r.last_bill_amount > 0 ? formatCurrency(r.last_bill_amount) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -1862,7 +2044,7 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
               <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalPurchases)}</td>
               <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalPaid)}</td>
               <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{balLabel(totalPayable)}</td>
-              <td />
+              <td colSpan={6} />
             </tr>
           </tfoot>
         </table>

@@ -1158,6 +1158,65 @@ export const financeDb = {
     return { data: totals, error: null };
   },
 
+  // Every account's position, summed from the ledger lines. Reads the
+  // account_ledger_balances view (see server/migrate-account-ledger-balances-view.js).
+  //
+  // Deliberately not chart_of_accounts.balance — that column disagrees with the lines on
+  // whole groups of accounts (see getDastiBalances for the case that proved it), and a
+  // figure shown while a voucher is being keyed has to match the Account Ledger the user
+  // would open to check it.
+  //
+  // `balance` is debit - credit, so it reads the way the Account Ledger's running balance
+  // does: positive Dr, negative Cr, whatever the account's normal side. Returns a
+  // { [account_code]: balance } map.
+  getAccountLedgerBalances: async (companyId = 1) => {
+    const { data, error } = await supabase.from('account_ledger_balances')
+      .select('account_code, balance')
+      .eq('company_id', companyId);
+    if (error) return { data: null, error };
+    const byCode = {};
+    (data || []).forEach(r => { byCode[r.account_code] = parseFloat(r.balance) || 0; });
+    return { data: byCode, error: null };
+  },
+
+  // Each party's most recent payment and most recent bill, keyed by their sub-ledger
+  // account code — the same key the balance on the row comes from, so the two agree.
+  // Reads the party_last_activity view (see server/migrate-party-last-activity-view.js);
+  // Postgres picks the latest of each per account, so this is one request for the whole
+  // report instead of two lookups per party.
+  //
+  // Covers customers (11-01-003-*) and vendors (14-01-001-*) in one call: which side of
+  // a line counts as a payment is decided in the view, because it differs between them.
+  // Returns a { [account_code]: row } map.
+  getPartyLastActivity: async (companyId = 1) => {
+    const { data, error } = await supabase.from('party_last_activity')
+      .select('account_code, last_payment_date, last_payment_amount, last_bill_date, last_bill_amount, last_bill_voucher, last_bill_reference, last_bill_narration')
+      .eq('company_id', companyId);
+    if (error) return { data: null, error };
+    const byCode = {};
+    (data || []).forEach(r => { byCode[r.account_code] = r; });
+    return { data: byCode, error: null };
+  },
+
+  // The date the books open on: the earliest voucher this company has. The Customer
+  // Current Balance sheet prints its period as "From <this> To <today>", because the
+  // balances on it are cumulative — every posting ever made, not one year's worth — and
+  // a period line has to say so or it misdescribes the figures under it.
+  //
+  // Deliberately unscoped: the archived pre-2019 years are hidden from the registers but
+  // their postings are still inside the balances, so the period has to reach back to them.
+  // One row, ordered in Postgres — nothing is transferred but the date itself.
+  getLedgerStartDate: async (companyId = 1) => {
+    const { data, error } = await supabase.from('vouchers')
+      .select('date')
+      .eq('company_id', companyId)
+      .not('date', 'is', null)
+      .order('date', { ascending: true })
+      .limit(1);
+    if (error) return { data: null, error };
+    return { data: data?.[0]?.date ?? null, error: null };
+  },
+
   // "Dasti" — money moved by hand, outside the customer and vendor ledgers. The parties
   // live under 11-01-006 "Loans and Other Receivables": committee and hawala holders,
   // contractors, staff lent cash personally. They are neither customers (11-01-003) nor
