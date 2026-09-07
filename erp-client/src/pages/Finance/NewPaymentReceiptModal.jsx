@@ -91,12 +91,19 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
   // expense account directly, and with only parties in this list the only way to record
   // one was to raise it as petty cash or key a manual journal.
   //
-  // Payments only. On a receipt, money coming in against an expense head would be a
-  // refund — a different entry that belongs with income accounts, not this list.
-  const expenseAccounts = useMemo(() => (isReceipt
-    ? []
-    : (chartOfAccounts || []).filter(a => a.account_code?.slice(0, 2) === '12')),
-  [isReceipt, chartOfAccounts]);
+  // Offered on receipts as well as payments. They used to be payments-only, on the
+  // reasoning that money arriving against an expense head could only be a refund — but
+  // the books say otherwise: since Sep-2024 the office credited 23 expense heads on 286
+  // receipt lines, led by Masjid Hussnain (Expense & Donation) at 136. Donations come in
+  // against the head the mosque's costs are booked to, and with the list empty on
+  // receipts there was no way to record one here at all.
+  //
+  // The posting needs nothing special. An expense leg takes the voucher's own direction
+  // (see the `directAccount` branch in handleSubmit), so a receipt credits the head and
+  // debits the pocket — which is the entry the ledger already holds for these.
+  const expenseAccounts = useMemo(
+    () => (chartOfAccounts || []).filter(a => a.account_code?.slice(0, 2) === '12'),
+    [chartOfAccounts]);
 
   // Dasti parties — money handed over outside the customer and vendor ledgers (committee
   // and hawala holders, contractors, staff lent cash personally). They sit under
@@ -211,7 +218,7 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
       const l = startedLines[firstBad];
       const where = `Line ${firstBad + 1}`;
       const what = !l.party
-        ? (isReceipt ? 'needs a party.' : 'needs a party or expense account.')
+        ? 'needs a party or expense account.'
         : !l.pocket
           ? (isReceipt ? 'needs the account the money came into.' : 'needs the account it was paid from.')
           : 'needs an amount.';
@@ -374,12 +381,12 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
         <div className="ff">
           <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
             {isReceipt
-              ? 'One line per party — and the account their money came into'
+              ? `One line per party or expense head — and the account their money came into (${expenseAccounts.length} expense accounts available)`
               : `One line per party or expense head — and the account it was paid from (${expenseAccounts.length} expense accounts available)`}
           </label>
 
           <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, padding: '0 2px 6px', fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-            <span>{isReceipt ? 'Party' : 'Party / Expense Account'}</span>
+            <span>Party / Expense Account</span>
             <span>{mode === 'bank' ? 'Bank Account' : 'Cash Account'}</span>
             <span>Narration</span>
             <span style={{ textAlign: 'right' }}>Amount</span>
@@ -389,8 +396,8 @@ export default function NewPaymentReceiptModal({ open, onClose, onSave, type = '
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <SearchableSelect
-                placeholder={isReceipt ? 'Search customer or vendor…' : 'Search customer, vendor or expense account…'}
-                emptyText={isReceipt ? 'No parties found' : 'No parties or expense accounts found'}
+                placeholder="Search customer, vendor or expense account…"
+                emptyText="No parties or expense accounts found"
                 value={l.party}
                 onChange={(val) => setLine(i, 'party', val)}
                 options={partyOptions}
