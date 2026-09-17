@@ -1371,6 +1371,101 @@ const balNum  = (v) => Math.round(Number(v) || 0).toLocaleString('en-PK');
 // leaves the cell empty.
 const balDate = (d) => (d ? formatDateNumeric(d).replace(/-/g, '/') : '');
 
+// The Customer and Vendor Current Balance sheets print as one layout, so the two shops'
+// copies of either can be laid side by side: the branch block top-left, the title centred
+// under it, then one ruled grid running Sr# / Name / Balance / last payment / last bill.
+// Rows come in two blocks — the side the report exists for first, each with its own
+// "Grand Total >>" — and the serial number carries on across the break rather than
+// restarting.
+//
+// Rows arrive already in the shape the grid prints: `sideOf` names the Dr/Cr marker for
+// a balance, since a positive figure is a debit on a customer and a credit on a vendor.
+function buildBalanceSheetDoc({ companyId, title, noun, ledgerStart, blocks, sideOf, omitted = '' }) {
+  const lh = BAL_LETTERHEAD[companyId] || BAL_LETTERHEAD[1];
+  const rowCount = blocks.reduce((s, b) => s + b.rows.length, 0);
+
+  const bodyRow = (r, i) => `
+    <tr>
+      <td class="c">${i + 1}</td>
+      <td>
+        <div class="nm">${esc(r.name)}</div>
+        <div class="ct">${esc(r.contact || '0')}</div>
+      </td>
+      <td class="v">${balNum(r.balance)}</td>
+      <td class="dc">- ${sideOf(r.balance)}</td>
+      <td class="c">${balDate(r.last_payment_date)}</td>
+      <td class="r">${r.last_payment_amount > 0 ? balNum(r.last_payment_amount) : '0'}</td>
+      <td class="c">${esc(r.doc_no || '')}</td>
+      <td class="c">${esc(r.bill_no || '')}</td>
+      <td class="c">${balDate(r.bill_date)}</td>
+      <td class="r">${r.bill_amount > 0 ? balNum(r.bill_amount) : ''}</td>
+    </tr>`;
+
+  // The trailing cells are emitted one by one rather than merged, so the column rules
+  // carry on through the total row the way they do on the printed sheet.
+  const grandTotal = (total) => `
+    <tr class="gt">
+      <td colspan="2" class="c">Grand Total &gt;&gt;</td>
+      <td class="v">${balNum(total)}</td>
+      <td class="dc"></td>
+      ${'<td></td>'.repeat(6)}
+    </tr>`;
+
+  // A later block's serial numbers continue from the one before, so its rows are
+  // indexed by their position in the combined list, not within their own section.
+  let offset = 0;
+  const rowsHtml = blocks.map(({ rows, total }) => {
+    const html = rows.map((r, i) => bodyRow(r, offset + i)).join('')
+      + (rows.length ? grandTotal(total) : '');
+    offset += rows.length;
+    return html;
+  }).join('');
+
+  const header = `
+    <div class="lh-name">${esc(lh.name)}</div>
+    <table class="lh"><tr>
+        <td width="230">${esc(lh.address)}</td>
+        <td width="70">${esc(lh.city)}</td>
+        <td>${esc(lh.country)}</td>
+      </tr><tr>
+        <td>${esc(lh.email)}</td>
+        <td colspan="2">${esc(lh.phone)}</td>
+      </tr></table>
+    <div class="bal-title">${esc(title)}</div>
+    <div class="bal-when">
+      To: &nbsp; ${balDate(ledgerStart) || '&mdash;'} &nbsp;&nbsp;&nbsp;&nbsp;
+      From: &nbsp; <span class="to">${balDate(new Date().toISOString())}</span>
+    </div>
+    <table class="bal-unit" width="100%"><tr>
+        <td class="unit">Business Unit : &nbsp;&nbsp; General</td>
+        <td align="right">${rowCount} ${noun}${omitted ? ` &nbsp;|&nbsp; ${omitted}` : ''}</td>
+      </tr></table>`;
+
+  return {
+    filename: title,
+    title,
+    landscape: false,
+    css: BAL_DOC_CSS,
+    body: `
+      ${header}
+      <table class="bal">
+        <thead><tr>
+          <th width="26">Sr #</th>
+          <th>Name</th>
+          <th colspan="2" width="92">Current Balance</th>
+          <th width="58">Date</th>
+          <th width="62">Last Payment</th>
+          <th width="92">Invoice #</th>
+          <th width="42">Bill No</th>
+          <th width="58">Date</th>
+          <th width="60">Amount</th>
+        </tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="10" class="c" style="padding:18px">No ${noun} to report</td></tr>`}</tbody>
+      </table>
+      ${documentFooter(null, COMPANY)}`,
+  };
+}
+
 function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, companyId = 1 }) {
   const [search, setSearch] = useState('');
   // Customers squared off at nil, hidden by default at the client's request: of Shop
@@ -1538,98 +1633,31 @@ function CustomerCurrentBalance({ customers, salesInvoices, receiptVouchers, com
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
   const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
 
-  // Built to match the sheet the office printed from the old system, so the two can be
-  // laid beside each other: the branch block top-left, the title centred under it, then
-  // one ruled grid running Sr# / Name / Balance / last payment / last bill. Debit rows
-  // come first with their own "Grand Total >>", then the credit rows, and the serial
-  // number carries on across the break rather than restarting.
+  // Built to match the sheet the office printed from the old system — see
+  // buildBalanceSheetDoc. Debit rows come first, then the credit rows.
   const buildDoc = () => {
-    const lh = BAL_LETTERHEAD[companyId] || BAL_LETTERHEAD[1];
-    const allRows = [...drRows, ...crRows];
-
-    const bodyRow = (r, i) => `
-      <tr>
-        <td class="c">${i + 1}</td>
-        <td>
-          <div class="nm">${esc(r.name)}</div>
-          <div class="ct">${esc(r.contact || '0')}</div>
-        </td>
-        <td class="v">${balNum(r.balance)}</td>
-        <td class="dc">- ${r.balance < 0 ? 'Cr' : 'Dr'}</td>
-        <td class="c">${balDate(r.last_payment_date)}</td>
-        <td class="r">${r.last_payment_amount > 0 ? balNum(r.last_payment_amount) : '0'}</td>
-        <td class="c">${esc(r.last_invoice_id || '')}</td>
-        <td class="c">${esc(r.last_bill_no || '')}</td>
-        <td class="c">${balDate(r.last_invoice_date)}</td>
-        <td class="r">${r.last_invoice_amount > 0 ? balNum(r.last_invoice_amount) : ''}</td>
-      </tr>`;
-
-    // The trailing cells are emitted one by one rather than merged, so the column rules
-    // carry on through the total row the way they do on the printed sheet.
-    const grandTotal = (total) => `
-      <tr class="gt">
-        <td colspan="2" class="c">Grand Total &gt;&gt;</td>
-        <td class="v">${balNum(total)}</td>
-        <td class="dc"></td>
-        ${'<td></td>'.repeat(6)}
-      </tr>`;
-
-    // The credit block's serial numbers continue from the debit block, so its rows are
-    // indexed by their position in the combined list, not within their own section.
-    const rowsHtml =
-        drRows.map((r, i) => bodyRow(r, i)).join('')
-      + (drRows.length ? grandTotal(totalDr) : '')
-      + crRows.map((r, i) => bodyRow(r, drRows.length + i)).join('')
-      + (crRows.length ? grandTotal(-totalCr) : '');
-
-    // Says what was left out, so a printed copy is not read as the whole customer list.
-    const omitted = !showNil && nilCount > 0
-      ? `${nilCount} nil-balance ${nilCount === 1 ? 'account' : 'accounts'} not shown`
-      : '';
-
-    const header = `
-      <div class="lh-name">${esc(lh.name)}</div>
-      <table class="lh"><tr>
-          <td width="230">${esc(lh.address)}</td>
-          <td width="70">${esc(lh.city)}</td>
-          <td>${esc(lh.country)}</td>
-        </tr><tr>
-          <td>${esc(lh.email)}</td>
-          <td colspan="2">${esc(lh.phone)}</td>
-        </tr></table>
-      <div class="bal-title">Customer Current Balance</div>
-      <div class="bal-when">
-        To: &nbsp; ${balDate(ledgerStart) || '&mdash;'} &nbsp;&nbsp;&nbsp;&nbsp;
-        From: &nbsp; <span class="to">${balDate(new Date().toISOString())}</span>
-      </div>
-      <table class="bal-unit" width="100%"><tr>
-          <td class="unit">Business Unit : &nbsp;&nbsp; General</td>
-          <td align="right">${allRows.length} customers${omitted ? ` &nbsp;|&nbsp; ${omitted}` : ''}</td>
-        </tr></table>`;
-
-    return {
-      filename: 'Customer Current Balance',
+    const cells = (r) => ({
+      ...r,
+      doc_no:      r.last_invoice_id,
+      bill_no:     r.last_bill_no,
+      bill_date:   r.last_invoice_date,
+      bill_amount: r.last_invoice_amount,
+    });
+    return buildBalanceSheetDoc({
+      companyId,
       title: 'Customer Current Balance',
-      landscape: false,
-      css: BAL_DOC_CSS,
-      body: `
-        ${header}
-        <table class="bal">
-          <thead><tr>
-            <th width="26">Sr #</th>
-            <th>Name</th>
-            <th colspan="2" width="92">Current Balance</th>
-            <th width="58">Date</th>
-            <th width="62">Last Payment</th>
-            <th width="92">Invoice #</th>
-            <th width="42">Bill No</th>
-            <th width="58">Date</th>
-            <th width="60">Amount</th>
-          </tr></thead>
-          <tbody>${rowsHtml || '<tr><td colspan="10" class="c" style="padding:18px">No customers to report</td></tr>'}</tbody>
-        </table>
-        ${documentFooter(null, COMPANY)}`,
-    };
+      noun: 'customers',
+      ledgerStart,
+      sideOf: (b) => (b < 0 ? 'Cr' : 'Dr'),
+      blocks: [
+        { rows: drRows.map(cells), total: totalDr },
+        { rows: crRows.map(cells), total: -totalCr },
+      ],
+      // Says what was left out, so a printed copy is not read as the whole customer list.
+      omitted: !showNil && nilCount > 0
+        ? `${nilCount} nil-balance ${nilCount === 1 ? 'account' : 'accounts'} not shown`
+        : '',
+    });
   };
 
   const tblHead = (
@@ -1857,6 +1885,9 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
   // reads the same shape for both reports.
   const { data: lastActivity } = useDb(() => financeDb.getPartyLastActivity(companyId), [companyId]);
 
+  // The date the books open on, for the period line on the printed sheet.
+  const { data: ledgerStart } = useDb(() => financeDb.getLedgerStartDate(companyId), [companyId]);
+
   const partyByVendorId = useMemo(() => {
     const m = {};
     (vendors || []).forEach(v => { if (v.party_id) m[v.id] = parties?.byId?.[v.party_id]; });
@@ -1923,44 +1954,34 @@ function VendorCurrentBalance({ vendorBalances, vendors, companyId = 1 }) {
   const handlePreview  = () => { const d = buildDoc(); if (d) showPreview(d); };
   const handleDownload = () => { const d = buildDoc(); if (d) downloadWordDoc(d); };
 
+  // Printed on the same sheet as the Customer Current Balance — see buildBalanceSheetDoc.
+  // A vendor's positive balance is a payable, which is a credit, so the payable rows lead
+  // marked "Cr" and the advances follow marked "Dr" with their figure negative — the mirror
+  // of the customer sheet, where receivables lead and advances print negative.
   const buildDoc = () => {
-    const rows = filtered.map((r, i) => `
-      <tr>
-        <td>${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>${esc(r.category || '—')}</td>
-        <td class="right">${formatCurrency(r.purchases)}</td>
-        <td class="right">${formatCurrency(r.paid)}</td>
-        <td class="right" style="color:${r.balance > 0 ? '#922b21' : r.balance < 0 ? '#1e7d34' : '#666'};font-weight:700">${rowBal(r.balance)}</td>
-        <td class="center">${r.last_payment_date ? formatDateNumeric(r.last_payment_date) : '—'}</td>
-        <td class="right">${r.last_payment_amount > 0 ? formatAmount(r.last_payment_amount) : '—'}</td>
-        <td class="center">${esc(r.last_bill_id || '—')}</td>
-        <td class="center">${esc(r.last_bill_no || '—')}</td>
-        <td class="center">${r.last_bill_date ? formatDateNumeric(r.last_bill_date) : '—'}</td>
-        <td class="right">${r.last_bill_amount > 0 ? formatAmount(r.last_bill_amount) : '—'}</td>
-      </tr>`).join('');
-
-    return buildReportDoc({
-      filename: 'Vendor Current Balance',
+    const payRows = filtered.filter(r => r.balance >= 0).sort((a, b) => b.balance - a.balance);
+    const advRows = filtered.filter(r => r.balance  < 0).sort((a, b) => a.balance - b.balance);
+    const cells = (r) => ({
+      ...r,
+      doc_no:      r.last_bill_id,
+      bill_date:   r.last_bill_date,
+      bill_amount: r.last_bill_amount,
+    });
+    return buildBalanceSheetDoc({
+      companyId,
       title: 'Vendor Current Balance',
+      noun: 'vendors',
+      ledgerStart,
+      sideOf: (b) => (b < 0 ? 'Dr' : 'Cr'),
+      blocks: [
+        { rows: payRows.map(cells), total: payRows.reduce((s, r) => s + r.balance, 0) },
+        { rows: advRows.map(cells), total: advRows.reduce((s, r) => s + r.balance, 0) },
+      ],
       // The printed sheet says what it is not showing. A reader who cannot see the screen
       // has no other way to tell a short list from a complete one.
-      meta: `${filtered.length} vendors &nbsp;|&nbsp; Purchases: <strong>${formatCurrency(totalPurchases)}</strong> &nbsp;|&nbsp; Payable: <strong>${formatCurrency(totalPayable)}</strong>`
-        + (!showNil && nilCount > 0 ? ` &nbsp;|&nbsp; ${nilCount} nil-balance ${nilCount === 1 ? 'vendor' : 'vendors'} not shown` : ''),
-      // Wide enough now that portrait would clip the bill columns off the right edge.
-      landscape: true,
-      table: `<table class="rpt">
-        <thead><tr><th width="30">#</th><th>Vendor</th><th width="86">Category</th>
-          <th class="right" width="98">Total Purchases</th><th class="right" width="88">Total Paid</th>
-          <th class="right" width="98">Balance</th>
-          <th class="center" width="66">Last Pmt Date</th><th class="right" width="80">Last Pmt Amt</th>
-          <th class="center" width="92">Bill Ref</th><th class="center" width="52">Bill No</th>
-          <th class="center" width="66">Bill Date</th><th class="right" width="80">Bill Amt</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="12" class="center" style="padding:18px;color:#666">No vendor balances found</td></tr>'}</tbody>
-        <tfoot><tr><td colspan="3" class="right">Totals</td>
-          <td class="right">${formatCurrency(totalPurchases)}</td>
-          <td class="right">${formatCurrency(totalPaid)}</td>
-          <td class="right" style="color:#922b21">${balLabel(totalPayable)}</td>
-          <td colspan="6"></td></tr></tfoot>
-      </table>`,
+      omitted: !showNil && nilCount > 0
+        ? `${nilCount} nil-balance ${nilCount === 1 ? 'vendor' : 'vendors'} not shown`
+        : '',
     });
   };
 
