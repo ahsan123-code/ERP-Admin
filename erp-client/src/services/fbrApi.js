@@ -1,3 +1,12 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// MAINTENANCE MODE
+// Set to true to disable all FBR / POS integration immediately.
+// The Invoicing page will show the service as offline with a clear message.
+// Flip back to false when the integration is ready to go live again.
+// ─────────────────────────────────────────────────────────────────────────────
+const MAINTENANCE_MODE = true;
+const MAINTENANCE_MSG = 'FBR service is temporarily offline for maintenance. Please try again later.';
+
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:4000') + '/api/fbr';
 
 async function handleResponse(res) {
@@ -11,6 +20,7 @@ async function handleResponse(res) {
  * @returns {{ online: boolean, message?, error? }}
  */
 export async function checkFbrServiceStatus() {
+  if (MAINTENANCE_MODE) return { online: false, message: MAINTENANCE_MSG };
   const res = await fetch(`${BASE}/status`);
   return handleResponse(res);
 }
@@ -24,10 +34,11 @@ export async function checkFbrServiceStatus() {
  * @returns {{ success, fiscalInvoiceNumber, code, response, method, submittedAt }}
  */
 export async function submitInvoice(invoice, lineItems, options = {}) {
+  if (MAINTENANCE_MODE) throw new Error(MAINTENANCE_MSG);
   const res = await fetch(`${BASE}/submit`, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ invoice, lineItems, options }),
+    body: JSON.stringify({ invoice, lineItems, options }),
   });
   return handleResponse(res);
 }
@@ -41,24 +52,20 @@ export async function submitInvoice(invoice, lineItems, options = {}) {
  * @param {boolean} sandbox - true = sandbox, false = production
  */
 export async function submitInvoiceCloud(invoice, lineItems, options = {}, sandbox = true) {
+  if (MAINTENANCE_MODE) throw new Error(MAINTENANCE_MSG);
   const res = await fetch(`${BASE}/submit-cloud`, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ invoice, lineItems, options, sandbox }),
+    body: JSON.stringify({ invoice, lineItems, options, sandbox }),
   });
   return handleResponse(res);
 }
 
 /**
  * How many invoices are waiting to be filed, and what the agent's last run did.
- *
- * The shop PC is switched off after hours but the ERP is not, so invoices raised in
- * the evening sit as 'pending' until the agent next runs. This is how the Invoicing
- * screen can say so rather than looking like nothing happened.
- *
- * @returns {{ enabled, configured, running, pending, intervalMinutes, requireLocal, lastRun }}
  */
 export async function getFbrQueueStatus() {
+  if (MAINTENANCE_MODE) throw new Error(MAINTENANCE_MSG);
   const res = await fetch(`${BASE}/queue`);
   return handleResponse(res);
 }
@@ -68,34 +75,35 @@ export async function getFbrQueueStatus() {
  * @returns {{ found, synced, failed, errors } | { skipped }}
  */
 export async function runFbrQueue() {
+  if (MAINTENANCE_MODE) throw new Error(MAINTENANCE_MSG);
   const res = await fetch(`${BASE}/queue/run`, { method: 'POST' });
   return handleResponse(res);
 }
 
 /**
  * Preview the AJK-IRD payload without submitting.
- * Useful for debugging the invoice format before going live.
  */
 export async function previewInvoicePayload(invoice, lineItems, options = {}) {
+  if (MAINTENANCE_MODE) throw new Error(MAINTENANCE_MSG);
   const res = await fetch(`${BASE}/preview`, {
-    method:  'POST',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ invoice, lineItems, options }),
+    body: JSON.stringify({ invoice, lineItems, options }),
   });
   return handleResponse(res);
 }
 
 export const PAYMENT_MODES = {
-  Cash:        1,
-  Card:        2,
+  Cash: 1,
+  Card: 2,
   GiftVoucher: 3,
   LoyaltyCard: 4,
-  Mixed:       5,
-  Cheque:      6,
+  Mixed: 5,
+  Cheque: 6,
 };
 
 export const INVOICE_TYPES = {
-  New:    1,
-  Debit:  2,
+  New: 1,
+  Debit: 2,
   Credit: 3,
 };

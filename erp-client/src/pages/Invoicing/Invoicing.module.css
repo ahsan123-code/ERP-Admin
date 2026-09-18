@@ -172,6 +172,13 @@
   color: var(--red);
 }
 
+/* Maintenance mode — more prominent than offline, uses orange/amber */
+.service_maintenance {
+  background: #fff7ed;
+  border-color: #f97316;
+  color: #9a3412;
+}
+
 .service_checking {
   background: var(--bg-secondary);
   border-color: var(--border-subtle);
@@ -262,6 +269,7 @@
   font-size: 0.85rem;
   color: var(--red, #ef4444);
 }
+
 /* ── Book # cell ─────────────────────────────────────────────────────────────
    The whole cell is the edit control: a bill raised without its book number
    shows an empty slot that invites filling in, rather than a dash that looks

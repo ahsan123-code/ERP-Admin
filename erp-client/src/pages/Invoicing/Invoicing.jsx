@@ -145,7 +145,7 @@ export default function Invoicing() {
     }
   };
 
-  const handlePreviewDoc  = (row) => withInvoiceDoc(row, showPreview, 'Preview Failed');
+  const handlePreviewDoc = (row) => withInvoiceDoc(row, showPreview, 'Preview Failed');
   const handleDownloadDoc = (row) => withInvoiceDoc(row, downloadWordDoc, 'Download Failed');
 
   const handleDeleteFbrInvoice = async (row) => {
@@ -235,13 +235,13 @@ export default function Invoicing() {
       // value out of it using the line's own rate.
       const { data: items } = await invoicingDb.getInvoiceItems(invoice.invoice_id);
       const lineItems = (items || []).map(it => ({
-        itemCode:   it.item_code,
-        itemName:   it.item_name,
-        category:   it.category || 'Steel',
-        quantity:   parseFloat(it.quantity) || 0,
+        itemCode: it.item_code,
+        itemName: it.item_name,
+        category: it.category || 'Steel',
+        quantity: parseFloat(it.quantity) || 0,
         totalPrice: parseFloat(it.total_price) || 0,
-        taxRate:    parseFloat(it.tax_rate) || 0,
-        discount:   0,
+        taxRate: parseFloat(it.tax_rate) || 0,
+        discount: 0,
       }));
 
       const result = await submitInvoice(invoice, lineItems, { invoiceType: 1, paymentMode: 1 });
@@ -474,23 +474,14 @@ export default function Invoicing() {
 
       {pageTab === 'fbr' && (
         <>
-          <div className={`${styles.serviceBar} ${styles[`service_${serviceStatus}`]}`}>
+          <div className={`${styles.serviceBar} ${styles.service_maintenance}`}>
             <span className={styles.serviceIcon}>
-              {serviceStatus === 'online'
-                ? <Wifi size={16} strokeWidth={1.75} />
-                : serviceStatus === 'offline'
-                  ? <WifiOff size={16} strokeWidth={1.75} />
-                  : <RefreshCw size={16} strokeWidth={1.75} className={styles.spin} />}
+              <WifiOff size={16} strokeWidth={1.75} />
             </span>
             <span className={styles.serviceText}>
-              {serviceStatus === 'checking' && 'Checking AJK-IRD fiscal service…'}
-              {serviceStatus === 'online' && 'AJK-IRD local fiscal service is online'}
-              {serviceStatus === 'offline' && 'AJK-IRD local fiscal service is offline — using cloud fallback'}
-              {serviceStatus === null && 'AJK-IRD fiscal service status unknown'}
+              <strong>FBR Service — Temporarily Offline</strong>
+              {' '}— This service is currently down for maintenance and cannot be used. Please contact the system administrator.
             </span>
-            <Button variant="ghost" size="sm" icon={<RefreshCw size={13} strokeWidth={1.75} />} onClick={checkService}>
-              Recheck
-            </Button>
           </div>
 
           {/* Only rendered where the agent actually answers. On every other machine the
